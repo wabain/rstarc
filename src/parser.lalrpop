@@ -1,0 +1,184 @@
+use lexer;
+use ast;
+
+grammar;
+
+pub Program: Vec<ast::Statement> = {
+    <t:TermStatement*> EOF => t,
+}
+
+Statement: ast::Statement = {
+    "Put" <e:Expr> "Into" <v:LValue> => ast::Statement::Assign(v, e),
+
+    // FIXME: Spec is unclear on what literals are allowed here. All of them?
+    <v:LValue> "Is" <e:Literal> => ast::Statement::Assign(v, e),
+    <v:LValue> "Was" <e:Literal> => ast::Statement::Assign(v, e),
+
+    "Build" <v:LValue> "Up" => ast::Statement::Incr(v),
+    "Knock" <v:LValue> "Down" => ast::Statement::Decr(v),
+    "Say" <e:Expr> => ast::Statement::Say(e),
+
+    "Continue" => ast::Statement::Continue,
+    "Break" => ast::Statement::Break,
+    "Give" "Back" <e:Expr> => ast::Statement::Return(e),
+
+    "If" <c:Conditional> "\n" <b:Block> => ast::Statement::Condition(c, b),
+    "While" <c:Conditional> "\n" <b:Block> => ast::Statement::While(c, b),
+    "Until" <c:Conditional> "\n" <b:Block> => ast::Statement::Until(c, b),
+    <v:Variable> "Takes" <a:VariableList> "\n" <b:Block> =>
+        ast::Statement::FuncDef(v, a, b),
+}
+
+VariableList: Vec<ast::Variable> = {
+    <v:(Variable "And")*> <e:Variable?> => {
+        let mut vars: Vec<_> = v.into_iter().map(|(var, _)| var).collect();
+        if let Some(e) = e {
+            vars.push(e);
+        }
+        vars
+    }
+}
+
+Block: Vec<ast::Statement> = {
+    <b:TermStatement*> => b
+}
+
+TermStatement: ast::Statement = {
+    <s:Statement> "\n" => s,
+}
+
+Expr: ast::Expr = {
+    Comparison => ast::Expr::Compare(Box::new(<>)),
+    FuncCallExpr => <>,
+}
+
+FuncCallExpr: ast::Expr = {
+    <f:SimpleExpr> "Taking" <a:(MultExpr ",")*> <an:MultExpr> => {
+        let mut args: Vec<_> = a.into_iter().map(|(e, _)| Box::new(e)).collect();
+        args.push(Box::new(an));
+        ast::Expr::FuncCall(Box::new(f), args)
+    },
+    AddExpr => <>,
+}
+
+AddExpr: ast::Expr = {
+    MultExpr => <>,
+    <e1:MultExpr> "Plus" <e2:AddExpr> => ast::Expr::Add(Box::new(e1), Box::new(e2)),
+    <e1:MultExpr> "Minus" <e2:AddExpr> => ast::Expr::Sub(Box::new(e1), Box::new(e2)),
+}
+
+MultExpr: ast::Expr = {
+    SimpleExpr => <>,
+    <e1:SimpleExpr> "Times" <e2:MultExpr> => ast::Expr::Mul(Box::new(e1), Box::new(e2)),
+    <e1:SimpleExpr> "Over" <e2:MultExpr> => ast::Expr::Div(Box::new(e1), Box::new(e2)),
+}
+
+// FIXME: Precedence?
+Conditional: ast::Conditional = {
+    Comparison => ast::Conditional::Comparison(<>),
+    <e1:Comparison> "And" <e2:Conditional> =>
+        ast::Conditional::And(Box::new(ast::Conditional::Comparison(e1)), Box::new(e2)),
+    <e1:Comparison> "Or" <e2:Conditional> =>
+        ast::Conditional::Or(Box::new(ast::Conditional::Comparison(e1)), Box::new(e2)),
+}
+
+Comparison: ast::Comparison = {
+    <a:FuncCallExpr> "Is" <b:Expr> =>
+        ast::Comparison(a, ast::Comparator::Is, b),
+    <a:FuncCallExpr> "Is" "Not" <b:Expr> =>
+        ast::Comparison(a, ast::Comparator::IsNot, b),
+    <a:FuncCallExpr> "Is" "Greater" "Than" <b:Expr> =>
+        ast::Comparison(a, ast::Comparator::IsGreaterThan, b),
+    <a:FuncCallExpr> "Is" "Less" "Than" <b:Expr> =>
+        ast::Comparison(a, ast::Comparator::IsLessThan, b),
+    <a:FuncCallExpr> "Is" "As" "Great" "As" <b:Expr> =>
+        ast::Comparison(a, ast::Comparator::IsAsGreatAs, b),
+    <a:FuncCallExpr> "Is" "As" "Little" "As" <b:Expr> =>
+        ast::Comparison(a, ast::Comparator::IsAsLittleAs, b),
+}
+
+SimpleExpr: ast::Expr = {
+    LValue => ast::Expr::LValue(<>),
+    Literal => <>,
+}
+
+Literal: ast::Expr = {
+    TStringLiteral => ast::Expr::Literal(<>),
+    TBooleanLiteral => ast::Expr::Literal(<>),
+    TNumberLiteral => ast::Expr::Literal(<>),
+    TMysteriousLiteral => ast::Expr::Literal(<>),
+    TNullLiteral => ast::Expr::Literal(<>),
+}
+
+LValue: ast::LValue = {
+    Variable => ast::LValue::Variable(<>),
+    TPronoun => ast::LValue::Pronoun(<>),
+}
+
+Variable: ast::Variable = {
+    TProperVar => ast::Variable::ProperVar(<>),
+    TCommonPrep TCommonVar => ast::Variable::CommonVar(<>),
+}
+
+extern {
+    type Location = usize;
+    type Error = lexer::LexicalError;
+
+    enum lexer::Token {
+        // Variables and friends
+        TProperVar => lexer::Token::ProperVar(_),
+        TCommonVar => lexer::Token::CommonVar(_),
+        TPronoun => lexer::Token::Pronoun(_),
+        TCommonPrep => lexer::Token::CommonPrep(_),
+
+        // Types
+        TStringLiteral => lexer::Token::StringLiteral(_),
+        TBooleanLiteral => lexer::Token::BooleanLiteral(_),
+        TNumberLiteral => lexer::Token::NumberLiteral(_),
+        TMysteriousLiteral => lexer::Token::MysteriousLiteral,
+        TNullLiteral => lexer::Token::NullLiteral,
+
+        // Punctuation
+        "\n" => lexer::Token::Newline,
+        "," => lexer::Token::Comma,
+
+        // Other keywords
+        "Is" => lexer::Token::Is,
+        "Was" => lexer::Token::Was,
+        "Not" => lexer::Token::Not,
+        "Than" => lexer::Token::Than,
+        "As" => lexer::Token::As,
+        "Greater" => lexer::Token::Greater,
+        "Less" => lexer::Token::Less,
+        "Great" => lexer::Token::Great,
+        "Little" => lexer::Token::Little,
+        "Put" => lexer::Token::Put,
+        "Into" => lexer::Token::Into,
+        "Build" => lexer::Token::Build,
+        "Up" => lexer::Token::Up,
+        "Knock" => lexer::Token::Knock,
+        "Down" => lexer::Token::Down,
+        "Plus" => lexer::Token::Plus,
+        "Minus" => lexer::Token::Minus,
+        "Times" => lexer::Token::Times,
+        "Over" => lexer::Token::Over,
+        "Listen" => lexer::Token::Listen,
+        "To" => lexer::Token::To,
+        "Say" => lexer::Token::Say,
+        "If" => lexer::Token::If,
+        "While" => lexer::Token::While,
+        "Until" => lexer::Token::Until,
+        "Continue" => lexer::Token::Continue,
+        "Break" => lexer::Token::Break,
+        "Takes" => lexer::Token::Takes,
+        "Taking" => lexer::Token::Taking,
+        "Take" => lexer::Token::Take,
+        "From" => lexer::Token::From,
+        "Give" => lexer::Token::Give,
+        "Back" => lexer::Token::Back,
+        "And" => lexer::Token::And,
+        "Or" => lexer::Token::Or,
+
+        EOF => lexer::Token::EOF,
+    }
+}
