@@ -52,6 +52,7 @@ pub enum Token {
     Is,
     Was,
     Not,
+    Aint,
     Than,
     As,
     Greater,
@@ -152,6 +153,7 @@ impl fmt::Display for Token {
             Token::Is => write!(f, "is"),
             Token::Was => write!(f, "was"),
             Token::Not => write!(f, "not"),
+            Token::Aint => write!(f, "ain't"),
             Token::Than => write!(f, "than"),
             Token::As => write!(f, "as"),
             Token::Greater => write!(f, "greater"),
@@ -213,16 +215,21 @@ impl Default for TCtx {
 lazy_static! {
     static ref NEWLINE: Regex = Regex::new(r"^(\r\n|\n|\r)").unwrap();
     pub static ref NEWLINE_SEARCH: Regex = Regex::new(r"\r\n|\n|\r").unwrap();
+
     static ref LEADING_SPACE: Regex = Regex::new(r"^[\s&&[^\r\n]]+").unwrap();
-
-    static ref NUMBER: Regex = Regex::new(r"^([0-9]*\.[0-9]+|[0-9]+)").unwrap();
-    static ref STRING: Regex = Regex::new("^\"(.*?)\"").unwrap();
-    static ref COMMA: Regex = Regex::new(r"^,").unwrap();
-
     static ref COMMENT: Regex = RegexBuilder::new(r"^\(.*\)")
         .dot_matches_new_line(true)
         .build()
         .unwrap();
+
+    static ref APOS: Regex = Regex::new(r"^'").unwrap();
+
+    // This are deliberately case-sensitive
+    static ref APOS_S_START: Regex = Regex::new(r"^'s\b").unwrap();
+
+    static ref NUMBER: Regex = Regex::new(r"^([0-9]*\.[0-9]+|[0-9]+)").unwrap();
+    static ref STRING: Regex = Regex::new("^\"(.*?)\"").unwrap();
+    static ref COMMA: Regex = Regex::new(r"^,").unwrap();
 
     // FIXME: Should this more for spaces?
     static ref TAKE_IT_TO_THE_TOP: Regex = RegexBuilder::new("^take it to the top")
@@ -235,9 +242,9 @@ lazy_static! {
         .unwrap();
 
     // Spec seems to say we stick to ASCII
-    static ref WORD: Regex = Regex::new(r"^[a-zA-Z]+\b").unwrap();
-    static ref PROPER_VAR_WORD: Regex = Regex::new(r"^[A-Z][a-zA-Z]*\b").unwrap();
-    static ref COMMON_VAR: Regex = Regex::new(r"^[a-z]+\b").unwrap();
+    static ref WORD_INPUT: Regex = Regex::new(r"^[a-zA-Z']+('|\b)").unwrap();
+    static ref PROPER_VAR_WORD: Regex = Regex::new(r"^[A-Z][a-zA-Z']*('|\b)").unwrap();
+    static ref COMMON_VAR: Regex = Regex::new(r"^[a-z']+('|\b)").unwrap();
 }
 
 pub struct Tokenizer {
@@ -421,21 +428,29 @@ impl<'a> TokenStream<'a> {
             panic!("take_more() called after EOF")
         }
 
-        // Eat comments and leading whitespace
+        // Eat comments and leading whitespace and handle apostrophes
         loop {
-            let mut found = false;
+            let prev_idx = self.idx;
 
-            if let Some(end) = LEADING_SPACE.find(self.rest()).map(|m| m.end()) {
-                found = true;
+            while let Some(end) = self.find_leading_ignored(self.rest()) {
                 self.idx += end;
             }
 
-            if let Some(end) = COMMENT.find(self.rest()).map(|m| m.end()) {
-                found = true;
+            if let Some(end) = APOS_S_START.find(self.rest()).map(|m| m.end()) {
+                let action = if self.line_is_poetic_string_candidate() {
+                    LexAction::CheckKeywordOrPoeticString
+                } else {
+                    LexAction::NoAction
+                };
+
+                return self.emit_and_handle_lex_action(end, Some(Token::Is), action);
+            }
+
+            if let Some(end) = APOS.find(self.rest()).map(|m| m.end()) {
                 self.idx += end;
             }
 
-            if !found {
+            if self.idx == prev_idx {
                 break;
             }
         }
@@ -493,15 +508,24 @@ impl<'a> TokenStream<'a> {
         }
 
         // From here on we should have a word (i.e. keyword or variable)
-        let word_len = match WORD.find(self.rest()) {
-            Some(m) => m.end(),
+        let (word, word_len) = match self.find_word(self.rest(), &WORD_INPUT) {
+            Some(end) => end,
             None => return Err(LexicalError::UnexpectedInput(self.idx, self.idx)),
         };
 
         // Optionally take a token for the word; optionally specify an
         // additional action if the word alone isn't sufficient
-        let (tok, action) = self.handle_word(&self.rest()[..word_len])?;
+        let (tok, action) = self.handle_word(word)?;
 
+        self.emit_and_handle_lex_action(word_len, tok, action)
+    }
+
+    /// Parse a keyword or variable and handle any contextually-triggered
+    /// actions (e.g., poetic variables which break the normal lexing
+    /// rules)
+    fn emit_and_handle_lex_action(&mut self, word_len: usize, tok: Option<Token>, action: LexAction)
+        -> Result<Vec<(usize, Token, usize)>, LexicalError>
+    {
         let mut to_emit = vec![];
 
         if let Some(tok) = tok {
@@ -522,8 +546,14 @@ impl<'a> TokenStream<'a> {
         Ok(to_emit)
     }
 
-    fn handle_word(&self, word: &str) -> Result<(Option<Token>, LexAction), LexicalError> {
-        if let Some(token) = self.match_special_word(word) {
+    fn find_leading_ignored(&self, target: &str) -> Option<usize> {
+        LEADING_SPACE.find(target)
+            .or_else(|| COMMENT.find(target))
+            .map(|m| m.end())
+    }
+
+    fn handle_word(&self, word: String) -> Result<(Option<Token>, LexAction), LexicalError> {
+        if let Some(token) = self.match_special_word(&word) {
             if self.ctx.poetic_number_or_keyword && !token.is_keyword() {
                 return Ok((None, LexAction::TakePoeticNumber));
             }
@@ -537,12 +567,7 @@ impl<'a> TokenStream<'a> {
                 Token::Was => {
                     action = LexAction::TakePoeticNumber;
                 }
-                // FIXME: This depends on there being no productions in the
-                // parser where an is occurs on a line that does not start
-                // with a keyword except "<variable> is ..."
-                //
-                // This is not very forward compatible!
-                Token::Is if !self.line_begins_with_keyword => {
+                Token::Is if self.line_is_poetic_string_candidate() => {
                     action = LexAction::CheckKeywordOrPoeticString;
                 }
                 _ => {
@@ -555,10 +580,10 @@ impl<'a> TokenStream<'a> {
 
         if self.ctx.poetic_number_or_keyword {
             Ok((None, LexAction::TakePoeticNumber))
-        } else if COMMON_VAR.is_match(word) {
-            let tok = Token::CommonVar(word.into());
+        } else if COMMON_VAR.is_match(&word) {
+            let tok = Token::CommonVar(word);
             Ok((Some(tok), LexAction::NoAction))
-        } else if PROPER_VAR_WORD.is_match(word) {
+        } else if PROPER_VAR_WORD.is_match(&word) {
             Ok((None, LexAction::TakeProperVar))
         } else {
             Err(LexicalError::UnexpectedInput(self.idx, self.idx))
@@ -596,6 +621,7 @@ impl<'a> TokenStream<'a> {
                 Ok(Some((skip, end - skip, Token::NumberLiteral(number), None)))
             }
             LexAction::TakeProperVar => {
+                let mut normalized_var = String::new();
                 let mut var_end = 0;
 
                 for iter in 0.. {
@@ -614,20 +640,24 @@ impl<'a> TokenStream<'a> {
                     };
 
                     // Each word must also start with an uppercase
-                    let next_end = match PROPER_VAR_WORD.find(&more[skip..]) {
-                        Some(m) => skip + m.end(),
+                    let (next_word, next_end) = match self.find_word(&more[skip..], &PROPER_VAR_WORD) {
+                        Some((word, end)) => (word, skip + end),
                         None => break,
                     };
 
-                    if self.match_special_word(&more[skip..next_end]).is_some() {
+                    if self.match_special_word(&next_word).is_some() {
                         break;
                     }
+
+                    if !normalized_var.is_empty() {
+                        normalized_var += " ";
+                    }
+                    normalized_var += &next_word;
 
                     var_end += next_end;
                 }
 
-                let var = self.rest()[..var_end].to_owned();
-                Ok(Some((0, var.len(), Token::ProperVar(var), None)))
+                Ok(Some((0, var_end, Token::ProperVar(normalized_var), None)))
             }
         }
     }
@@ -652,6 +682,7 @@ impl<'a> TokenStream<'a> {
             "is" => Token::Is,
             "was" | "were" => Token::Was,
             "not" => Token::Not,
+            "aint" => Token::Aint,
 
             "as" => Token::As,
             "than" => Token::Than,
@@ -705,6 +736,30 @@ impl<'a> TokenStream<'a> {
             _ => return None,
         };
         Some(tok)
+    }
+
+    fn find_word(&self, src: &str, pattern: &Regex) -> Option<(String, usize)> {
+        pattern.find(src).map(|m| {
+            let end = m.end();
+            // Special case: leave a 's to be processed later
+            if src[..end].ends_with("'s") {
+                assert!(end > 2, "Standalone 's should be pre-processed");
+                end - 2
+            } else {
+                end
+            }
+        }).map(|end| {
+            (src[..end].replace("'", ""), end)
+        })
+    }
+
+    fn line_is_poetic_string_candidate(&self) -> bool {
+        // FIXME: This depends on there being no productions in the
+        // parser where an is occurs on a line that does not start
+        // with a keyword except "<variable> is ..."
+        //
+        // This is not very forward compatible!
+        !self.line_begins_with_keyword
     }
 
     fn compute_poetic_number(&self) -> (RockstarNumber, usize) {
@@ -1004,5 +1059,60 @@ mod test {
     fn parse_long_loop_controls() {
         assert_eq!(toks("Take it to the top")[0], (0, Token::Continue, 18));
         assert_eq!(toks("Break it down")[0], (0, Token::Break, 13));
+    }
+
+    #[test]
+    fn apos_s_at_end_of_word() {
+        let input = "Union's been on strike";
+        //           0123456789012345678901
+        //           0         1         2
+        assert_eq!(toks(input), vec![
+            (0, Token::ProperVar("Union".into()), 5),
+            (5, Token::Is, 7),
+            (8, Token::NumberLiteral(426.0), 22),
+            (22, Token::Newline, 22),
+            (22, Token::EOF, 22),
+        ]);
+    }
+
+    #[test]
+    fn apos_s_with_space_before() {
+        let input = "Union 's been on strike";
+        //           01234567890123456789012
+        //           0         1         2
+        assert_eq!(toks(input), vec![
+            (0, Token::ProperVar("Union".into()), 5),
+            (6, Token::Is, 8),
+            (9, Token::NumberLiteral(426.0), 23),
+            (23, Token::Newline, 23),
+            (23, Token::EOF, 23),
+        ]);
+    }
+
+    #[test]
+    fn parse_apostrophe() {
+        let input = "a '''' wakin'up Sleepin' I''n";
+        //           012345678901234567890123456789
+        //           0         1         2
+        assert_eq!(toks(input), vec![
+            (0, Token::CommonPrep("a".into()), 1),
+            (7, Token::CommonVar("wakinup".into()), 15),
+            (16, Token::ProperVar("Sleepin In".into()), 29),
+            (29, Token::Newline, 29),
+            (29, Token::EOF, 29),
+        ]);
+    }
+
+    #[test]
+    fn parse_aint() {
+        let input = "It ain't nothing";
+        //           0123456789012345
+        assert_eq!(toks(input), vec![
+            (0, Token::Pronoun("It".into()), 2),
+            (3, Token::Aint, 8),
+            (9, Token::NullLiteral, 16),
+            (16, Token::Newline, 16),
+            (16, Token::EOF, 16),
+        ]);
     }
 }

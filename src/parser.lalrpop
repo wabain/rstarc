@@ -92,6 +92,8 @@ Comparison: ast::Comparison = {
         ast::Comparison(a, ast::Comparator::Is, b),
     <a:FuncCallExpr> "Is" "Not" <b:Expr> =>
         ast::Comparison(a, ast::Comparator::IsNot, b),
+    <a:FuncCallExpr> "Ain't" <b:Expr> =>
+        ast::Comparison(a, ast::Comparator::IsNot, b),
     <a:FuncCallExpr> "Is" "Greater" "Than" <b:Expr> =>
         ast::Comparison(a, ast::Comparator::IsGreaterThan, b),
     <a:FuncCallExpr> "Is" "Less" "Than" <b:Expr> =>
@@ -151,6 +153,7 @@ extern {
         "Is" => lexer::Token::Is,
         "Was" => lexer::Token::Was,
         "Not" => lexer::Token::Not,
+        "Ain't" => lexer::Token::Aint,
         "Than" => lexer::Token::Than,
         "As" => lexer::Token::As,
         "Greater" => lexer::Token::Greater,
