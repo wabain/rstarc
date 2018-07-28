@@ -7,6 +7,7 @@ mod ast;
 mod lexer;
 mod parser;
 mod pretty_print;
+mod source_loc;
 
 use std::io;
 use std::fs::File;
@@ -109,13 +110,23 @@ fn compile(tokenizer: &lexer::Tokenizer, output: &str) -> io::Result<Vec<ast::St
 }
 
 fn eprint_location(tokenizer: &lexer::Tokenizer, start: usize, end: usize) {
-    let (line, lineno, t_start, t_end) = tokenizer.get_location(start, end);
-    let line_formatted = format!("{}:  ", lineno);
-    eprintln!("{}{}", line_formatted, line);
-    for _ in 0..(line_formatted.len() + t_start) {
+    let span = tokenizer.get_line_span(start, end);
+
+    let line_meta = format!("{}:  ", span.lineno);
+
+    // FIXME: Going by number of chars does't work for combining diacritics,
+    // double-length glyphs, etc.
+    eprintln!("{}{}", line_meta, span.line);
+    for _ in 0..(line_meta.len() + span.leading_chars()) {
         eprint!(" ");
     }
-    for _ in 0..(t_end - t_start) {
+
+    let print_range = match span.spanned_chars() {
+        0 => 1,
+        n => n,
+    };
+
+    for _ in 0..print_range {
         eprint!("^");
     }
     eprintln!("");

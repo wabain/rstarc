@@ -3,6 +3,8 @@ use std::fmt;
 
 use regex::{RegexBuilder, Regex};
 
+use source_loc::{SourceLocator, IntraLineSpan};
+
 #[derive(Debug, PartialEq)]
 pub enum LexicalError {
     UnexpectedInput(usize, usize),
@@ -193,7 +195,7 @@ impl Default for TCtx {
 
 lazy_static! {
     static ref NEWLINE: Regex = Regex::new(r"^(\r\n|\n|\r)").unwrap();
-    static ref NEWLINE_SEARCH: Regex = Regex::new(r"\r\n|\n|\r").unwrap();
+    pub static ref NEWLINE_SEARCH: Regex = Regex::new(r"\r\n|\n|\r").unwrap();
     static ref LEADING_SPACE: Regex = Regex::new(r"^[\s&&[^\r\n]]+").unwrap();
 
     static ref NUMBER: Regex = Regex::new(r"^([0-9]*\.[0-9]+|[0-9]+)").unwrap();
@@ -218,11 +220,13 @@ lazy_static! {
 
 pub struct Tokenizer {
     content: String,
+    source_locator: SourceLocator,
 }
 
 impl Tokenizer {
     pub fn new(content: String) -> Self {
-        Tokenizer { content }
+        let source_locator = SourceLocator::new(&content);
+        Tokenizer { content, source_locator }
     }
 
     pub fn from_file<R: Read>(source: &mut R) -> io::Result<Self> {
@@ -231,22 +235,8 @@ impl Tokenizer {
         Ok(Self::new(content))
     }
 
-    pub fn get_location(&self, start: usize, end: usize) -> (&str, usize, usize, usize) {
-        let mut line_start = 0;
-        let mut lineno = 1;
-
-        for (i, b) in self.content[..start].bytes().enumerate() {
-            if b == b'\n' {
-                line_start = i + 1;
-                lineno += 1;
-            }
-        }
-
-        let line_end = self.content[end..]
-            .find('\n')
-            .map_or(self.content.len(), |i| i + end);
-
-        (&self.content[line_start..line_end], lineno, start - line_start, end - line_start)
+    pub fn get_line_span(&self, start: usize, end: usize) -> IntraLineSpan {
+        self.source_locator.get_line_span(&self.content, start, end)
     }
 
     pub fn tokenize(&self) -> TokenIterator {
