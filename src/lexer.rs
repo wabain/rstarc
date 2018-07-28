@@ -25,6 +25,9 @@ impl fmt::Display for LexicalError {
 
 // FIXME: Spec calls for DEC64
 pub type RockstarNumber = f64;
+// Spec calls for UTF-16 but I don't know if the difference
+// is actually visible
+pub type RockstarString = String;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token {
@@ -35,7 +38,7 @@ pub enum Token {
     CommonPrep(String),
 
     // Types
-    StringLiteral(String),
+    StringLiteral(RockstarString),
     BooleanLiteral(bool),
     NumberLiteral(RockstarNumber),
     MysteriousLiteral,
@@ -70,6 +73,7 @@ pub enum Token {
     Say,
     Says,
     If,
+    Else,
     While,
     Until,
     Continue,
@@ -111,6 +115,15 @@ impl Token {
 
             // Actual keywords
             _ => true,
+        }
+    }
+
+    fn opens_block(&self) -> bool {
+        use self::Token::*;
+
+        match *self {
+            If | Else | While | Until | Takes => true,
+            _ => false,
         }
     }
 }
@@ -160,6 +173,7 @@ impl fmt::Display for Token {
             Token::Say => write!(f, "say"),
             Token::Says => write!(f, "says"),
             Token::If => write!(f, "if"),
+            Token::Else => write!(f, "else"),
             Token::While => write!(f, "while"),
             Token::Until => write!(f, "until"),
             Token::Continue => write!(f, "continue"),
@@ -322,6 +336,7 @@ struct TokenStream<'a> {
     idx: usize,
     ctx: TCtx,
     line_begins_with_keyword: bool,
+    open_blocks: usize,
 }
 
 impl<'a> TokenStream<'a> {
@@ -333,6 +348,7 @@ impl<'a> TokenStream<'a> {
             idx: 0,
             ctx,
             line_begins_with_keyword: false,
+            open_blocks: 0,
         }
     }
 
@@ -343,6 +359,12 @@ impl<'a> TokenStream<'a> {
 
         if self.ctx.prev_was_eol || self.ctx.at_start {
             self.line_begins_with_keyword = tok.is_keyword();
+        }
+
+        if tok.opens_block() {
+            self.open_blocks += 1;
+        } else if self.ctx.prev_was_eol && tok == Token::Newline && self.open_blocks > 0 {
+            self.open_blocks -= 1;
         }
 
         self.ctx = new_ctx;
@@ -358,6 +380,10 @@ impl<'a> TokenStream<'a> {
         let mut toks = vec![];
 
         if !self.ctx.prev_was_eol {
+            toks.push((self.idx, Token::Newline, self.idx));
+        }
+
+        for _ in 0..self.open_blocks {
             toks.push((self.idx, Token::Newline, self.idx));
         }
 
@@ -589,12 +615,14 @@ impl<'a> TokenStream<'a> {
             "a" | "an" | "the" | "my" | "your" => {
                 Token::CommonPrep(word.into())
             }
-            "it" | "he" | "she" | "him" | "her" | "them" | "they" => {
+            "it" | "he" | "she" | "him" | "her" | "they" | "them" |
+            "ze" | "hir" | "zie" | "zir" | "xe" | "xem" | "ve" | "ver" => {
                 Token::Pronoun(word.into())
             }
-
             "mysterious" => Token::MysteriousLiteral,
-            "null" | "nothing" | "nowhere" | "nobody" => Token::NullLiteral,
+            "null" | "nothing" | "nowhere" | "nobody" | "empty" | "gone" => {
+                Token::NullLiteral
+            }
 
             "true" | "right" | "yes" | "ok" => Token::BooleanLiteral(true),
             "false" | "wrong" | "no" | "lies" => Token::BooleanLiteral(false),
@@ -624,7 +652,7 @@ impl<'a> TokenStream<'a> {
             "plus" | "with" => Token::Plus,
             "minus" | "without" => Token::Minus,
             "times" | "of" => Token::Times,
-            "over" | "by" => Token::Over,
+            "over" => Token::Over,
 
             "listen" => Token::Listen,
             "to" => Token::To,
@@ -633,6 +661,7 @@ impl<'a> TokenStream<'a> {
             "says" => Token::Says,
 
             "if" => Token::If,
+            "else" => Token::Else,
             "while" => Token::While,
             "until" => Token::Until,
 
@@ -781,6 +810,19 @@ mod test {
     }
 
     #[test]
+    fn insert_block_terminations_at_eof() {
+        let input = "while true is true\nSay \"okay\"";
+        //           0123456789012345678 90123 45678 9
+        let t = toks(input);
+        assert_eq!(&t[t.len() - 4..], &[
+            (23, Token::StringLiteral("okay".into()), 29),
+            (29, Token::Newline, 29),
+            (29, Token::Newline, 29),
+            (29, Token::EOF, 29),
+        ]);
+    }
+
+    #[test]
     fn drop_commas_before_eol() {
         let input = "its very,,,\n,,\ninteresting, indeed,";
         //           012345678901 234 56789012345678901234
@@ -812,15 +854,13 @@ mod test {
         let input = "If Johnny B Goode Right";
         //           01234567890123456789012
 
-        let expected = vec![
+        let expected = &[
             (0, Token::If, 2),
             (3, Token::ProperVar("Johnny B Goode".into()), 17),
             (18, Token::BooleanLiteral(true), 23),
-            (23, Token::Newline, 23),
-            (23, Token::EOF, 23),
         ];
 
-        assert_eq!(toks(input), expected);
+        assert_eq!(&toks(input)[..3], expected);
     }
 
     #[test]

@@ -11,7 +11,7 @@ pub enum Statement {
     Break,
     Return(Expr),
 
-    Condition(Conditional, Vec<Statement>),
+    Condition(Conditional, Vec<Statement>, Vec<Statement>),
     While(Conditional, Vec<Statement>),
     Until(Conditional, Vec<Statement>),
     FuncDef(Variable, Vec<Variable>, Vec<Statement>),

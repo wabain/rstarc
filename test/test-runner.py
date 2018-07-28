@@ -57,7 +57,7 @@ def get_files(basedir):
     files = []
     for (dirpath, _, filenames) in os.walk(os.path.join(basedir, 'test/programs')):
         for name in filenames:
-            if name.endswith('.star'):
+            if name.endswith('.rock'):
                 files.append(os.path.join(dirpath, name))
     return files
 

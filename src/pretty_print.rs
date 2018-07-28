@@ -56,9 +56,14 @@ impl PrettyPrint for Statement {
             Statement::Return(ref e) => {
                 pp!(out, "Give back ", pp e, "\n")
             }
-            Statement::Condition(ref cond, ref statements) => {
+            Statement::Condition(ref cond, ref statements, ref else_statements) => {
                 pp!(out, "If ", pp cond, "\n");
                 pp_block(out, statements)?;
+
+                if !else_statements.is_empty() {
+                    pp!(out, "Else\n");
+                    pp_block(out, else_statements)?;
+                }
             }
             Statement::While(ref cond, ref statements) => {
                 pp!(out, "While ", pp cond, "\n");

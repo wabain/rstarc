@@ -4,7 +4,8 @@ use ast;
 grammar;
 
 pub Program: Vec<ast::Statement> = {
-    <t:TermStatement*> EOF => t,
+    "\n"* <t:(TermStatement "\n"*)*> EOF =>
+        t.into_iter().map(|(s, _)| s).collect::<Vec<_>>(),
 }
 
 Statement: ast::Statement = {
@@ -22,7 +23,11 @@ Statement: ast::Statement = {
     "Break" => ast::Statement::Break,
     "Give" "Back" <e:Expr> => ast::Statement::Return(e),
 
-    "If" <c:Conditional> "\n" <b:Block> => ast::Statement::Condition(c, b),
+    "If" <c:Conditional> "\n" <b:Block> <els:("Else" "\n" Block)?> => {
+        let else_block = els.map_or_else(|| Vec::new(), |(_, _, b2)| b2);
+        ast::Statement::Condition(c, b, else_block)
+    },
+
     "While" <c:Conditional> "\n" <b:Block> => ast::Statement::While(c, b),
     "Until" <c:Conditional> "\n" <b:Block> => ast::Statement::Until(c, b),
     <v:Variable> "Takes" <a:VariableList> "\n" <b:Block> =>
@@ -166,6 +171,7 @@ extern {
         "To" => lexer::Token::To,
         "Say" => lexer::Token::Say,
         "If" => lexer::Token::If,
+        "Else" => lexer::Token::Else,
         "While" => lexer::Token::While,
         "Until" => lexer::Token::Until,
         "Continue" => lexer::Token::Continue,
