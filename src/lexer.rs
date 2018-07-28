@@ -219,6 +219,11 @@ lazy_static! {
     static ref STRING: Regex = Regex::new("^\"(.*?)\"").unwrap();
     static ref COMMA: Regex = Regex::new(r"^,").unwrap();
 
+    static ref COMMENT: Regex = RegexBuilder::new(r"^\(.*\)")
+        .dot_matches_new_line(true)
+        .build()
+        .unwrap();
+
     // FIXME: Should this more for spaces?
     static ref TAKE_IT_TO_THE_TOP: Regex = RegexBuilder::new("^take it to the top")
         .case_insensitive(true)
@@ -416,9 +421,23 @@ impl<'a> TokenStream<'a> {
             panic!("take_more() called after EOF")
         }
 
-        // Eat any leading whitespace
-        if let Some(end) = LEADING_SPACE.find(self.rest()).map(|m| m.end()) {
-            self.idx += end;
+        // Eat comments and leading whitespace
+        loop {
+            let mut found = false;
+
+            if let Some(end) = LEADING_SPACE.find(self.rest()).map(|m| m.end()) {
+                found = true;
+                self.idx += end;
+            }
+
+            if let Some(end) = COMMENT.find(self.rest()).map(|m| m.end()) {
+                found = true;
+                self.idx += end;
+            }
+
+            if !found {
+                break;
+            }
         }
 
         // Handle EOF
@@ -552,7 +571,10 @@ impl<'a> TokenStream<'a> {
         match action {
             LexAction::NoAction | LexAction::CheckKeywordOrPoeticString => Ok(None),
             LexAction::TakePoeticString => {
-                // Spec says we need one literal space here
+                // Spec says we need one literal space and then the string goes to EOL
+                //
+                // This implementation assumes that comments aren't allowed in poetic strings
+
                 if self.next_char() != Some(' ') {
                     return Err(LexicalError::UnexpectedInput(self.idx, self.idx + 1))
                 }
@@ -686,6 +708,10 @@ impl<'a> TokenStream<'a> {
     }
 
     fn compute_poetic_number(&self) -> (RockstarNumber, usize) {
+        // FIXME: This assumes comments aren't allowed in the
+        // poetic number clause, which seems like a reasonable thing
+        // to want to do.
+
         let (content, len) = self.capture_to_end_of_line();
 
         let mut counts = vec![];
@@ -837,6 +863,23 @@ mod test {
             (28, Token::CommonVar("indeed".into()), 34),
             (35, Token::Newline, 35),
             (35, Token::EOF, 35),
+        ]);
+    }
+
+    #[test]
+    fn handle_comments() {
+        let input = "If (and this is\nimportant to know) X is true";
+        //           0123456789012345 6789012345678901234567890123
+        //           0         1          2         3         4
+
+        assert_eq!(toks(input), &[
+            (0, Token::If, 2),
+            (35, Token::ProperVar("X".into()), 36),
+            (37, Token::Is, 39),
+            (40, Token::BooleanLiteral(true), 44),
+            (44, Token::Newline, 44),
+            (44, Token::Newline, 44),
+            (44, Token::EOF, 44),
         ]);
     }
 
