@@ -15,23 +15,19 @@ fn main() {
     let matches = clap::App::new("rstarc")
         .about("A Rockstar compiler")
         .arg_from_usage("-o --output=[file] 'The output file'")
-        .arg_from_usage("-f --format=[pretty] 'The output format'")
+        .arg_from_usage("-f --format=[pretty|tokens] 'The output format'")
         .arg_from_usage("<source> 'Source file'")  // TODO allow multiple?
         .get_matches();
 
     let source = matches.value_of("source").expect("arg source");
     let output = matches.value_of("output").unwrap_or("a.out");
+    let format = matches.value_of("format");
 
     // FIXME: Error handling
-    let tree = compile(source, output).expect("Compilation failed");
-
-    match matches.value_of("format") {
-        Some("pretty") => pretty_print::pretty_print_program(io::stdout(), &tree).unwrap(),
-        _ => { /* TODO */ }
-    }
+    run(source, output, format).expect("Compilation failed");
 }
 
-fn compile(source: &str, output: &str) -> io::Result<Vec<ast::Statement>> {
+fn run(source: &str, output: &str, format: Option<&str>) -> io::Result<()> {
     let mut tokenizer = {
         let mut src_buf = File::open(source)?;
         lexer::Tokenizer::from_file(&mut src_buf)?
@@ -39,6 +35,35 @@ fn compile(source: &str, output: &str) -> io::Result<Vec<ast::Statement>> {
 
     let tokens = tokenizer.tokenize();
 
+    if format == Some("tokens") {
+        output_tokens(&tokenizer, tokens, output);
+        return Ok(());
+    }
+
+    let tree = compile(&tokenizer, tokens, output).expect("Compilation failed");
+
+    match format {
+        Some("pretty") => pretty_print::pretty_print_program(io::stdout(), &tree)?,
+        _ => { /* TODO */ }
+    }
+
+    Ok(())
+}
+
+fn output_tokens(_tokenizer: &lexer::Tokenizer,
+                 tokens: Vec<(usize, lexer::Token, usize)>,
+                 output: &str)
+{
+    for (start, ref token, end) in &tokens {
+        println!("{}..{} {}", start, end, token);
+    }
+}
+
+fn compile(tokenizer: &lexer::Tokenizer,
+           tokens: Vec<(usize, lexer::Token, usize)>,
+           output: &str)
+           -> io::Result<Vec<ast::Statement>>
+{
     match parser::ProgramParser::new().parse(tokens) {
         Ok(tree) => {
             Ok(tree)
@@ -50,7 +75,7 @@ fn compile(source: &str, output: &str) -> io::Result<Vec<ast::Statement>> {
                 }
                 lalrpop_util::ParseError::UnrecognizedToken { ref token, ref expected } => {
                     let tok_desc = if let Some((_, ref tok, _)) = *token {
-                        format!("{:?}", tok)
+                        format!("{}", tok)
                     } else {
                         "<none>".into()
                     };

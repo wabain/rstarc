@@ -17,7 +17,7 @@ impl fmt::Display for LexicalError {
 // FIXME: Spec calls for DEC64
 pub type RockstarNumber = f64;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Token {
     // Variables and friends
     ProperVar(String),
@@ -133,7 +133,7 @@ impl fmt::Display for Token {
             }
 
             Token::BooleanLiteral(b) => write!(f, "{}", b),
-            Token::NumberLiteral(_) => unimplemented!(),
+            Token::NumberLiteral(n) => write!(f, "{}", n),
             Token::MysteriousLiteral => write!(f, "mysterious"),
             Token::NullLiteral => write!(f, "null"),
 
@@ -182,13 +182,6 @@ impl fmt::Display for Token {
     }
 }
 
-fn string_starts<F>(word: &str, pred: F) -> bool where F: Fn(char) -> bool {
-    match word.chars().next() {
-        Some(c) => pred(c),
-        None => false,
-    }
-}
-
 struct TCtx {
     poetic_number_or_keyword: bool,
     prev_was_eol: bool,
@@ -205,6 +198,20 @@ impl Default for TCtx {
             at_start: false,
         }
     }
+}
+
+lazy_static! {
+    static ref NEWLINE: Regex = Regex::new(r"^(\r\n|\n|\r)").unwrap();
+    static ref NEWLINE_SEARCH: Regex = Regex::new(r"\r\n|\n|\r").unwrap();
+    static ref LEADING_SPACE: Regex = Regex::new(r"^[\s&&[^\r\n]]+").unwrap();
+
+    static ref STRING: Regex = Regex::new("^\"(.*?)\"").unwrap();
+    static ref COMMA: Regex = Regex::new(r"^,").unwrap();
+
+    // Spec seems to say we stick to ASCII
+    static ref WORD: Regex = Regex::new(r"^[a-zA-Z]+\b").unwrap();
+    static ref PROPER_VAR_WORD: Regex = Regex::new(r"^[A-Z][a-zA-Z]*\b").unwrap();
+    static ref COMMON_VAR: Regex = Regex::new(r"^[a-z]+\b").unwrap();
 }
 
 pub struct Tokenizer {
@@ -304,139 +311,196 @@ impl Tokenizer {
         !self.ctx.eof_reached
     }
 
+    fn rest(&self) -> &str {
+        &self.content[self.idx..]
+    }
+
+    fn next_char(&self) -> Option<char> {
+        self.rest().chars().next()
+    }
+
     fn take_more(&mut self) -> Vec<(usize, Token, usize)> {
+        // General guidelines: any mutation of the tokenization should
+        // occur from this function or the emit functions.
+
         if !self.has_more() {
             panic!("take_more() called after EOF")
         }
 
-        let mut extent;
-
-        loop {
-            extent = self.content[self.idx..].find(|c: char| {
-                !(('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z'))
-            });
-
-            if extent != Some(0) {
-                break;
-            }
-
-            let non_alpha = self.content[self.idx..].chars().next().expect("non-alpha");
-
-            if non_alpha == '"' {
-                let start = self.idx + 1;
-
-                if let Some(n) = self.content[start..].find('"') {
-                    let tok = {
-                        let out = &self.content[start..start + n];
-                        Token::StringLiteral(out.into())
-                    };
-                    // length is n + delimiters
-                    return vec![self.emit(n + 2, tok, None)];
-                } else {
-                    panic!("Unmatched string opening from {}", self.idx);
-                }
-            }
-
-            let single_char_tok = match non_alpha {
-                '\n' => Some(Token::Newline),
-                ',' => Some(Token::Comma),
-                _ if non_alpha.is_whitespace() => None,
-                _ => panic!("Unexpected character '{}'", non_alpha),
-            };
-
-            if let Some(tok) = single_char_tok {
-                let mut ctx = TCtx::default();
-                if tok == Token::Newline {
-                    ctx.prev_was_eol = true;
-                }
-                return vec![self.emit(1, tok, Some(ctx))];
-            }
-
-            self.idx += 1;
+        // Eat any leading whitespace
+        if let Some(end) = LEADING_SPACE.find(self.rest()).map(|m| m.end()) {
+            self.idx += end;
         }
 
-        let word_len = match extent {
-            Some(n) => n,
-            None => {
-                if self.idx == self.content.len() {
-                    return self.emit_eof();
-                }
-                self.idx - (self.content.len() - 1)
-            }
+        // Handle EOF
+        if self.rest().is_empty() {
+            return self.emit_eof();
+        }
+
+        // Handle newline
+        if let Some(end) = NEWLINE.find(self.rest()).map(|m| m.end()) {
+            let mut ctx = TCtx::default();
+            ctx.prev_was_eol = true;
+
+            return vec![
+                self.emit(end, Token::Newline, Some(ctx))
+            ];
+        }
+
+        // Handle string literal
+        if let Some((len, s)) = STRING.captures(self.rest()).map(|c| (c[0].len(), c[1].to_owned())) {
+            let tok = Token::StringLiteral(s);
+            return vec![
+                self.emit(len, tok, None)
+            ];
+        }
+
+        // Handle comma
+        if let Some(end) = COMMA.find(self.rest()).map(|m| m.end()) {
+            return vec![
+                self.emit(end, Token::Comma, None)
+            ];
+        }
+
+        // From here on we should have a word (i.e. keyword or variable)
+        let word_len = match WORD.find(self.rest()) {
+            Some(m) => m.end(),
+            // FIXME: Should return an error here
+            None => panic!("Unexpected input"),
         };
 
-        let mut ctx = TCtx::default();
-        let mut take_poetic_string = false;
-        let mut take_poetic_number = false;
-
-        let tok =
-            self.prepare_keyword(word_len,
-                                 &mut ctx,
-                                 &mut take_poetic_string,
-                                 &mut take_poetic_number);
+        // Optionally take a token for the word; optionally specify an
+        // additional action if the word alone isn't sufficient
+        let (tok, action) = self.handle_word(&self.rest()[..word_len]);
 
         let mut to_emit = vec![];
 
         if let Some(tok) = tok {
+            let mut ctx = TCtx::default();
+
+            ctx.poetic_number_or_keyword =
+                action == LexAction::CheckKeywordOrPoeticString;
+
             to_emit.push(self.emit(word_len, tok, Some(ctx)));
         }
 
-        if take_poetic_string {
-            unimplemented!("poetic string");
-        }
-
-        if take_poetic_number {
-            unimplemented!("poetic number");
+        // Dispatch lexing actions which generate a further token
+        if let Some((skip, len, tok, ctx)) = self.handle_action(action) {
+            self.idx += skip;
+            to_emit.push(self.emit(len, tok, ctx));
         }
 
         to_emit
     }
 
-    fn prepare_keyword(&self,
-                       word_len: usize,
-                       ctx: &mut TCtx,
-                       take_poetic_string: &mut bool,
-                       take_poetic_number: &mut bool)
-        -> Option<Token>
-    {
-        let out = &self.content[self.idx..self.idx + word_len];
+    fn handle_word(&self, word: &str) -> (Option<Token>, LexAction) {
+        if let Some(token) = self.match_special_word(word) {
+            if self.ctx.poetic_number_or_keyword && !token.is_keyword() {
+                return (None, LexAction::TakePoeticNumber);
+            }
 
-        if let Some(keyword) = self.match_keyword(out) {
-            if self.ctx.poetic_number_or_keyword {
-                // XXX: Need to make terminology better
-                if !keyword.is_keyword() {
-                    *take_poetic_number = true;
-                    return None;
+            let action;
+
+            match token {
+                Token::Says => {
+                    action = LexAction::TakePoeticString;
+                }
+                Token::Was => {
+                    action = LexAction::TakePoeticNumber;
+                }
+                // FIXME: This depends on there being no productions in the
+                // parser where an is occurs on a line that does not start
+                // with a keyword except "<variable> is ..."
+                //
+                // This is not very forward compatible!
+                Token::Is if !self.line_begins_with_keyword => {
+                    action = LexAction::CheckKeywordOrPoeticString;
+                }
+                _ => {
+                    action = LexAction::NoAction;
                 }
             }
 
-            match keyword {
-                Token::Says => { *take_poetic_string = true }
-                Token::Was => { *take_poetic_number = true }
-                Token::Is => {
-                    ctx.poetic_number_or_keyword = !self.line_begins_with_keyword;
-                }
-                _ => {}
-            }
-
-            return Some(keyword);
+            return (Some(token), action);
         }
 
         if self.ctx.poetic_number_or_keyword {
-            *take_poetic_number = true;
-            return None;
-        }
-
-        if string_starts(out, char::is_lowercase) {
-            // FIXME: Must be all lower case
-            Some(Token::CommonVar(out.into()))
+            (None, LexAction::TakePoeticNumber)
+        } else if COMMON_VAR.is_match(word) {
+            let tok = Token::CommonVar(word.into());
+            (Some(tok), LexAction::NoAction)
+        } else if PROPER_VAR_WORD.is_match(word) {
+            (None, LexAction::TakeProperVar)
         } else {
-            // FIXME: This isn't right
-            Some(Token::ProperVar(out.into()))
+            // FIXME
+            panic!("Unexpected input {}", word)
         }
     }
 
-    fn match_keyword(&self, word: &str) -> Option<Token> {
+    fn handle_action(&self, action: LexAction) -> Option<(usize, usize, Token, Option<TCtx>)> {
+        match action {
+            LexAction::NoAction | LexAction::CheckKeywordOrPoeticString => None,
+            LexAction::TakePoeticString => {
+                // Spec says we need one literal space here
+                // FIXME: Should return error
+                if self.next_char() != Some(' ') {
+                    panic!("Unexpected input");
+                }
+
+                let skip = 1;
+
+                let (end, tok) = {
+                    let (content, end) = self.capture_to_end_of_line_from(skip);
+                    let tok = Token::StringLiteral(content.into());
+                    (end, tok)
+                };
+
+                Some((skip, end - skip, tok, None))
+            }
+            LexAction::TakePoeticNumber => {
+                let (number, end) = self.compute_poetic_number();
+                let skip = LEADING_SPACE.find(self.rest()).map_or(0, |m| m.end());
+                assert!(skip < end);
+                Some((skip, end - skip, Token::NumberLiteral(number), None))
+            }
+            LexAction::TakeProperVar => {
+                let mut var_end = 0;
+
+                for iter in 0.. {
+                    let more = &self.rest()[var_end..];
+
+                    // The spec specifies exactly one space between words in a
+                    // common variable
+                    if iter > 0 && more.chars().next() != Some(' ') {
+                        break;
+                    }
+
+                    let skip = if iter == 0 {
+                        0
+                    } else {
+                        1
+                    };
+
+                    // Each word must also start with an uppercase
+                    let next_end = match PROPER_VAR_WORD.find(&more[skip..]) {
+                        Some(m) => skip + m.end(),
+                        None => break,
+                    };
+
+                    if self.match_special_word(&more[skip..next_end]).is_some() {
+                        break;
+                    }
+
+                    var_end += next_end;
+                }
+
+                let var = self.rest()[..var_end].to_owned();
+                Some((0, var.len(), Token::ProperVar(var), None))
+            }
+        }
+    }
+
+    fn match_special_word(&self, word: &str) -> Option<Token> {
         let tok = match word.to_lowercase().as_str() {
             "a" | "an" | "the" | "my" | "your" => {
                 Token::CommonPrep(word.into())
@@ -507,6 +571,74 @@ impl Tokenizer {
         };
         Some(tok)
     }
+
+    fn compute_poetic_number(&self) -> (RockstarNumber, usize) {
+        let (content, len) = self.capture_to_end_of_line();
+
+        let mut counts = vec![];
+        let mut current_count = 0;
+        let mut significand = None;
+
+        for c in content.chars() {
+            if c.is_ascii() && c.is_alphabetic() {
+                current_count += 1;
+                continue;
+            }
+
+            if c.is_ascii_whitespace() && current_count > 0 {
+                counts.push(current_count % 10);
+                current_count = 0;
+            }
+
+            if significand.is_none() && c == '.' {
+                significand = Some(counts.len());
+            }
+        }
+
+        if current_count > 0 {
+            counts.push(current_count);
+        }
+
+        // Very theoretical, but...
+        assert!(counts.len() <= i32::max_value() as usize);
+
+        let significand = significand.unwrap_or(counts.len()) as i32;
+        let mut number: RockstarNumber = 0.0;
+
+        for (i, n) in counts.into_iter().enumerate() {
+            let place = significand - (i as i32);
+            number += (n as RockstarNumber) * (10.0 as RockstarNumber).powi(place);
+        }
+
+        (number, len)
+    }
+
+    fn capture_to_end_of_line(&self) -> (&str, usize) {
+        self.capture_to_end_of_line_from(0)
+    }
+
+    fn capture_to_end_of_line_from(&self, idx: usize) -> (&str, usize) {
+        let slice = &self.rest()[idx..];
+
+        match NEWLINE_SEARCH.find(slice) {
+            Some(m) => {
+                let newline_start = m.start();
+                (&slice[..newline_start], idx + newline_start)
+            }
+            None => {
+                (slice, idx + slice.len())
+            }
+        }
+    }
+}
+
+#[derive(PartialEq)]
+enum LexAction {
+    NoAction,
+    TakePoeticNumber,
+    TakePoeticString,
+    TakeProperVar,
+    CheckKeywordOrPoeticString,
 }
 
 /// Hack: Drop commas before EOL (can't be handled in parsing without ambiguity)
@@ -523,5 +655,127 @@ fn drop_trailing_commas(toks: &mut Vec<(usize, Token, usize)>) {
             }
         }
         prev_was_comma = is_comma;
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{Token, Tokenizer};
+
+    fn toks<S>(input: S) -> Vec<(usize, Token, usize)>
+        where S: Into<String>
+    {
+        let mut tokenizer = Tokenizer::new(input.into());
+        tokenizer.tokenize()
+    }
+
+    macro_rules! extend_vec {
+        ($vec:expr, $more:expr) => (
+            $vec.clone().into_iter().chain($more).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn tokenize_newlines() {
+        let input = " \n \r \r\n ";
+        //           01 23 45 6 7
+
+        let expected = vec![
+            (1, Token::Newline, 2),
+            (3, Token::Newline, 4),
+            (5, Token::Newline, 7),
+            (8, Token::EOF, 8),
+        ];
+
+        assert_eq!(toks(input), expected);
+    }
+
+    #[test]
+    fn insert_final_newline() {
+        let input = "abc\ndef";
+        //           0123 456
+
+        let expected = vec![
+            (0, Token::CommonVar("abc".into()), 3),
+            (3, Token::Newline, 4),
+            (4, Token::CommonVar("def".into()), 7),
+            (7, Token::Newline, 7),
+            (7, Token::EOF, 7),
+        ];
+
+        assert_eq!(toks(input), expected);
+    }
+
+    #[test]
+    fn parse_proper_var() {
+        let input = "If Johnny B Goode Right";
+        //           01234567890123456789012
+
+        let expected = vec![
+            (0, Token::If, 2),
+            (3, Token::ProperVar("Johnny B Goode".into()), 17),
+            (18, Token::BooleanLiteral(true), 23),
+            (23, Token::Newline, 23),
+            (23, Token::EOF, 23),
+        ];
+
+        assert_eq!(toks(input), expected);
+    }
+
+    #[test]
+    fn parse_poetic_string() {
+        let input = "Johnny says  忠犬ハチ公,,";
+        //           0123456789012..
+
+        let end = input.len();
+
+        let base = vec![
+            (0, Token::ProperVar("Johnny".into()), 6),
+            (7, Token::Says, 11),
+            (12, Token::StringLiteral(" 忠犬ハチ公,,".into()), end),
+        ];
+
+        let expected = extend_vec!(base, vec![
+            (end, Token::Newline, end),
+            (end, Token::EOF, end),
+        ]);
+
+        assert_eq!(toks(input), expected, "no EOL");
+
+        let expected = extend_vec!(base, vec![
+            (end, Token::Newline, end + 1),
+            (end + 1, Token::EOF, end + 1),
+        ]);
+
+        assert_eq!(toks(input.to_owned() + "\n"), expected, "with EOL");
+    }
+
+    #[test]
+    fn parse_poetic_number() {
+        let input = "My dreams were     ice. A life unfulfilled; \
+                     wakin' everybody up, taking booze and pills";
+
+        let end = input.len();
+
+        let base = vec![
+            (0, Token::CommonPrep("My".into()), 2),
+            (3, Token::CommonVar("dreams".into()), 9),
+            (10, Token::Was, 14),
+            (19, Token::NumberLiteral(3.1415926535), end),
+        ];
+
+        let expected = extend_vec!(base, vec![
+            (end, Token::Newline, end),
+            (end, Token::EOF, end),
+        ]);
+
+        assert_eq!(toks(input), expected, "no EOL");
+
+        let expected = extend_vec!(base, vec![
+            (end, Token::Newline, end + 1),
+            (end + 1, Token::EOF, end + 1),
+        ]);
+
+        assert_eq!(toks(input.to_owned() + "\n"), expected, "with EOL");
     }
 }

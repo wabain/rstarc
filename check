@@ -1,0 +1,24 @@
+#!/bin/bash
+
+set -euo pipefail
+
+if ! hash pipenv &> /dev/null; then
+    &>2 echo "The pipenv utility must be installed to run the tests"
+    &>2 echo "See https://docs.pipenv.org/install/"
+    exit 1
+fi
+
+if [[ "$(basename "$0")" == "$0" ]]; then
+    cd "$(dirname "$(which "$0")")"
+else
+    cd "$(dirname "$0")"
+fi
+
+if pipenv --venv &> /dev/null; then
+    # Already installed
+    opt=
+else
+    opt=--three
+fi
+
+exec pipenv $opt run test/test-runner.py "$@"
