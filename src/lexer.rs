@@ -741,7 +741,7 @@ impl<'a> TokenStream<'a> {
         // Very theoretical, but...
         assert!(counts.len() <= i32::max_value() as usize);
 
-        let significand = significand.unwrap_or(counts.len()) as i32;
+        let significand = significand.unwrap_or(counts.len() - 1) as i32;
         let mut number: RockstarNumber = 0.0;
 
         for (i, n) in counts.into_iter().enumerate() {
@@ -935,7 +935,37 @@ mod test {
     }
 
     #[test]
-    fn parse_poetic_number() {
+    fn parse_poetic_number_without_dec_place() {
+        let input = "My dreams were    ice and snow";
+        //           012345678901234567890123456789
+        //           0         1         2
+
+        let end = input.len();
+
+        let base = vec![
+            (0, Token::CommonPrep("My".into()), 2),
+            (3, Token::CommonVar("dreams".into()), 9),
+            (10, Token::Was, 14),
+            (18, Token::NumberLiteral(334.0), end),
+        ];
+
+        let expected = extend_vec!(base, vec![
+            (end, Token::Newline, end),
+            (end, Token::EOF, end),
+        ]);
+
+        assert_eq!(toks(input), expected, "no EOL");
+
+        let expected = extend_vec!(base, vec![
+            (end, Token::Newline, end + 1),
+            (end + 1, Token::EOF, end + 1),
+        ]);
+
+        assert_eq!(toks(input.to_owned() + "\n"), expected, "with EOL");
+    }
+
+    #[test]
+    fn parse_poetic_number_with_dec_place() {
         let input = "My dreams were     ice. A life unfulfilled; \
                      wakin' everybody up, taking booze and pills";
 
