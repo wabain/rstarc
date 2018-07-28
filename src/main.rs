@@ -2,15 +2,21 @@ extern crate clap;
 extern crate lalrpop_util;
 #[macro_use] extern crate lazy_static;
 extern crate regex;
+extern crate void;
 
 mod ast;
 mod lexer;
 mod parser;
 mod pretty_print;
+mod runtime_error;
 mod source_loc;
 
+use std::process;
 use std::io;
 use std::fs::File;
+
+use runtime_error::RuntimeError;
+use lexer::{LexicalError, Tokenizer};
 
 fn main() {
     let matches = clap::App::new("rstarc")
@@ -24,22 +30,40 @@ fn main() {
     let output = matches.value_of("output").unwrap_or("a.out");
     let format = matches.value_of("format");
 
-    // FIXME: Error handling
-    run(source, output, format).expect("Compilation failed");
-}
-
-fn run(source: &str, output: &str, format: Option<&str>) -> io::Result<()> {
-    let tokenizer = {
-        let mut src_buf = File::open(source)?;
-        lexer::Tokenizer::from_file(&mut src_buf)?
+    let (tokenizer, err) = match load_source(source) {
+        Ok(tokenizer) => {
+            let err = run(&tokenizer, output, format).err();
+            (Some(tokenizer), err)
+        }
+        Err(e) => (None, Some(e.into())),
     };
 
+    if let Some(err) = err {
+        eprintln!("{}", err);
+
+        if let Some((start, end)) = err.span() {
+            if let Some(t) = tokenizer {
+                eprintln!("");
+                eprint_location(&t, start, end);
+            }
+        }
+
+        process::exit(1);
+    }
+}
+
+fn load_source(source: &str) -> io::Result<Tokenizer> {
+    let mut src_buf = File::open(source)?;
+    Ok(Tokenizer::from_file(&mut src_buf)?)
+}
+
+fn run(tokenizer: &Tokenizer, output: &str, format: Option<&str>) -> Result<(), RuntimeError> {
     if format == Some("tokens") {
-        output_tokens(&tokenizer, output);
+        output_tokens(&tokenizer, output)?;
         return Ok(());
     }
 
-    let tree = compile(&tokenizer, output).expect("Compilation failed");
+    let tree = parser::ProgramParser::new().parse(tokenizer.tokenize())?;
 
     match format {
         Some("pretty") => pretty_print::pretty_print_program(io::stdout(), &tree)?,
@@ -49,67 +73,15 @@ fn run(source: &str, output: &str, format: Option<&str>) -> io::Result<()> {
     Ok(())
 }
 
-fn output_tokens(tokenizer: &lexer::Tokenizer, output: &str) {
-    let tokens = tokenizer.tokenize().collect::<Result<Vec<_>, _>>().unwrap();
+fn output_tokens(tokenizer: &Tokenizer, output: &str) -> Result<(), LexicalError> {
+    let tokens = tokenizer.tokenize().collect::<Result<Vec<_>, _>>()?;
     for (start, ref token, end) in &tokens {
         println!("{}..{} {}", start, end, token);
     }
+    Ok(())
 }
 
-fn compile(tokenizer: &lexer::Tokenizer, output: &str) -> io::Result<Vec<ast::Statement>>
-{
-    match parser::ProgramParser::new().parse(tokenizer.tokenize()) {
-        Ok(tree) => {
-            Ok(tree)
-        },
-        Err(e) => {
-            match e {
-                lalrpop_util::ParseError::InvalidToken { .. } => {
-                    eprintln!("error: invalid token");
-                }
-                lalrpop_util::ParseError::UnrecognizedToken { ref token, ref expected } => {
-                    let tok_desc = if let Some((_, ref tok, _)) = *token {
-                        format!("{}", tok)
-                    } else {
-                        "<none>".into()
-                    };
-
-                    eprintln!("error: unexpected token {}", tok_desc);
-
-                    if !expected.is_empty() {
-                        eprint!("expected: ");
-                        for (i, exp) in expected.iter().enumerate() {
-                            if i > 0 {
-                                eprint!(", ");
-                            }
-                            eprint!("{}", exp.replace("\\\\", "\\"));
-                        }
-                        eprintln!("")
-                    }
-
-                    if let Some((start, _, end)) = *token {
-                        eprintln!("");
-                        eprint_location(&tokenizer, start, end);
-                    }
-                }
-                lalrpop_util::ParseError::ExtraToken { .. } => {
-                    eprintln!("error: extra token");
-                }
-                lalrpop_util::ParseError::User {
-                    error: lexer::LexicalError::UnexpectedInput(start, end)
-                } => {
-                    eprintln!("error: unexpected input");
-                    eprintln!("");
-                    eprint_location(&tokenizer, start, end);
-                }
-            }
-
-            Err(io::Error::new(io::ErrorKind::Other, Box::new(e)))
-        }
-    }
-}
-
-fn eprint_location(tokenizer: &lexer::Tokenizer, start: usize, end: usize) {
+fn eprint_location(tokenizer: &Tokenizer, start: usize, end: usize) {
     let span = tokenizer.get_line_span(start, end);
 
     let line_meta = format!("{}:  ", span.lineno);

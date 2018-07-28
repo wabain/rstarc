@@ -1,4 +1,5 @@
 use std::io::{self, Read};
+use std::error;
 use std::fmt;
 
 use regex::{RegexBuilder, Regex};
@@ -9,6 +10,8 @@ use source_loc::{SourceLocator, IntraLineSpan};
 pub enum LexicalError {
     UnexpectedInput(usize, usize),
 }
+
+impl error::Error for LexicalError {}
 
 impl fmt::Display for LexicalError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
