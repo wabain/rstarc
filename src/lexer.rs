@@ -1,7 +1,7 @@
 use std::io::{self, Read};
 use std::fmt;
 
-use regex::Regex;
+use regex::{RegexBuilder, Regex};
 
 #[derive(Debug)]
 pub enum LexicalError {
@@ -208,6 +208,16 @@ lazy_static! {
     static ref STRING: Regex = Regex::new("^\"(.*?)\"").unwrap();
     static ref COMMA: Regex = Regex::new(r"^,").unwrap();
 
+    // FIXME: Should this more for spaces?
+    static ref TAKE_IT_TO_THE_TOP: Regex = RegexBuilder::new("^take it to the top")
+        .case_insensitive(true)
+        .build()
+        .unwrap();
+    static ref BREAK_IT_DOWN: Regex = RegexBuilder::new("^break it down")
+        .case_insensitive(true)
+        .build()
+        .unwrap();
+
     // Spec seems to say we stick to ASCII
     static ref WORD: Regex = Regex::new(r"^[a-zA-Z]+\b").unwrap();
     static ref PROPER_VAR_WORD: Regex = Regex::new(r"^[A-Z][a-zA-Z]*\b").unwrap();
@@ -359,6 +369,20 @@ impl Tokenizer {
         if let Some(end) = COMMA.find(self.rest()).map(|m| m.end()) {
             return vec![
                 self.emit(end, Token::Comma, None)
+            ];
+        }
+
+        // Handle "take it to the top" for continue
+        if let Some(end) = TAKE_IT_TO_THE_TOP.find(self.rest()).map(|m| m.end()) {
+            return vec![
+                self.emit(end, Token::Continue, None)
+            ];
+        }
+
+        // Handle "break it down" for break
+        if let Some(end) = BREAK_IT_DOWN.find(self.rest()).map(|m| m.end()) {
+            return vec![
+                self.emit(end, Token::Break, None)
             ];
         }
 
@@ -777,5 +801,11 @@ mod test {
         ]);
 
         assert_eq!(toks(input.to_owned() + "\n"), expected, "with EOL");
+    }
+
+    #[test]
+    fn parse_long_loop_controls() {
+        assert_eq!(toks("Take it to the top")[0], (0, Token::Continue, 18));
+        assert_eq!(toks("Break it down")[0], (0, Token::Break, 13));
     }
 }
