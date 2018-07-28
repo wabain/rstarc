@@ -205,6 +205,7 @@ lazy_static! {
     static ref NEWLINE_SEARCH: Regex = Regex::new(r"\r\n|\n|\r").unwrap();
     static ref LEADING_SPACE: Regex = Regex::new(r"^[\s&&[^\r\n]]+").unwrap();
 
+    static ref NUMBER: Regex = Regex::new(r"^([0-9]*\.[0-9]+|[0-9]+)").unwrap();
     static ref STRING: Regex = Regex::new("^\"(.*?)\"").unwrap();
     static ref COMMA: Regex = Regex::new(r"^,").unwrap();
 
@@ -362,6 +363,14 @@ impl Tokenizer {
             let tok = Token::StringLiteral(s);
             return vec![
                 self.emit(len, tok, None)
+            ];
+        }
+
+        // Handle number literal
+        if let Some(end) = NUMBER.find(self.rest()).map(|m| m.end()) {
+            let float: RockstarNumber = self.rest()[..end].parse().expect("number literal");
+            return vec![
+                self.emit(end, Token::NumberLiteral(float), None)
             ];
         }
 
@@ -801,6 +810,13 @@ mod test {
         ]);
 
         assert_eq!(toks(input.to_owned() + "\n"), expected, "with EOL");
+    }
+
+    #[test]
+    fn parse_literal_number() {
+        assert_eq!(toks("0.2")[0], (0, Token::NumberLiteral(0.2), 3));
+        assert_eq!(toks(".2")[0], (0, Token::NumberLiteral(0.2), 2));
+        assert_eq!(toks("100")[0], (0, Token::NumberLiteral(100.0), 3));
     }
 
     #[test]
