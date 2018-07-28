@@ -3,14 +3,18 @@ use std::fmt;
 
 use regex::{RegexBuilder, Regex};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum LexicalError {
-    // TODO
+    UnexpectedInput(usize, usize),
 }
 
 impl fmt::Display for LexicalError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "lexical error")
+        match *self {
+            LexicalError::UnexpectedInput(_, _) => {
+                write!(f, "Unexpected input")
+            }
+        }
     }
 }
 
@@ -102,19 +106,6 @@ impl Token {
 
             // Actual keywords
             _ => true,
-        }
-    }
-
-    fn is_literal(&self) -> bool {
-        use self::Token::*;
-
-        match *self {
-            StringLiteral(_) |
-            NumberLiteral(_) |
-            BooleanLiteral(_) |
-            MysteriousLiteral |
-            NullLiteral => true,
-            _ => false,
         }
     }
 }
@@ -227,21 +218,11 @@ lazy_static! {
 
 pub struct Tokenizer {
     content: String,
-    idx: usize,
-    ctx: TCtx,
-    line_begins_with_keyword: bool,
 }
 
 impl Tokenizer {
     pub fn new(content: String) -> Self {
-        let mut ctx = TCtx::default();
-        ctx.at_start = true;
-        Tokenizer {
-            content,
-            idx: 0,
-            ctx,
-            line_begins_with_keyword: false,
-        }
+        Tokenizer { content }
     }
 
     pub fn from_file<R: Read>(source: &mut R) -> io::Result<Self> {
@@ -268,20 +249,98 @@ impl Tokenizer {
         (&self.content[line_start..line_end], lineno, start - line_start, end - line_start)
     }
 
-    pub fn tokenize(&mut self) -> Vec<(usize, Token, usize)> {
-        let mut toks = vec![];
+    pub fn tokenize(&self) -> TokenIterator {
+        TokenIterator::new(&self)
+    }
+}
 
-        if !self.has_more() {
-            panic!("tokenize() called repeatedly");
+/// Hack: This struct exists primarily to scan the token stream and drop
+/// commas occurring before EOL. This can't easily be handled in parsing
+/// without ambiguity and putting it directly in the lexing code would
+/// be complicated.
+pub struct TokenIterator<'a> {
+    stream: TokenStream<'a>,
+    has_error: bool,
+    buf: Vec<(usize, Token, usize)>,
+}
+
+impl<'a> TokenIterator<'a> {
+    fn new(tokenizer: &'a Tokenizer) -> Self {
+        TokenIterator {
+            stream: TokenStream::new(tokenizer),
+            has_error: false,
+            buf: Vec::new(),
+        }
+    }
+
+    fn has_buffered_eol(&self) -> bool {
+        self.buf.iter().find(|&(_, t, _)| t == &Token::Newline).is_some()
+    }
+}
+
+impl<'a> ::std::iter::Iterator for TokenIterator<'a> {
+    type Item = Result<(usize, Token, usize), LexicalError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.has_error {
+            return None;
         }
 
-        while self.has_more() {
-            toks.extend(self.take_more());
+        if !self.stream.has_more() || self.has_buffered_eol() {
+            if self.buf.is_empty() {
+                return None;
+            }
+
+            return Some(Ok(self.buf.remove(0)));
         }
 
-        drop_trailing_commas(&mut toks);
+        while self.stream.has_more() && !self.has_buffered_eol() {
+            match self.stream.take_more() {
+                Ok(entries) => self.buf.extend(entries),
+                Err(e) => {
+                    self.has_error = true;
+                    return Some(Err(e));
+                }
+            }
+        }
 
-        toks
+        let mut i = 0;
+
+        while i < self.buf.len() {
+            if self.buf[i].1 != Token::Newline {
+                i += 1;
+                continue;
+            }
+
+            while i > 0 && self.buf[i - 1].1 == Token::Comma {
+                self.buf.remove(i - 1);
+                i -= 1;
+            }
+
+            i += 1;
+        }
+
+        Some(Ok(self.buf.remove(0)))
+    }
+}
+
+struct TokenStream<'a> {
+    tokenizer: &'a Tokenizer,
+    idx: usize,
+    ctx: TCtx,
+    line_begins_with_keyword: bool,
+}
+
+impl<'a> TokenStream<'a> {
+    fn new(tokenizer: &'a Tokenizer) -> Self {
+        let mut ctx = TCtx::default();
+        ctx.at_start = true;
+        TokenStream {
+            tokenizer,
+            idx: 0,
+            ctx,
+            line_begins_with_keyword: false,
+        }
     }
 
     fn emit(&mut self, length: usize, tok: Token, ctx: Option<TCtx>)
@@ -323,14 +382,14 @@ impl Tokenizer {
     }
 
     fn rest(&self) -> &str {
-        &self.content[self.idx..]
+        &self.tokenizer.content[self.idx..]
     }
 
     fn next_char(&self) -> Option<char> {
         self.rest().chars().next()
     }
 
-    fn take_more(&mut self) -> Vec<(usize, Token, usize)> {
+    fn take_more(&mut self) -> Result<Vec<(usize, Token, usize)>, LexicalError> {
         // General guidelines: any mutation of the tokenization should
         // occur from this function or the emit functions.
 
@@ -345,7 +404,7 @@ impl Tokenizer {
 
         // Handle EOF
         if self.rest().is_empty() {
-            return self.emit_eof();
+            return Ok(self.emit_eof());
         }
 
         // Handle newline
@@ -353,58 +412,57 @@ impl Tokenizer {
             let mut ctx = TCtx::default();
             ctx.prev_was_eol = true;
 
-            return vec![
+            return Ok(vec![
                 self.emit(end, Token::Newline, Some(ctx))
-            ];
+            ]);
         }
 
         // Handle string literal
         if let Some((len, s)) = STRING.captures(self.rest()).map(|c| (c[0].len(), c[1].to_owned())) {
             let tok = Token::StringLiteral(s);
-            return vec![
+            return Ok(vec![
                 self.emit(len, tok, None)
-            ];
+            ]);
         }
 
         // Handle number literal
         if let Some(end) = NUMBER.find(self.rest()).map(|m| m.end()) {
             let float: RockstarNumber = self.rest()[..end].parse().expect("number literal");
-            return vec![
+            return Ok(vec![
                 self.emit(end, Token::NumberLiteral(float), None)
-            ];
+            ]);
         }
 
         // Handle comma
         if let Some(end) = COMMA.find(self.rest()).map(|m| m.end()) {
-            return vec![
+            return Ok(vec![
                 self.emit(end, Token::Comma, None)
-            ];
+            ]);
         }
 
         // Handle "take it to the top" for continue
         if let Some(end) = TAKE_IT_TO_THE_TOP.find(self.rest()).map(|m| m.end()) {
-            return vec![
+            return Ok(vec![
                 self.emit(end, Token::Continue, None)
-            ];
+            ]);
         }
 
         // Handle "break it down" for break
         if let Some(end) = BREAK_IT_DOWN.find(self.rest()).map(|m| m.end()) {
-            return vec![
+            return Ok(vec![
                 self.emit(end, Token::Break, None)
-            ];
+            ]);
         }
 
         // From here on we should have a word (i.e. keyword or variable)
         let word_len = match WORD.find(self.rest()) {
             Some(m) => m.end(),
-            // FIXME: Should return an error here
-            None => panic!("Unexpected input"),
+            None => return Err(LexicalError::UnexpectedInput(self.idx, self.idx)),
         };
 
         // Optionally take a token for the word; optionally specify an
         // additional action if the word alone isn't sufficient
-        let (tok, action) = self.handle_word(&self.rest()[..word_len]);
+        let (tok, action) = self.handle_word(&self.rest()[..word_len])?;
 
         let mut to_emit = vec![];
 
@@ -418,18 +476,18 @@ impl Tokenizer {
         }
 
         // Dispatch lexing actions which generate a further token
-        if let Some((skip, len, tok, ctx)) = self.handle_action(action) {
+        if let Some((skip, len, tok, ctx)) = self.handle_action(action)? {
             self.idx += skip;
             to_emit.push(self.emit(len, tok, ctx));
         }
 
-        to_emit
+        Ok(to_emit)
     }
 
-    fn handle_word(&self, word: &str) -> (Option<Token>, LexAction) {
+    fn handle_word(&self, word: &str) -> Result<(Option<Token>, LexAction), LexicalError> {
         if let Some(token) = self.match_special_word(word) {
             if self.ctx.poetic_number_or_keyword && !token.is_keyword() {
-                return (None, LexAction::TakePoeticNumber);
+                return Ok((None, LexAction::TakePoeticNumber));
             }
 
             let action;
@@ -454,30 +512,30 @@ impl Tokenizer {
                 }
             }
 
-            return (Some(token), action);
+            return Ok((Some(token), action));
         }
 
         if self.ctx.poetic_number_or_keyword {
-            (None, LexAction::TakePoeticNumber)
+            Ok((None, LexAction::TakePoeticNumber))
         } else if COMMON_VAR.is_match(word) {
             let tok = Token::CommonVar(word.into());
-            (Some(tok), LexAction::NoAction)
+            Ok((Some(tok), LexAction::NoAction))
         } else if PROPER_VAR_WORD.is_match(word) {
-            (None, LexAction::TakeProperVar)
+            Ok((None, LexAction::TakeProperVar))
         } else {
-            // FIXME
-            panic!("Unexpected input {}", word)
+            Err(LexicalError::UnexpectedInput(self.idx, self.idx))
         }
     }
 
-    fn handle_action(&self, action: LexAction) -> Option<(usize, usize, Token, Option<TCtx>)> {
+    fn handle_action(&self, action: LexAction)
+        -> Result<Option<(usize, usize, Token, Option<TCtx>)>, LexicalError>
+    {
         match action {
-            LexAction::NoAction | LexAction::CheckKeywordOrPoeticString => None,
+            LexAction::NoAction | LexAction::CheckKeywordOrPoeticString => Ok(None),
             LexAction::TakePoeticString => {
                 // Spec says we need one literal space here
-                // FIXME: Should return error
                 if self.next_char() != Some(' ') {
-                    panic!("Unexpected input");
+                    return Err(LexicalError::UnexpectedInput(self.idx, self.idx + 1))
                 }
 
                 let skip = 1;
@@ -488,13 +546,13 @@ impl Tokenizer {
                     (end, tok)
                 };
 
-                Some((skip, end - skip, tok, None))
+                Ok(Some((skip, end - skip, tok, None)))
             }
             LexAction::TakePoeticNumber => {
                 let (number, end) = self.compute_poetic_number();
                 let skip = LEADING_SPACE.find(self.rest()).map_or(0, |m| m.end());
                 assert!(skip < end);
-                Some((skip, end - skip, Token::NumberLiteral(number), None))
+                Ok(Some((skip, end - skip, Token::NumberLiteral(number), None)))
             }
             LexAction::TakeProperVar => {
                 let mut var_end = 0;
@@ -528,7 +586,7 @@ impl Tokenizer {
                 }
 
                 let var = self.rest()[..var_end].to_owned();
-                Some((0, var.len(), Token::ProperVar(var), None))
+                Ok(Some((0, var.len(), Token::ProperVar(var), None)))
             }
         }
     }
@@ -674,32 +732,22 @@ enum LexAction {
     CheckKeywordOrPoeticString,
 }
 
-/// Hack: Drop commas before EOL (can't be handled in parsing without ambiguity)
-fn drop_trailing_commas(toks: &mut Vec<(usize, Token, usize)>) {
-    let tok_kinds: Vec<_> = toks.iter()
-        .map(|&(_, ref t, _)| (t == &Token::Comma, t == &Token::Newline))
-        .collect();
-
-    let mut prev_was_comma = false;
-    for (i, (is_comma, is_newline)) in tok_kinds.into_iter().enumerate() {
-        if is_newline {
-            if prev_was_comma {
-                toks.remove(i - 1);
-            }
-        }
-        prev_was_comma = is_comma;
-    }
-}
-
 #[cfg(test)]
 mod test {
-    use super::{Token, Tokenizer};
+    use super::{LexicalError, Token, Tokenizer};
 
     fn toks<S>(input: S) -> Vec<(usize, Token, usize)>
         where S: Into<String>
     {
-        let mut tokenizer = Tokenizer::new(input.into());
-        tokenizer.tokenize()
+        let tokenizer = Tokenizer::new(input.into());
+        tokenizer.tokenize().collect::<Result<Vec<_>, _>>().unwrap()
+    }
+
+    fn tok_err<S>(input: S) -> LexicalError
+        where S: Into<String>
+    {
+        let tokenizer = Tokenizer::new(input.into());
+        tokenizer.tokenize().collect::<Result<Vec<_>, _>>().unwrap_err()
     }
 
     macro_rules! extend_vec {
@@ -737,6 +785,33 @@ mod test {
         ];
 
         assert_eq!(toks(input), expected);
+    }
+
+    #[test]
+    fn drop_commas_before_eol() {
+        let input = "its very,,,\n,,\ninteresting, indeed,";
+        //           012345678901 234 56789012345678901234
+
+        assert_eq!(toks(input), vec![
+            (0, Token::CommonVar("its".into()), 3),
+            (4, Token::CommonVar("very".into()), 8),
+            (11, Token::Newline, 12),
+            (14, Token::Newline, 15),
+            (15, Token::CommonVar("interesting".into()), 26),
+            (26, Token::Comma, 27),
+            (28, Token::CommonVar("indeed".into()), 34),
+            (35, Token::Newline, 35),
+            (35, Token::EOF, 35),
+        ]);
+    }
+
+    #[test]
+    fn lexing_errors() {
+        assert_eq!(tok_err("abc忠犬ハチ公"), LexicalError::UnexpectedInput(0, 0));
+        assert_eq!(tok_err("aSciIbuTNotAccEptaBlE"),
+                   LexicalError::UnexpectedInput(0, 0));
+        assert_eq!(tok_err("my friend says\u{205F}okay"),
+                   LexicalError::UnexpectedInput(14, 15));
     }
 
     #[test]

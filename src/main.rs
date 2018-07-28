@@ -28,19 +28,17 @@ fn main() {
 }
 
 fn run(source: &str, output: &str, format: Option<&str>) -> io::Result<()> {
-    let mut tokenizer = {
+    let tokenizer = {
         let mut src_buf = File::open(source)?;
         lexer::Tokenizer::from_file(&mut src_buf)?
     };
 
-    let tokens = tokenizer.tokenize();
-
     if format == Some("tokens") {
-        output_tokens(&tokenizer, tokens, output);
+        output_tokens(&tokenizer, output);
         return Ok(());
     }
 
-    let tree = compile(&tokenizer, tokens, output).expect("Compilation failed");
+    let tree = compile(&tokenizer, output).expect("Compilation failed");
 
     match format {
         Some("pretty") => pretty_print::pretty_print_program(io::stdout(), &tree)?,
@@ -50,21 +48,16 @@ fn run(source: &str, output: &str, format: Option<&str>) -> io::Result<()> {
     Ok(())
 }
 
-fn output_tokens(_tokenizer: &lexer::Tokenizer,
-                 tokens: Vec<(usize, lexer::Token, usize)>,
-                 output: &str)
-{
+fn output_tokens(tokenizer: &lexer::Tokenizer, output: &str) {
+    let tokens = tokenizer.tokenize().collect::<Result<Vec<_>, _>>().unwrap();
     for (start, ref token, end) in &tokens {
         println!("{}..{} {}", start, end, token);
     }
 }
 
-fn compile(tokenizer: &lexer::Tokenizer,
-           tokens: Vec<(usize, lexer::Token, usize)>,
-           output: &str)
-           -> io::Result<Vec<ast::Statement>>
+fn compile(tokenizer: &lexer::Tokenizer, output: &str) -> io::Result<Vec<ast::Statement>>
 {
-    match parser::ProgramParser::new().parse(tokens) {
+    match parser::ProgramParser::new().parse(tokenizer.tokenize()) {
         Ok(tree) => {
             Ok(tree)
         },
@@ -101,8 +94,12 @@ fn compile(tokenizer: &lexer::Tokenizer,
                 lalrpop_util::ParseError::ExtraToken { .. } => {
                     eprintln!("error: extra token");
                 }
-                lalrpop_util::ParseError::User { .. } => {
-                    unreachable!();
+                lalrpop_util::ParseError::User {
+                    error: lexer::LexicalError::UnexpectedInput(start, end)
+                } => {
+                    eprintln!("error: unexpected input");
+                    eprintln!("");
+                    eprint_location(&tokenizer, start, end);
                 }
             }
 
