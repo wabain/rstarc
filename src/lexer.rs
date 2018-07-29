@@ -663,21 +663,35 @@ impl<'a> TokenStream<'a> {
     }
 
     fn match_special_word(&self, word: &str) -> Option<Token> {
-        let tok = match word.to_lowercase().as_str() {
+        let lower = word.to_lowercase();
+
+        // Restrict value keywords to be lowercase
+        let initially_lower = lower == word;
+
+        let tok = match lower.as_str() {
+
+            // Prepositions take a consistent case
             "a" | "an" | "the" | "my" | "your" => {
-                Token::CommonPrep(word.into())
+                Token::CommonPrep(lower)
             }
             "it" | "he" | "she" | "him" | "her" | "they" | "them" |
             "ze" | "hir" | "zie" | "zir" | "xe" | "xem" | "ve" | "ver" => {
                 Token::Pronoun(word.into())
             }
-            "mysterious" => Token::MysteriousLiteral,
-            "null" | "nothing" | "nowhere" | "nobody" | "empty" | "gone" => {
+
+            "mysterious" if initially_lower => Token::MysteriousLiteral,
+
+            "null" | "nothing" | "nowhere" |
+            "nobody" | "empty" | "gone" if initially_lower => {
                 Token::NullLiteral
             }
 
-            "true" | "right" | "yes" | "ok" => Token::BooleanLiteral(true),
-            "false" | "wrong" | "no" | "lies" => Token::BooleanLiteral(false),
+            "true" | "right" | "yes" | "ok" if initially_lower => {
+                Token::BooleanLiteral(true)
+            },
+            "false" | "wrong" | "no" | "lies" if initially_lower => {
+                Token::BooleanLiteral(false)
+            },
 
             "is" => Token::Is,
             "was" | "were" => Token::Was,
@@ -949,13 +963,13 @@ mod test {
 
     #[test]
     fn parse_proper_var() {
-        let input = "If Johnny B Goode Right";
+        let input = "If Johnny B Goode Great";
         //           01234567890123456789012
 
         let expected = &[
             (0, Token::If, 2),
             (3, Token::ProperVar("Johnny B Goode".into()), 17),
-            (18, Token::BooleanLiteral(true), 23),
+            (18, Token::Great, 23),
         ];
 
         assert_eq!(&toks(input)[..3], expected);
@@ -998,7 +1012,7 @@ mod test {
         let end = input.len();
 
         let base = vec![
-            (0, Token::CommonPrep("My".into()), 2),
+            (0, Token::CommonPrep("my".into()), 2),
             (3, Token::CommonVar("dreams".into()), 9),
             (10, Token::Was, 14),
             (18, Token::NumberLiteral(334.0), end),
@@ -1027,7 +1041,7 @@ mod test {
         let end = input.len();
 
         let base = vec![
-            (0, Token::CommonPrep("My".into()), 2),
+            (0, Token::CommonPrep("my".into()), 2),
             (3, Token::CommonVar("dreams".into()), 9),
             (10, Token::Was, 14),
             (19, Token::NumberLiteral(3.1415926535), end),
