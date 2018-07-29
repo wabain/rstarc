@@ -41,7 +41,7 @@ fn main() {
 
         .subcommand(clap::SubCommand::with_name("internal")
             .about("Internal debugging utilities")
-            .arg(clap::Arg::from_usage("-f, --format [FORMAT]  'Debug output format.'")
+            .arg(clap::Arg::from_usage("-f, --format <FORMAT>  'Debug output format.'")
                     .possible_values(&["tokens", "pretty"]))
             .arg_from_usage("<source> 'The source file'"))
 
