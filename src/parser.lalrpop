@@ -30,18 +30,23 @@ Statement: ast::Statement = {
 
     "While" <c:Conditional> "\n" <b:Block> => ast::Statement::While(c, b),
     "Until" <c:Conditional> "\n" <b:Block> => ast::Statement::Until(c, b),
-    <v:Variable> "Takes" <a:VariableList> "\n" <b:Block> =>
+    <v:Variable> "Takes" <a:FuncDecArgs> "\n" <b:Block> =>
         ast::Statement::FuncDef(v, a, b),
 }
 
-VariableList: Vec<ast::Variable> = {
-    <v:(Variable "And")*> <e:Variable?> => {
+FuncDecArgs: Vec<ast::Variable> = {
+    <v:(Variable FuncDecSep)*> <e:Variable?> => {
         let mut vars: Vec<_> = v.into_iter().map(|(var, _)| var).collect();
         if let Some(e) = e {
             vars.push(e);
         }
         vars
     }
+}
+
+FuncDecSep: () = {
+    "And" => (),
+    "," => (),
 }
 
 Block: Vec<ast::Statement> = {
