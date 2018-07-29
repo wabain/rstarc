@@ -217,7 +217,7 @@ lazy_static! {
     pub static ref NEWLINE_SEARCH: Regex = Regex::new(r"\r\n|\n|\r").unwrap();
 
     static ref LEADING_SPACE: Regex = Regex::new(r"^[\s&&[^\r\n]]+").unwrap();
-    static ref COMMENT: Regex = RegexBuilder::new(r"^\(.*\)")
+    static ref COMMENT: Regex = RegexBuilder::new(r"^\(.*?\)")
         .dot_matches_new_line(true)
         .build()
         .unwrap();
