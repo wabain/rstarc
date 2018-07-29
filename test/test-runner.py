@@ -14,6 +14,9 @@ BASENAME = os.path.splitext(os.path.basename(__file__))[0]
 logger = logging.getLogger(BASENAME)
 
 
+DEFAULT_TESTS = ['tokens', 'pretty']
+
+
 def main():
     parser = argparse.ArgumentParser(BASENAME)
     parser.add_argument('--bin', help='A precompiled rockstarc binary to use')
@@ -103,11 +106,17 @@ def verify_source_file(src, binary, refresh):
         logger.debug('Configuration file %s missing', config_filename)
 
     tests = [
-        ['tokens', [binary, '--format=tokens', src]],
-        ['pretty', [binary, '--format=pretty', src]],
+        ['tokens', [binary, 'internal', '--format=tokens', src]],
+        ['pretty', [binary, 'internal', '--format=pretty', src]],
+        ['run', [binary, 'run', src]],
     ]
 
+    enabled_tests = config.setdefault('tests', {}).setdefault('enabled', DEFAULT_TESTS)
+
     for test, cmd in tests:
+        if test not in enabled_tests:
+            continue
+
         actual_output[test], failures_by_test[test] = \
             run_test(test_name=test, src=src, cmd=cmd, config=config)
 

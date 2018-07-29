@@ -5,7 +5,9 @@ extern crate regex;
 extern crate void;
 
 mod ast;
+mod lang_constructs;
 mod lexer;
+mod interpreter;
 mod parser;
 mod pretty_print;
 mod runtime_error;
@@ -18,21 +20,55 @@ use std::fs::File;
 use runtime_error::RuntimeError;
 use lexer::{LexicalError, Tokenizer};
 
+enum Action {
+    Interpret,
+    FormatTokens,
+    FormatPretty,
+}
+
 fn main() {
     let matches = clap::App::new("rstarc")
         .about("A Rockstar compiler")
-        .arg_from_usage("-o --output=[file] 'The output file'")
-        .arg_from_usage("-f --format=[pretty|tokens] 'The output format'")
-        .arg_from_usage("<source> 'Source file'")  // TODO allow multiple?
+
+        .settings(&[
+            clap::AppSettings::SubcommandRequired,
+            clap::AppSettings::VersionlessSubcommands,
+        ])
+
+        .subcommand(clap::SubCommand::with_name("run")
+            .about("Run the specified program")
+            .arg_from_usage("<source> 'The source file'"))
+
+        .subcommand(clap::SubCommand::with_name("internal")
+            .about("Internal debugging utilities")
+            .arg(clap::Arg::from_usage("-f, --format [FORMAT]  'Debug output format.'")
+                    .possible_values(&["tokens", "pretty"]))
+            .arg_from_usage("<source> 'The source file'"))
+
         .get_matches();
 
-    let source = matches.value_of("source").expect("arg source");
-    let output = matches.value_of("output").unwrap_or("a.out");
-    let format = matches.value_of("format");
+    let action;
+    let source;
+
+    match matches.subcommand() {
+        ("run", Some(submatches)) => {
+            source = submatches.value_of("source").expect("arg source");
+            action = Action::Interpret;
+        }
+        ("internal", Some(submatches)) => {
+            source = submatches.value_of("source").expect("arg source");
+            match submatches.value_of("format") {
+                Some("tokens") => action = Action::FormatTokens,
+                Some("pretty") => action = Action::FormatPretty,
+                _ => unreachable!(),
+            }
+        }
+        (subcmd, _) => unreachable!("subcommand {}", subcmd),
+    }
 
     let (tokenizer, err) = match load_source(source) {
         Ok(tokenizer) => {
-            let err = run(&tokenizer, output, format).err();
+            let err = run(&tokenizer, action).err();
             (Some(tokenizer), err)
         }
         Err(e) => (None, Some(e.into())),
@@ -57,23 +93,24 @@ fn load_source(source: &str) -> io::Result<Tokenizer> {
     Ok(Tokenizer::from_file(&mut src_buf)?)
 }
 
-fn run(tokenizer: &Tokenizer, output: &str, format: Option<&str>) -> Result<(), RuntimeError> {
-    if format == Some("tokens") {
-        output_tokens(&tokenizer, output)?;
+fn run(tokenizer: &Tokenizer, action: Action) -> Result<(), RuntimeError> {
+    if let Action::FormatTokens = action {
+        output_tokens(&tokenizer)?;
         return Ok(());
     }
 
     let tree = parser::ProgramParser::new().parse(tokenizer.tokenize())?;
 
-    match format {
-        Some("pretty") => pretty_print::pretty_print_program(io::stdout(), &tree)?,
-        _ => { /* TODO */ }
+    match action {
+        Action::Interpret => interpreter::interpret(&tree),
+        Action::FormatPretty => pretty_print::pretty_print_program(io::stdout(), &tree)?,
+        Action::FormatTokens => unreachable!(),
     }
 
     Ok(())
 }
 
-fn output_tokens(tokenizer: &Tokenizer, output: &str) -> Result<(), LexicalError> {
+fn output_tokens(tokenizer: &Tokenizer) -> Result<(), LexicalError> {
     let tokens = tokenizer.tokenize().collect::<Result<Vec<_>, _>>()?;
     for (start, ref token, end) in &tokens {
         println!("{}..{} {}", start, end, token);

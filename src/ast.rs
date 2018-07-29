@@ -1,4 +1,6 @@
+use std::fmt;
 use lexer::Token;
+use lang_constructs::LangVariable;
 
 #[derive(Debug)]
 pub enum Statement {
@@ -50,14 +52,39 @@ pub enum Comparator {
     IsAsLittleAs,
 }
 
-#[derive(Debug)]
 pub enum LValue {
     Variable(Variable),
     Pronoun(Token),
+}
+
+impl fmt::Debug for LValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            LValue::Variable(Variable::ProperVar(p)) => write!(f, "ProperVar({})", p),
+            LValue::Variable(Variable::CommonVar(p, v)) => write!(f, "CommonVar({} {})", p, v),
+            LValue::Pronoun(p) => write!(f, "Pronoun({})", p),
+        }
+    }
 }
 
 #[derive(Debug)]
 pub enum Variable {
     ProperVar(Token),
     CommonVar(Token, Token),
+}
+
+impl Variable {
+    pub fn to_lang_variable<'a>(&'a self) -> LangVariable<'a> {
+        match self {
+            Variable::CommonVar(prep, common) => {
+                LangVariable::Common(
+                    prep.deref_common_prep().into(),
+                    common.deref_common_var().into(),
+                )
+            },
+            Variable::ProperVar(proper) => {
+                LangVariable::Proper(proper.deref_proper_var().into())
+            },
+        }
+    }
 }

@@ -1,0 +1,6 @@
+[tests]
+enabled = [ "run",]
+
+[run]
+returncode = "0"
+stdout = "invoking function\nx\n1\ny\nmysterious\nz\n1\n\nincrementing within function\nx\n2\ny\nNaN\nz\n2\n\nchecking globals\nx\n1\ny\n1\nz\n2\n"

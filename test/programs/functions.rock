@@ -1,0 +1,48 @@
+Put 1 into X
+Put 1 into Y
+Put 1 into Z
+
+Func One takes X and Y
+    Say "x"
+    Say X
+    Say "y"
+    Say Y
+    Say "z"
+    Say Z
+    Say ""
+    Say "incrementing within function"
+    Build X up
+    Build Y up
+    Build Z up
+    Say "x"
+    Say X
+    Say "y"
+    Say Y
+    Say "z"
+    Say Z
+    Say ""
+
+
+(
+    Expectations:
+
+    X is passed the value 1 as an argument, so it should be updated to
+    2 within the function and left untouched outside.
+
+    Y is not passed a value as an argument, so it should be given the
+    value mysterious within the function and left untouched outside.
+
+    Z is not a function argument so assigning to it within the function
+    should affect the value outside.
+)
+
+Say "invoking function"
+Put Func One taking 1 into Temp
+
+Say "checking globals"
+Say "x"
+Say X
+Say "y"
+Say Y
+Say "z"
+Say Z

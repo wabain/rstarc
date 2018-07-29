@@ -4,6 +4,7 @@ use std::fmt;
 
 use regex::{RegexBuilder, Regex};
 
+use lang_constructs::{self, RockstarNumber, RockstarString};
 use source_loc::{SourceLocator, IntraLineSpan};
 
 #[derive(Debug, PartialEq)]
@@ -22,12 +23,6 @@ impl fmt::Display for LexicalError {
         }
     }
 }
-
-// FIXME: Spec calls for DEC64
-pub type RockstarNumber = f64;
-// Spec calls for UTF-16 but I don't know if the difference
-// is actually visible
-pub type RockstarString = String;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token {
@@ -125,6 +120,43 @@ impl Token {
         match *self {
             If | Else | While | Until | Takes => true,
             _ => false,
+        }
+    }
+
+    pub fn literal_value<F>(&self) -> Option<lang_constructs::Value<F>> {
+        use lang_constructs::Value;
+        let value = match *self {
+            Token::StringLiteral(ref s) => Value::String(s.clone()),
+            Token::BooleanLiteral(b) => Value::Boolean(b),
+            Token::NumberLiteral(n) => Value::Number(n),
+            Token::MysteriousLiteral => Value::Mysterious,
+            Token::NullLiteral => Value::Null,
+            _ => return None,
+        };
+        Some(value)
+    }
+
+    pub fn deref_proper_var(&self) -> &str {
+        if let Token::ProperVar(ref s) = self {
+            s
+        } else {
+            panic!("Expected ProperVar, got {:?}", self);
+        }
+    }
+
+    pub fn deref_common_var(&self) -> &str {
+        if let Token::CommonVar(ref s) = self {
+            s
+        } else {
+            panic!("Expected CommonVar, got {:?}", self);
+        }
+    }
+
+    pub fn deref_common_prep(&self) -> &str {
+        if let Token::CommonPrep(ref s) = self {
+            s
+        } else {
+            panic!("Expected CommonPrep, got {:?}", self);
         }
     }
 }
