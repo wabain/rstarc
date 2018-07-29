@@ -1,0 +1,6 @@
+[tests]
+enabled = [ "run",]
+
+[run]
+returncode = "1"
+stderr = "error: Unexpected loop control statement\n\n1:  while true is true\n    ^\n"

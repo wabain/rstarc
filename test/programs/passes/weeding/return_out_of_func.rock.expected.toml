@@ -1,0 +1,6 @@
+[tests]
+enabled = [ "run",]
+
+[run]
+returncode = "1"
+stderr = "error: Unexpected return statement\n\n1:  Give back nothing\n    ^\n"

@@ -5,6 +5,7 @@ use std::fmt;
 use lalrpop_util::ParseError;
 use void::Void;
 
+use base_analysis::CompileError;
 use lexer::{LexicalError, Token};
 
 #[derive(Debug)]
@@ -12,13 +13,16 @@ pub enum RuntimeError {
     Io(io::Error),
     Lexer(LexicalError),
     Parser(ParseError<usize, Token, Void>),
+    Compile(CompileError),
 }
 
 impl RuntimeError {
     pub fn span(&self) -> Option<(usize, usize)> {
         match *self {
             RuntimeError::Io(_) => None,
-            RuntimeError::Lexer(LexicalError::UnexpectedInput(p1, p2)) => {
+            RuntimeError::Lexer(LexicalError::UnexpectedInput(p1, p2)) |
+            RuntimeError::Compile(CompileError::UnexpectedReturn(p1, p2)) |
+            RuntimeError::Compile(CompileError::UnexpectedLoopControl(p1, p2)) => {
                 Some((p1, p2))
             }
             RuntimeError::Parser(ParseError::InvalidToken { location }) => {
@@ -37,28 +41,29 @@ impl RuntimeError {
 
 impl error::Error for RuntimeError {
     fn cause(&self) -> Option<&error::Error> {
-        match *self {
-            RuntimeError::Io(ref e) => Some(e),
-            RuntimeError::Lexer(ref e) => Some(e),
-            RuntimeError::Parser(ref e) => Some(e),
+        match self {
+            RuntimeError::Io(e) => Some(e),
+            RuntimeError::Lexer(e) => Some(e),
+            RuntimeError::Parser(e) => Some(e),
+            RuntimeError::Compile(e) => Some(e),
         }
     }
 }
 
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            RuntimeError::Io(ref e) => {
+        match self {
+            RuntimeError::Io(e) => {
                 write!(f, "error: {}", e)
             }
-            RuntimeError::Lexer(ref e) => {
+            RuntimeError::Lexer(e) => {
                 write!(f, "error: {}", e)
             }
             RuntimeError::Parser(ParseError::InvalidToken { .. }) => {
                 write!(f, "error: invalid token")
             }
             RuntimeError::Parser(ParseError::UnrecognizedToken {
-                ref token, ref expected
+                token, expected
             }) => {
                 writeln!(f, "error: unexpected token {}", tok_desc(token))?;
 
@@ -73,10 +78,13 @@ impl fmt::Display for RuntimeError {
                 }
                 Ok(())
             }
-            RuntimeError::Parser(ParseError::ExtraToken { ref token }) => {
+            RuntimeError::Parser(ParseError::ExtraToken { token }) => {
                 write!(f, "error: extra token {}", token.1)
             }
             RuntimeError::Parser(ParseError::User { .. }) => unreachable!(),
+            RuntimeError::Compile(e) => {
+                write!(f, "error: {}", e)
+            }
         }
     }
 }
@@ -98,6 +106,12 @@ impl From<io::Error> for RuntimeError {
 impl From<LexicalError> for RuntimeError {
     fn from(e: LexicalError) -> Self {
         RuntimeError::Lexer(e)
+    }
+}
+
+impl From<CompileError> for RuntimeError {
+    fn from(e: CompileError) -> Self {
+        RuntimeError::Compile(e)
     }
 }
 

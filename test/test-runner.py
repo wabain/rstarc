@@ -18,8 +18,7 @@ def main():
     parser = argparse.ArgumentParser(BASENAME)
     parser.add_argument('--bin', help='A precompiled rockstarc binary to use')
     parser.add_argument('--rebuild',
-                        help='Build and run the debug binary (if no binary '
-                             'is specified)',
+                        help='Build and run the debug binary (if no binary is specified)',
                         action='store_true',
                         default=True)
 

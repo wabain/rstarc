@@ -5,6 +5,7 @@ extern crate regex;
 extern crate void;
 
 mod ast;
+mod ast_walker;
 mod lang_constructs;
 mod lexer;
 mod interpreter;
@@ -12,6 +13,7 @@ mod parser;
 mod pretty_print;
 mod runtime_error;
 mod source_loc;
+mod base_analysis;
 
 use std::process;
 use std::io;
@@ -100,6 +102,7 @@ fn run(tokenizer: &Tokenizer, action: Action) -> Result<(), RuntimeError> {
     }
 
     let tree = parser::ProgramParser::new().parse(tokenizer.tokenize())?;
+    base_analysis::verify_control_flow(&tree)?;
 
     match action {
         Action::Interpret => interpreter::interpret(&tree),
