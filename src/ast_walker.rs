@@ -1,4 +1,4 @@
-use ast::Statement;
+use ast::{Statement, StatementKind};
 
 #[derive(Debug, PartialEq)]
 pub enum BlockType {
@@ -14,13 +14,13 @@ pub fn visit_statements<V>(statements: &[Statement], visitor: &mut V) -> Result<
     for statement in statements {
         visitor.visit_statement(statement)?;
 
-        match statement {
-            Statement::While(_, block) | Statement::Until(_, block) => {
+        match &statement.kind {
+            StatementKind::While(_, block) | StatementKind::Until(_, block) => {
                 visitor.enter_block(BlockType::LoopBlock, statement)?;
                 visit_statements(block, visitor)?;
                 visitor.exit_block(BlockType::LoopBlock, statement)?;
             }
-            Statement::Condition(_, if_block, else_block) => {
+            StatementKind::Condition(_, if_block, else_block) => {
                 visitor.enter_block(BlockType::IfBlock, statement)?;
                 visit_statements(if_block, visitor)?;
                 visitor.exit_block(BlockType::IfBlock, statement)?;
@@ -29,7 +29,7 @@ pub fn visit_statements<V>(statements: &[Statement], visitor: &mut V) -> Result<
                 visit_statements(else_block, visitor)?;
                 visitor.exit_block(BlockType::ElseBlock, statement)?;
             }
-            Statement::FuncDef(_, _, body) => {
+            StatementKind::FuncDef(_, _, body) => {
                 visitor.enter_block(BlockType::FuncBodyBlock, statement)?;
                 visit_statements(body, visitor)?;
                 visitor.exit_block(BlockType::FuncBodyBlock, statement)?;

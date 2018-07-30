@@ -2,8 +2,17 @@ use std::fmt;
 use lexer::Token;
 use lang_constructs::LangVariable;
 
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Pos(pub usize, pub usize);
+
 #[derive(Debug)]
-pub enum Statement {
+pub struct Statement {
+    pub kind: StatementKind,
+    pub pos: Pos,
+}
+
+#[derive(Debug)]
+pub enum StatementKind {
     Assign(LValue, Expr),
     Incr(LValue),
     Decr(LValue),

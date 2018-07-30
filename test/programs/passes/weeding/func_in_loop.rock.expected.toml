@@ -3,4 +3,4 @@ enabled = [ "run",]
 
 [run]
 returncode = "1"
-stderr = "error: Unexpected loop control statement\n\n1:  while true is true\n    ^\n"
+stderr = "error: Unexpected loop control statement\n\n3:          break\n            ^^^^^\n"

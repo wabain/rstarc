@@ -7,6 +7,7 @@ use void::Void;
 
 use base_analysis::CompileError;
 use lexer::{LexicalError, Token};
+use ast::Pos;
 
 #[derive(Debug)]
 pub enum RuntimeError {
@@ -21,8 +22,8 @@ impl RuntimeError {
         match *self {
             RuntimeError::Io(_) => None,
             RuntimeError::Lexer(LexicalError::UnexpectedInput(p1, p2)) |
-            RuntimeError::Compile(CompileError::UnexpectedReturn(p1, p2)) |
-            RuntimeError::Compile(CompileError::UnexpectedLoopControl(p1, p2)) => {
+            RuntimeError::Compile(CompileError::UnexpectedReturn(Pos(p1, p2))) |
+            RuntimeError::Compile(CompileError::UnexpectedLoopControl(Pos(p1, p2))) => {
                 Some((p1, p2))
             }
             RuntimeError::Parser(ParseError::InvalidToken { location }) => {

@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::collections::hash_map::{HashMap, Entry};
 
 use lang_constructs::{Value, LangVariable};
-use ast::{Statement, Expr, Conditional, Comparison, Comparator, LValue};
+use ast::{Statement, StatementKind, Expr, Conditional, Comparison, Comparator, LValue};
 
 pub fn interpret(program: &[Statement]) -> () {
     Interpreter::default().run_program(program);
@@ -75,7 +75,7 @@ impl<'a> Interpreter<'a> {
 
     fn dispatch_statements(&mut self, statements: &'a [Statement]) -> Flow<'a> {
         for statement in statements {
-            let flow = self.exec_statement(&statement);
+            let flow = self.exec_statement(statement);
             if let Flow::Next = flow {
                 continue;
             }
@@ -85,33 +85,33 @@ impl<'a> Interpreter<'a> {
     }
 
     fn exec_statement(&mut self, statement: &'a Statement) -> Flow<'a> {
-        match statement {
-            Statement::Assign(lval, expr) => {
+        match &statement.kind {
+            StatementKind::Assign(lval, expr) => {
                 let value = self.eval_expr(expr);
                 let var = self.lval_to_var(lval);
                 self.set_var(var, value);
             },
-            Statement::Incr(lval) | Statement::Decr(lval) => {
+            StatementKind::Incr(lval) | StatementKind::Decr(lval) => {
                 let var = self.lval_to_var(lval);
                 let mut value = self.get_var(&var).coerce_number();
-                match statement {
-                    Statement::Incr(_) => value += 1.0,
-                    Statement::Decr(_) => value -= 1.0,
+                match statement.kind {
+                    StatementKind::Incr(_) => value += 1.0,
+                    StatementKind::Decr(_) => value -= 1.0,
                     _ => unreachable!(),
                 }
                 self.set_var(var, Value::Number(value));
             },
-            Statement::Say(expr) => {
+            StatementKind::Say(expr) => {
                 let value = self.eval_expr(expr);
                 println!("{}", value.user_display());
             }
-            Statement::Continue => return Flow::Continue,
-            Statement::Break => return Flow::Break,
-            Statement::Return(expr) => {
+            StatementKind::Continue => return Flow::Continue,
+            StatementKind::Break => return Flow::Break,
+            StatementKind::Return(expr) => {
                 let value = self.eval_expr(expr);
                 return Flow::Return(value);
             }
-            Statement::Condition(cond, if_clause, else_clause) => {
+            StatementKind::Condition(cond, if_clause, else_clause) => {
                 let flow = if self.eval_cond(cond) {
                     self.dispatch_statements(if_clause)
                 } else {
@@ -119,7 +119,7 @@ impl<'a> Interpreter<'a> {
                 };
                 return flow;
             },
-            Statement::While(cond, clause) => {
+            StatementKind::While(cond, clause) => {
                 while self.eval_cond(cond) {
                     let flow = self.dispatch_statements(clause);
                     match flow {
@@ -129,7 +129,7 @@ impl<'a> Interpreter<'a> {
                     }
                 }
             },
-            Statement::Until(cond, clause) => {
+            StatementKind::Until(cond, clause) => {
                 while !self.eval_cond(cond) {
                     let flow = self.dispatch_statements(clause);
                     match flow {
@@ -139,7 +139,7 @@ impl<'a> Interpreter<'a> {
                     }
                 }
             },
-            Statement::FuncDef(var, args, statements) => {
+            StatementKind::FuncDef(var, args, statements) => {
                 let id = self.func_id;
                 self.func_id += 1;
 

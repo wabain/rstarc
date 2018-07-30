@@ -1,5 +1,5 @@
 use io;
-use ast::{Statement, Expr, Conditional, Comparison, Comparator, LValue, Variable};
+use ast::{Statement, StatementKind, Expr, Conditional, Comparison, Comparator, LValue, Variable};
 
 macro_rules! pp {
     ($out:ident, $($toks:tt)*) => ({
@@ -34,29 +34,29 @@ pub trait PrettyPrint {
 
 impl PrettyPrint for Statement {
     fn pretty_print<W>(&self, out: &mut W) -> io::Result<()> where W: io::Write {
-        match *self {
-            Statement::Assign(ref lval, ref e) => {
+        match &self.kind {
+            StatementKind::Assign(lval, e) => {
                 pp!(out, "Put ", pp e, " into ", pp lval, "\n")
             }
-            Statement::Incr(ref lval) => {
+            StatementKind::Incr(lval) => {
                 pp!(out, "Build ", pp lval, " up\n")
             }
-            Statement::Decr(ref lval) => {
+            StatementKind::Decr(lval) => {
                 pp!(out, "Knock ", pp lval, " down\n")
             }
-            Statement::Say(ref e) => {
+            StatementKind::Say(e) => {
                 pp!(out, "Say ", pp e, "\n")
             }
-            Statement::Continue => {
+            StatementKind::Continue => {
                 pp!(out, "Continue\n")
             }
-            Statement::Break => {
+            StatementKind::Break => {
                 pp!(out, "Break\n")
             }
-            Statement::Return(ref e) => {
+            StatementKind::Return(e) => {
                 pp!(out, "Give back ", pp e, "\n")
             }
-            Statement::Condition(ref cond, ref statements, ref else_statements) => {
+            StatementKind::Condition(cond, statements, else_statements) => {
                 pp!(out, "If ", pp cond, "\n");
                 pp_block(out, statements)?;
 
@@ -65,15 +65,15 @@ impl PrettyPrint for Statement {
                     pp_block(out, else_statements)?;
                 }
             }
-            Statement::While(ref cond, ref statements) => {
+            StatementKind::While(cond, statements) => {
                 pp!(out, "While ", pp cond, "\n");
                 pp_block(out, statements)?;
             }
-            Statement::Until(ref cond, ref statements) => {
+            StatementKind::Until(cond, statements) => {
                 pp!(out, "Until ", pp cond, "\n");
                 pp_block(out, statements)?;
             }
-            Statement::FuncDef(ref fname, ref vars, ref statements) => {
+            StatementKind::FuncDef(fname, vars, statements) => {
                 pp!(out, pp fname, " takes ");
                 for (i, v) in vars.iter().enumerate() {
                     if i > 0 {

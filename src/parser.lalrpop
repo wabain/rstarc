@@ -8,30 +8,35 @@ pub Program: Vec<ast::Statement> = {
         t.into_iter().map(|(s, _)| s).collect::<Vec<_>>(),
 }
 
-Statement: ast::Statement = {
-    "Put" <e:Expr> "Into" <v:LValue> => ast::Statement::Assign(v, e),
+TermStatement: ast::Statement = {
+    <start:@L> <s:Statement> <end:@R> "\n" =>
+        ast::Statement { kind: s, pos: ast::Pos(start, end) },
+}
+
+Statement: ast::StatementKind = {
+    "Put" <e:Expr> "Into" <v:LValue> => ast::StatementKind::Assign(v, e),
 
     // FIXME: Spec is unclear on what literals are allowed here. All of them?
-    <v:LValue> "Is" <e:Literal> => ast::Statement::Assign(v, e),
-    <v:LValue> "Was" <e:Literal> => ast::Statement::Assign(v, e),
+    <v:LValue> "Is" <e:Literal> => ast::StatementKind::Assign(v, e),
+    <v:LValue> "Was" <e:Literal> => ast::StatementKind::Assign(v, e),
 
-    "Build" <v:LValue> "Up" => ast::Statement::Incr(v),
-    "Knock" <v:LValue> "Down" => ast::Statement::Decr(v),
-    "Say" <e:Expr> => ast::Statement::Say(e),
+    "Build" <v:LValue> "Up" => ast::StatementKind::Incr(v),
+    "Knock" <v:LValue> "Down" => ast::StatementKind::Decr(v),
+    "Say" <e:Expr> => ast::StatementKind::Say(e),
 
-    "Continue" => ast::Statement::Continue,
-    "Break" => ast::Statement::Break,
-    "Give" "Back" <e:Expr> => ast::Statement::Return(e),
+    "Continue" => ast::StatementKind::Continue,
+    "Break" => ast::StatementKind::Break,
+    "Give" "Back" <e:Expr> => ast::StatementKind::Return(e),
 
     "If" <c:Conditional> "\n" <b:Block> <els:("Else" "\n" Block)?> => {
         let else_block = els.map_or_else(|| Vec::new(), |(_, _, b2)| b2);
-        ast::Statement::Condition(c, b, else_block)
+        ast::StatementKind::Condition(c, b, else_block)
     },
 
-    "While" <c:Conditional> "\n" <b:Block> => ast::Statement::While(c, b),
-    "Until" <c:Conditional> "\n" <b:Block> => ast::Statement::Until(c, b),
+    "While" <c:Conditional> "\n" <b:Block> => ast::StatementKind::While(c, b),
+    "Until" <c:Conditional> "\n" <b:Block> => ast::StatementKind::Until(c, b),
     <v:Variable> "Takes" <a:FuncDecArgs> "\n" <b:Block> =>
-        ast::Statement::FuncDef(v, a, b),
+        ast::StatementKind::FuncDef(v, a, b),
 }
 
 FuncDecArgs: Vec<ast::Variable> = {
@@ -51,10 +56,6 @@ FuncDecSep: () = {
 
 Block: Vec<ast::Statement> = {
     <b:TermStatement*> => b
-}
-
-TermStatement: ast::Statement = {
-    <s:Statement> "\n" => s,
 }
 
 Expr: ast::Expr = {

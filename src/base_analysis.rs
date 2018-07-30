@@ -3,13 +3,13 @@
 use std::error;
 use std::fmt;
 
-use ast::Statement;
+use ast::{Pos, Statement, StatementKind};
 use ast_walker::{visit_statements, StatementVisitor, BlockType};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum CompileError {
-    UnexpectedReturn(usize, usize),
-    UnexpectedLoopControl(usize, usize),
+    UnexpectedReturn(Pos),
+    UnexpectedLoopControl(Pos),
 }
 
 impl error::Error for CompileError {}
@@ -71,12 +71,12 @@ impl StatementVisitor for ControlFlowVerifier {
     fn visit_statement(&mut self, statement: &Statement)
         -> Result<(), Self::Error>
     {
-        match statement {
-            Statement::Return(..) if !self.is_func_body() => {
-                Err(CompileError::UnexpectedReturn(0, 0)) // FIXME
+        match statement.kind {
+            StatementKind::Return(..) if !self.is_func_body() => {
+                Err(CompileError::UnexpectedReturn(statement.pos))
             }
-            Statement::Continue | Statement::Break if !self.is_loop() => {
-                Err(CompileError::UnexpectedLoopControl(0, 0)) // FIXME
+            StatementKind::Continue | StatementKind::Break if !self.is_loop() => {
+                Err(CompileError::UnexpectedLoopControl(statement.pos))
             }
             _ => Ok(())
         }
