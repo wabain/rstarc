@@ -14,20 +14,25 @@ BASENAME = os.path.splitext(os.path.basename(__file__))[0]
 logger = logging.getLogger(BASENAME)
 
 
-DEFAULT_TESTS = ['tokens', 'pretty']
-
-
 def main():
     parser = argparse.ArgumentParser(BASENAME)
     parser.add_argument('--bin', help='A precompiled rockstarc binary to use')
     parser.add_argument('--rebuild',
-                        help='Build and run the debug binary (if no binary is specified)',
+                        help='Build and run the debug binary (if no binary '
+                             'is specified)',
                         action='store_true',
                         default=True)
 
     parser.add_argument('--refresh',
                         help='Overwrite output files with new results',
                         action='store_true')
+
+    parser.add_argument('--tests-for-new-files',
+                        help='Default tests to run for programs where no '
+                             'configuration is present',
+                        nargs='+',
+                        metavar='test',
+                        default=['tokens', 'pretty'])
 
     parser.add_argument('-v', '--verbose', action='count', default=0)
     parser.add_argument('files', nargs='*', help='Files to test')
@@ -52,7 +57,10 @@ def main():
 
     files = args.files if args.files else get_files(basedir)
 
-    if not verify_output(files, binary=binary, refresh=args.refresh):
+    if not verify_output(files,
+                         binary=binary,
+                         refresh=args.refresh,
+                         tests_for_new_files=args.tests_for_new_files):
         sys.exit(1)
 
 
@@ -65,12 +73,16 @@ def get_files(basedir):
     return files
 
 
-def verify_output(files, *, binary, refresh):
+def verify_output(files, *, binary, refresh, tests_for_new_files):
     failures = []
     success_count = 0
 
     for src in files:
-        outcomes = verify_source_file(src, binary=binary, refresh=refresh)
+        outcomes = verify_source_file(src,
+                                      binary=binary,
+                                      refresh=refresh,
+                                      tests_for_new_files=tests_for_new_files)
+
         for test, failed_reasons in sorted(outcomes.items()):
 
             if failed_reasons:
@@ -85,12 +97,15 @@ def verify_output(files, *, binary, refresh):
             reason.explain()
 
     print('PASSED:', success_count)
-    print('FAILED:', len(failures))
+    if refresh:
+        print('UPDATED:', len(failures))
+    else:
+        print('FAILED:', len(failures))
 
     return not failures
 
 
-def verify_source_file(src, binary, refresh):
+def verify_source_file(src, binary, refresh, tests_for_new_files):
     logger.info('Verifying %s', src)
 
     actual_output = {}
@@ -102,7 +117,11 @@ def verify_source_file(src, binary, refresh):
         config = toml.load(config_filename)
         logger.debug('Using configuration file %s', config_filename)
     except FileNotFoundError:
-        config = {}
+        config = {
+            'tests': {
+                'enabled': tests_for_new_files,
+            }
+        }
         logger.debug('Configuration file %s missing', config_filename)
 
     tests = [
@@ -111,7 +130,10 @@ def verify_source_file(src, binary, refresh):
         ['run', [binary, 'run', src]],
     ]
 
-    enabled_tests = config.setdefault('tests', {}).setdefault('enabled', DEFAULT_TESTS)
+    try:
+        enabled_tests = config['tests']['enabled']
+    except KeyError:
+        raise ValueError('manifest for {} is missing enabled tests field'.format(src))
 
     for test, cmd in tests:
         if test not in enabled_tests:
