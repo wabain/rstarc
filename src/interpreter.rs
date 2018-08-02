@@ -2,21 +2,23 @@ use std::fmt;
 use std::mem;
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::collections::hash_map::{HashMap, Entry};
+use std::collections::HashMap;
 
+use base_analysis;
 use lang_constructs::{Value, LangVariable};
 use ast::{Statement, StatementKind, Expr, Conditional, Comparison, Comparator, LValue};
 
-pub fn interpret(program: &[Statement]) -> () {
-    Interpreter::default().run_program(program);
+pub fn interpret(program: &[Statement], scope_map: &base_analysis::ScopeMap) -> () {
+    Interpreter::new(scope_map).run_program(program);
 }
 
 type InterpValue<'a> = Value<InterpFunc<'a>>;
-type ScopeCell<'a> = Rc<RefCell<Scope<'a>>>;
+type ScopeCell<'a> = Rc<RefCell<VariableScope<'a>>>;
 
 #[derive(Clone)]
 struct InterpFunc<'a> {
     id: u64,
+    static_scope_id: base_analysis::ScopeId,
     args: Vec<LangVariable<'a>>,
     statements: &'a [Statement],
     parent_scope: ScopeCell<'a>,
@@ -24,7 +26,7 @@ struct InterpFunc<'a> {
 
 impl<'a> fmt::Debug for InterpFunc<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "InterpFunc #{}", self.id)
+        write!(f, "InterpFunc #{} (scope {})", self.id, self.static_scope_id)
     }
 }
 
@@ -35,16 +37,18 @@ impl<'a> PartialEq for InterpFunc<'a> {
 }
 
 #[derive(Default, Debug)]
-struct Scope<'a> {
+struct VariableScope<'a> {
+    static_scope_id: base_analysis::ScopeId,
     vars: HashMap<LangVariable<'a>, InterpValue<'a>>,
     parent: Option<ScopeCell<'a>>,
 }
 
-impl<'a> Scope<'a> {
-    fn child(parent: ScopeCell<'a>) -> Scope<'a> {
-        Scope {
+impl<'a> VariableScope<'a> {
+    fn for_function(func: &InterpFunc<'a>) -> VariableScope<'a> {
+        VariableScope {
+            static_scope_id: func.static_scope_id,
             vars: HashMap::new(),
-            parent: Some(parent),
+            parent: Some(func.parent_scope.clone()),
         }
     }
 
@@ -62,13 +66,21 @@ enum Flow<'a> {
 }
 
 /// A simple interpreter that reads off the AST
-#[derive(Default)]
 pub struct Interpreter<'a> {
     func_id: u64,
     scope: ScopeCell<'a>,
+    scope_map: &'a base_analysis::ScopeMap<'a>,
 }
 
 impl<'a> Interpreter<'a> {
+    fn new(scope_map: &'a base_analysis::ScopeMap<'a>) -> Self {
+        Interpreter {
+            func_id: 0,
+            scope: ScopeCell::default(),
+            scope_map,
+        }
+    }
+
     fn run_program(mut self, program: &'a [Statement]) {
         self.dispatch_statements(program);
     }
@@ -145,6 +157,7 @@ impl<'a> Interpreter<'a> {
 
                 let func = InterpFunc {
                     id,
+                    static_scope_id: self.scope_map.get_scope_for_func_declaration(statement),
                     args: args.iter().map(|a| a.to_lang_variable()).collect(),
                     statements,
                     parent_scope: self.scope.clone(),
@@ -182,7 +195,7 @@ impl<'a> Interpreter<'a> {
                     }
                 };
 
-                let mut fcall_scope = Scope::child(func.parent_scope);
+                let mut fcall_scope = VariableScope::for_function(&func);
 
                 let arg_values: Vec<_> = arg_exprs.iter()
                     .map(|a| self.eval_expr(a))
@@ -270,44 +283,67 @@ impl<'a> Interpreter<'a> {
     }
 
     fn get_var(&mut self, var: &LangVariable) -> InterpValue<'a> {
-        // XXX: Seems awkward to have to incr/decr the refcount
-        // just to read variables
-        let mut scope_cell = Some(self.scope.clone());
+        let scope = self.scope.borrow();
+        let leaf_scope_id = scope.static_scope_id;
+        let owning_scope_id = if let Some(own) = self.scope_map
+                .get_owning_scope_for_var(&var, leaf_scope_id)
+        {
+            own
+        } else {
+            // Values can be missing from the owning scope map if they were never
+            // written
+            return Value::Mysterious;
+        };
 
-        while let Some(sc) = scope_cell {
-            let scope = sc.borrow();
-
-            if let Some(value) = scope.vars.get(var) {
-                return value.clone();
-            }
-
-            scope_cell = scope.parent.clone();
+        // Fast path: local read, don't need to touch refcounts
+        if owning_scope_id == leaf_scope_id {
+            // FIXME: Do I really need to clone?
+            return scope.vars.get(var).map_or(Value::Mysterious, Value::clone);
         }
 
-        Value::Mysterious
+        // Slow path: walk the scope chain to find the owning scope
+        let scope_cell = self.find_ancestor_scope_by_id(owning_scope_id);
+        let value = scope_cell.borrow().vars
+            .get(var)
+            .map_or(Value::Mysterious, Value::clone);
+
+        value
     }
 
     // If the variable already exists in a parent scope, overwrite it.
     // Otherwise, write it to the leaf scope.
     fn set_var(&mut self, var: LangVariable<'a>, value: InterpValue<'a>) {
-        let mut scope = Some(self.scope.clone());
-        let mut var = var;
+        let leaf_scope_id = self.scope.borrow().static_scope_id;
+        let owning_scope_id = self.scope_map
+            .get_owning_scope_for_var(&var, leaf_scope_id)
+            .unwrap_or_else(|| {
+                panic!("No known owning scope on write for {:?} from scope {}",
+                       var, leaf_scope_id)
+            });
 
-        while let Some(sc) = scope {
-            match sc.borrow_mut().vars.entry(var) {
-                Entry::Occupied(mut e) => {
-                    e.insert(value);
-                    return;
-                }
-                Entry::Vacant(e) => {
-                    // Reacquire the the key
-                    var = e.into_key()
-                }
-            }
-
-            scope = sc.borrow_mut().parent.clone();
+        // Fast path: local write, don't need to touch refcounts
+        if owning_scope_id == leaf_scope_id {
+            self.scope.borrow_mut().vars.insert(var, value);
+            return;
         }
 
-        self.scope.borrow_mut().vars.insert(var, value);
+        // Slow path: walk the scope chain to find the owning scope
+        let scope_cell = self.find_ancestor_scope_by_id(owning_scope_id);
+        scope_cell.borrow_mut().vars.insert(var, value);
+    }
+
+    fn find_ancestor_scope_by_id(&self, static_id: base_analysis::ScopeId) -> ScopeCell<'a> {
+        // Slow path: walk the scope chain to find the owning scope
+        let mut scope_cell = self.scope.borrow().parent.clone();
+
+        while let Some(sc) = scope_cell {
+            if sc.borrow().static_scope_id == static_id {
+                return sc;
+            }
+
+            scope_cell = sc.borrow().parent.clone();
+        }
+
+        panic!("Did not find scope {} from {:?}", static_id, self.scope);
     }
 }

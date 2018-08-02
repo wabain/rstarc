@@ -8,8 +8,9 @@ pub enum BlockType {
     ElseBlock,
 }
 
-pub fn visit_statements<V>(statements: &[Statement], visitor: &mut V) -> Result<(), V::Error>
-    where V: StatementVisitor
+pub fn visit_statements<'prog, V>(statements: &'prog [Statement],
+                                  visitor: &mut V) -> Result<(), V::Error>
+    where V: StatementVisitor<'prog>
 {
     for statement in statements {
         visitor.visit_statement(statement)?;
@@ -41,18 +42,18 @@ pub fn visit_statements<V>(statements: &[Statement], visitor: &mut V) -> Result<
     Ok(())
 }
 
-pub trait StatementVisitor {
+pub trait StatementVisitor<'prog> {
     type Error;
 
-    fn visit_statement(&mut self, &Statement) -> Result<(), Self::Error>;
+    fn visit_statement(&mut self, &'prog Statement) -> Result<(), Self::Error>;
 
-    fn enter_block(&mut self, _: BlockType, _: &Statement)
+    fn enter_block(&mut self, _: BlockType, _: &'prog Statement)
         -> Result<(), Self::Error>
     {
         Ok(())
     }
 
-    fn exit_block(&mut self, _: BlockType, _: &Statement)
+    fn exit_block(&mut self, _: BlockType, _: &'prog Statement)
         -> Result<(), Self::Error>
     {
         Ok(())

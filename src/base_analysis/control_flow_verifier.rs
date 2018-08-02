@@ -1,33 +1,8 @@
-//! Simple analyses applied to the AST as a to verify basic correctness
-
-use std::error;
-use std::fmt;
-
-use ast::{Pos, Statement, StatementKind};
+use ast::{Statement, StatementKind};
 use ast_walker::{visit_statements, StatementVisitor, BlockType};
+use super::CompileError;
 
-#[derive(Debug)]
-pub enum CompileError {
-    UnexpectedReturn(Pos),
-    UnexpectedLoopControl(Pos),
-}
-
-impl error::Error for CompileError {}
-
-impl fmt::Display for CompileError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            CompileError::UnexpectedReturn(..) => {
-                write!(f, "Unexpected return statement")
-            }
-            CompileError::UnexpectedLoopControl(..) => {
-                write!(f, "Unexpected loop control statement")
-            }
-        }
-    }
-}
-
-pub fn verify_control_flow(program: &[Statement]) -> Result<(), CompileError> {
+pub fn verify_control_flow<'prog>(program: &'prog [Statement]) -> Result<(), CompileError> {
     visit_statements(program, &mut ControlFlowVerifier::new())
 }
 
@@ -65,7 +40,7 @@ impl ControlFlowVerifier {
     }
 }
 
-impl StatementVisitor for ControlFlowVerifier {
+impl<'prog> StatementVisitor<'prog> for ControlFlowVerifier {
     type Error = CompileError;
 
     fn visit_statement(&mut self, statement: &Statement)

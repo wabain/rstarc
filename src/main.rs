@@ -103,9 +103,10 @@ fn run(tokenizer: &Tokenizer, action: Action) -> Result<(), RuntimeError> {
 
     let tree = parser::ProgramParser::new().parse(tokenizer.tokenize())?;
     base_analysis::verify_control_flow(&tree)?;
+    let scope_map = base_analysis::identify_variable_scopes(&tree);
 
     match action {
-        Action::Interpret => interpreter::interpret(&tree),
+        Action::Interpret => interpreter::interpret(&tree, &scope_map),
         Action::FormatPretty => pretty_print::pretty_print_program(io::stdout(), &tree)?,
         Action::FormatTokens => unreachable!(),
     }

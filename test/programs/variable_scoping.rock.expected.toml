@@ -1,0 +1,6 @@
+[tests]
+enabled = [ "run",]
+
+[run]
+returncode = "0"
+stdout = "mysterious\n100\n300\n600\n"

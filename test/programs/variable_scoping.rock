@@ -1,0 +1,25 @@
+FuncA takes X
+    FuncB takes Y
+        If Z is not mysterious
+          Put Y plus Z into Z
+        Else
+          Put Y into Z
+        (endif)
+    (endfunc)
+    If X is not nothing
+        If Z is not mysterious
+            Put X plus Z into Z
+        Else
+            Put X into Z
+        (endif)
+    (endif)
+    Give back FuncB
+(endfunc)
+Put FuncA taking nothing into FB
+Say Z (expect mysterious)
+Put FB taking 100 into Dummy
+Say Z (expect 100)
+Put FuncA taking 200 into Dummy
+Say Z (expect 300)
+Put 300 plus Z into Z
+Say Z (expect 600)
