@@ -1,6 +1,11 @@
 [tests]
-enabled = [ "run",]
+enabled = ["run"]
 
 [run]
 returncode = "0"
-stdout = "mysterious\n100\n300\n600\n"
+stdout = """
+mysterious
+100
+300
+600
+"""

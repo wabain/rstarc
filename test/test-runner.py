@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import re
 import os
 import sys
 import logging
@@ -7,7 +8,7 @@ import subprocess
 import argparse
 import difflib
 
-import toml
+import pytoml as toml
 
 BASENAME = os.path.splitext(os.path.basename(__file__))[0]
 
@@ -17,14 +18,18 @@ logger = logging.getLogger(BASENAME)
 def main():
     parser = argparse.ArgumentParser(BASENAME)
     parser.add_argument('--bin', help='A precompiled rockstarc binary to use')
-    parser.add_argument('--rebuild',
+    parser.add_argument('--no-rebuild',
                         help='Build and run the debug binary (if no binary is specified)',
-                        action='store_true',
+                        action='store_false',
+                        dest='rebuild',
                         default=True)
 
     parser.add_argument('--refresh',
                         help='Overwrite output files with new results',
-                        action='store_true')
+                        default=False,
+                        const=True,
+                        choices=['force'],
+                        nargs='?')
 
     parser.add_argument('--tests-for-new-files',
                         help='Default tests to run for programs where no '
@@ -113,7 +118,9 @@ def verify_source_file(src, binary, refresh, tests_for_new_files):
     config_filename = src + '.expected.toml'
 
     try:
-        config = toml.load(config_filename)
+        with open(config_filename) as f:
+            config = toml.load(f)
+
         logger.debug('Using configuration file %s', config_filename)
     except FileNotFoundError:
         config = {
@@ -142,16 +149,25 @@ def verify_source_file(src, binary, refresh, tests_for_new_files):
         actual_output[test], failures_by_test[test] = \
             run_test(test_name=test, src=src, cmd=cmd, config=config)
 
-    if refresh and any(failures for failures in failures_by_test.values()):
+    if needs_refresh(refresh, failures_by_test):
         logger.info('Updating %s', config_filename)
 
         for k, v in actual_output.items():
             config[k] = v
 
-        with open(config_filename, 'w') as f:
-            toml.dump(config, f)
+        write_toml(config, config_filename)
 
     return failures_by_test
+
+
+def needs_refresh(refresh, failures_by_test):
+    if not refresh:
+        return False
+
+    if refresh == 'force':
+        return True
+
+    return any(failures for failures in failures_by_test.values())
 
 
 def run_test(test_name, src, cmd, config):
@@ -239,6 +255,37 @@ class NonMatching:
 
         for line in diff:
             print(line, end='' if line.endswith('\n') else '\n')
+
+
+def write_toml(source_object, fname):
+    """
+    Find pairs of bare keys and single-line basic strings and replace them
+    with multi-line basic strings.
+    """
+    content = toml.dumps(source_object)
+
+    with open(fname, 'w') as f:
+        end_idx = 0
+
+        for match in re.finditer(r'^([A-Za-z0-9_-]+)\s*=\s*"(.*)"$', content, re.MULTILINE):
+            key = match.group(1)
+            string = match.group(2)
+
+            if '\\n' not in string:
+                continue
+
+            f.write(content[end_idx:match.start()])
+
+            multiline = (string
+                .replace('\\n', '\n')
+                .replace('\\"', '"')
+                .replace('"""', '\\"\\"\\"'))
+
+            f.write('{} = """\n{}"""'.format(key, multiline))
+
+            end_idx = match.end()
+
+        f.write(content[end_idx:])
 
 
 if __name__ == '__main__':

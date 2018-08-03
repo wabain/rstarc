@@ -1,6 +1,30 @@
 [tests]
-enabled = [ "run",]
+enabled = ["run"]
 
 [run]
 returncode = "0"
-stdout = "invoking function\nx\n1\ny\nmysterious\nz\n1\n\nincrementing within function\nx\n2\ny\nNaN\nz\n2\n\nchecking globals\nx\n1\ny\n1\nz\n2\n"
+stdout = """
+invoking function
+x
+1
+y
+mysterious
+z
+1
+
+incrementing within function
+x
+2
+y
+NaN
+z
+2
+
+checking globals
+x
+1
+y
+1
+z
+2
+"""

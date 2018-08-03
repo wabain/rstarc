@@ -1,14 +1,199 @@
 [tests]
-enabled = [ "tokens", "pretty", "ir",]
+enabled = ["tokens", "pretty", "ir"]
 
 [tokens]
 returncode = "0"
-stdout = "0..7 Modulus\n8..13 takes\n14..20 Number\n21..24 and\n25..32 Divisor\n32..33 ⏎\n33..38 while\n39..45 Number\n46..48 is\n49..51 as\n52..56 great\n57..59 as\n60..67 Divisor\n67..68 ⏎\n68..71 put\n72..78 Number\n79..84 minus\n85..92 Divisor\n93..97 into\n98..104 Number\n104..105 ⏎\n105..106 ⏎\n106..110 give\n111..115 back\n116..122 Number\n122..123 ⏎\n123..124 ⏎\n124..129 Limit\n130..132 is\n133..138 \"100\"\n138..139 ⏎\n139..146 Counter\n147..149 is\n150..153 \"0\"\n153..154 ⏎\n154..158 Fizz\n159..161 is\n162..165 \"3\"\n165..166 ⏎\n166..170 Buzz\n171..173 is\n174..177 \"5\"\n177..178 ⏎\n178..183 until\n184..191 Counter\n192..194 is\n195..200 Limit\n200..201 ⏎\n201..206 build\n207..214 Counter\n215..217 up\n217..218 ⏎\n218..220 if\n221..228 Modulus\n229..235 taking\n236..243 Counter\n243..244 ,\n245..249 Fizz\n250..252 is\n253..256 \"0\"\n257..260 and\n261..268 Modulus\n269..275 taking\n276..283 Counter\n283..284 ,\n285..289 Buzz\n290..292 is\n293..296 \"0\"\n296..297 ⏎\n297..300 say\n301..312 \"FizzBuzz!\"\n312..313 ⏎\n313..321 continue\n321..322 ⏎\n322..323 ⏎\n323..325 if\n326..333 Modulus\n334..340 taking\n341..348 Counter\n348..349 ,\n350..354 Fizz\n355..357 is\n358..361 \"0\"\n361..362 ⏎\n362..365 say\n366..373 \"Fizz!\"\n373..374 ⏎\n374..382 continue\n382..383 ⏎\n383..384 ⏎\n384..386 if\n387..394 Modulus\n395..401 taking\n402..409 Counter\n409..410 ,\n411..415 Buzz\n416..418 is\n419..422 \"0\"\n422..423 ⏎\n423..426 say\n427..434 \"Buzz!\"\n434..435 ⏎\n435..443 continue\n443..444 ⏎\n444..445 ⏎\n445..448 say\n449..456 Counter\n456..457 ⏎\n457..458 ⏎\n458..458 <eof>\n"
+stdout = """
+0..7 Modulus
+8..13 takes
+14..20 Number
+21..24 and
+25..32 Divisor
+32..33 ⏎
+33..38 while
+39..45 Number
+46..48 is
+49..51 as
+52..56 great
+57..59 as
+60..67 Divisor
+67..68 ⏎
+68..71 put
+72..78 Number
+79..84 minus
+85..92 Divisor
+93..97 into
+98..104 Number
+104..105 ⏎
+105..106 ⏎
+106..110 give
+111..115 back
+116..122 Number
+122..123 ⏎
+123..124 ⏎
+124..129 Limit
+130..132 is
+133..138 "100"
+138..139 ⏎
+139..146 Counter
+147..149 is
+150..153 "0"
+153..154 ⏎
+154..158 Fizz
+159..161 is
+162..165 "3"
+165..166 ⏎
+166..170 Buzz
+171..173 is
+174..177 "5"
+177..178 ⏎
+178..183 until
+184..191 Counter
+192..194 is
+195..200 Limit
+200..201 ⏎
+201..206 build
+207..214 Counter
+215..217 up
+217..218 ⏎
+218..220 if
+221..228 Modulus
+229..235 taking
+236..243 Counter
+243..244 ,
+245..249 Fizz
+250..252 is
+253..256 "0"
+257..260 and
+261..268 Modulus
+269..275 taking
+276..283 Counter
+283..284 ,
+285..289 Buzz
+290..292 is
+293..296 "0"
+296..297 ⏎
+297..300 say
+301..312 "FizzBuzz!"
+312..313 ⏎
+313..321 continue
+321..322 ⏎
+322..323 ⏎
+323..325 if
+326..333 Modulus
+334..340 taking
+341..348 Counter
+348..349 ,
+350..354 Fizz
+355..357 is
+358..361 "0"
+361..362 ⏎
+362..365 say
+366..373 "Fizz!"
+373..374 ⏎
+374..382 continue
+382..383 ⏎
+383..384 ⏎
+384..386 if
+387..394 Modulus
+395..401 taking
+402..409 Counter
+409..410 ,
+411..415 Buzz
+416..418 is
+419..422 "0"
+422..423 ⏎
+423..426 say
+427..434 "Buzz!"
+434..435 ⏎
+435..443 continue
+443..444 ⏎
+444..445 ⏎
+445..448 say
+449..456 Counter
+456..457 ⏎
+457..458 ⏎
+458..458 <eof>
+"""
 
 [pretty]
 returncode = "0"
-stdout = "Modulus takes Number and Divisor\nWhile Number is as great as Divisor\nPut Number minus Divisor into Number\n\nGive back Number\n\nPut \"100\" into Limit\nPut \"0\" into Counter\nPut \"3\" into Fizz\nPut \"5\" into Buzz\nUntil Counter is Limit\nBuild Counter up\nIf Modulus taking Counter, Fizz is \"0\" and Modulus taking Counter, Buzz is \"0\"\nSay \"FizzBuzz!\"\nContinue\n\nIf Modulus taking Counter, Fizz is \"0\"\nSay \"Fizz!\"\nContinue\n\nIf Modulus taking Counter, Buzz is \"0\"\nSay \"Buzz!\"\nContinue\n\nSay Counter\n\n"
+stdout = """
+Modulus takes Number and Divisor
+While Number is as great as Divisor
+Put Number minus Divisor into Number
+
+Give back Number
+
+Put "100" into Limit
+Put "0" into Counter
+Put "3" into Fizz
+Put "5" into Buzz
+Until Counter is Limit
+Build Counter up
+If Modulus taking Counter, Fizz is "0" and Modulus taking Counter, Buzz is "0"
+Say "FizzBuzz!"
+Continue
+
+If Modulus taking Counter, Fizz is "0"
+Say "Fizz!"
+Continue
+
+If Modulus taking Counter, Buzz is "0"
+Say "Buzz!"
+Continue
+
+Say Counter
+
+"""
 
 [ir]
 returncode = "0"
-stdout = "main:\n  Modulus := store Function(1)\n  Limit := store \"100\"\n  Counter := store \"0\"\n  Fizz := store \"3\"\n  Buzz := store \"5\"\n.loop_start2:\n  t0 := is Counter, Limit\n  jumpif t0, .loop_end3\n  Counter := add Counter, 1\n  t1 := call Modulus, [Counter, Fizz]\n  t2 := is t1, \"0\"\n  t3 := call Modulus, [Counter, Buzz]\n  t4 := is t3, \"0\"\n  t5 := and t2, t4\n  jumpunless t5, .else4\n  say \"FizzBuzz!\"\n  jump .loop_start2\n.else4:\n  t6 := call Modulus, [Counter, Fizz]\n  t7 := is t6, \"0\"\n  jumpunless t7, .else5\n  say \"Fizz!\"\n  jump .loop_start2\n.else5:\n  t8 := call Modulus, [Counter, Buzz]\n  t9 := is t8, \"0\"\n  jumpunless t9, .else6\n  say \"Buzz!\"\n  jump .loop_start2\n.else6:\n  say Counter\n  jump .loop_start2\n.loop_end3:\n\n;\n; Function Modulus takes Number, Divisor\n;\nf1_Modulus:\n.loop_start0:\n  t0 := is-ge Number, Divisor\n  jumpunless t0, .loop_end1\n  Number := sub Number, Divisor\n  jump .loop_start0\n.loop_end1:\n  return Number\n"
+stdout = """
+main:
+  Modulus := store Function(1)
+  Limit := store "100"
+  Counter := store "0"
+  Fizz := store "3"
+  Buzz := store "5"
+.loop_start2:
+  t0 := is Counter, Limit
+  jumpif t0, .loop_end3
+  Counter := add Counter, 1
+  t1 := call Modulus, [Counter, Fizz]
+  t2 := is t1, "0"
+  t3 := call Modulus, [Counter, Buzz]
+  t4 := is t3, "0"
+  t5 := and t2, t4
+  jumpunless t5, .else4
+  say "FizzBuzz!"
+  jump .loop_start2
+.else4:
+  t6 := call Modulus, [Counter, Fizz]
+  t7 := is t6, "0"
+  jumpunless t7, .else5
+  say "Fizz!"
+  jump .loop_start2
+.else5:
+  t8 := call Modulus, [Counter, Buzz]
+  t9 := is t8, "0"
+  jumpunless t9, .else6
+  say "Buzz!"
+  jump .loop_start2
+.else6:
+  say Counter
+  jump .loop_start2
+.loop_end3:
+
+;
+; Function Modulus takes Number, Divisor
+;
+f1_Modulus:
+.loop_start0:
+  t0 := is-ge Number, Divisor
+  jumpunless t0, .loop_end1
+  Number := sub Number, Divisor
+  jump .loop_start0
+.loop_end1:
+  return Number
+"""

@@ -1,10 +1,66 @@
 [tests]
-enabled = [ "tokens", "pretty",]
+enabled = ["tokens", "pretty"]
 
 [tokens]
 returncode = "0"
-stdout = "0..1 ⏎\n1..7 Fernpl\n8..13 takes\n14..15 X\n16..19 and\n20..21 Y\n21..22 ⏎\n22..26 give\n27..31 back\n32..33 X\n33..34 ⏎\n34..35 ⏎\n35..36 ⏎\n36..41 while\n42..46 true\n47..49 is\n50..54 true\n54..55 ⏎\n55..60 until\n61..66 false\n67..69 is\n70..75 false\n75..76 ⏎\n76..78 if\n79..83 true\n84..86 is\n87..91 true\n91..92 ⏎\n92..95 say\n96..102 \"yeah\"\n102..103 ⏎\n103..107 else\n107..108 ⏎\n108..111 say\n112..117 \"nah\"\n117..118 ⏎\n118..118 ⏎\n118..118 ⏎\n118..118 ⏎\n118..118 ⏎\n118..118 <eof>\n"
+stdout = """
+0..1 ⏎
+1..7 Fernpl
+8..13 takes
+14..15 X
+16..19 and
+20..21 Y
+21..22 ⏎
+22..26 give
+27..31 back
+32..33 X
+33..34 ⏎
+34..35 ⏎
+35..36 ⏎
+36..41 while
+42..46 true
+47..49 is
+50..54 true
+54..55 ⏎
+55..60 until
+61..66 false
+67..69 is
+70..75 false
+75..76 ⏎
+76..78 if
+79..83 true
+84..86 is
+87..91 true
+91..92 ⏎
+92..95 say
+96..102 "yeah"
+102..103 ⏎
+103..107 else
+107..108 ⏎
+108..111 say
+112..117 "nah"
+117..118 ⏎
+118..118 ⏎
+118..118 ⏎
+118..118 ⏎
+118..118 ⏎
+118..118 <eof>
+"""
 
 [pretty]
 returncode = "0"
-stdout = "Fernpl takes X and Y\nGive back X\n\nWhile true is true\nUntil false is false\nIf true is true\nSay \"yeah\"\n\nElse\nSay \"nah\"\n\n\n\n"
+stdout = """
+Fernpl takes X and Y
+Give back X
+
+While true is true
+Until false is false
+If true is true
+Say "yeah"
+
+Else
+Say "nah"
+
+
+
+"""

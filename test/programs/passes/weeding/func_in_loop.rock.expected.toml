@@ -1,6 +1,11 @@
 [tests]
-enabled = [ "run",]
+enabled = ["run"]
 
 [run]
 returncode = "1"
-stderr = "error: Unexpected loop control statement\n\n3:          break\n            ^^^^^\n"
+stderr = """
+error: Unexpected loop control statement
+
+3:          break
+            ^^^^^
+"""

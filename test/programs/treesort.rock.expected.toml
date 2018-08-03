@@ -1,10 +1,156 @@
 [tests]
-enabled = [ "run", "ir",]
+enabled = ["run", "ir"]
 
 [run]
 returncode = "0"
-stdout = "822\n4805\n9117\n10097\n10402\n13586\n20636\n24037\n24805\n32533\n34673\n37542\n39292\n54876\n64894\n74296\n74945\n76520\n80959\n91665\n"
+stdout = """
+822
+4805
+9117
+10097
+10402
+13586
+20636
+24037
+24805
+32533
+34673
+37542
+39292
+54876
+64894
+74296
+74945
+76520
+80959
+91665
+"""
 
 [ir]
 returncode = "0"
-stdout = "main:\n  Nodeoperationread := store 0\n  Nodeoperationwrite := store 1\n  Nodevalueignored := store 0\n  Nodevariablevalue := store 0\n  Nodevariableleft := store 1\n  Nodevariableright := store 2\n  Makenode := store Function(1)\n  Insertnode := store Function(3)\n  Inorder := store Function(4)\n  Main := store Function(5)\n  Unusedreturnvalue := call Main, [null]\n\n;\n; Function Node takes Operation, Variable, Newvalue\n;\nf2_Node:\n  t0 := is Operation, Nodeoperationread\n  jumpunless t0, .else0\n  t1 := is Variable, Nodevariablevalue\n  jumpunless t1, .else1\n  return Value\n.else1:\n  t2 := is Variable, Nodevariableleft\n  jumpunless t2, .else2\n  return Left\n.else2:\n  t3 := is Variable, Nodevariableright\n  jumpunless t3, .else3\n  return Right\n.else3:\n.else0:\n  t4 := is Operation, Nodeoperationwrite\n  jumpunless t4, .else4\n  t5 := is Variable, Nodevariablevalue\n  jumpunless t5, .else5\n  Value := store Newvalue\n.else5:\n  t6 := is Variable, Nodevariableleft\n  jumpunless t6, .else6\n  Left := store Newvalue\n.else6:\n  t7 := is Variable, Nodevariableright\n  jumpunless t7, .else7\n  Right := store Newvalue\n.else7:\n.else4:\n\n;\n; Function Makenode takes Value, Left, Right\n;\nf1_Makenode:\n  Node := store Function(2)\n  return Node\n\n;\n; Function Insertnode takes Node, Newvalue\n;\nf3_Insertnode:\n  Newnode := call Makenode, [Newvalue, null, null]\n  t0 := is Node, null\n  jumpunless t0, .else8\n  return Newnode\n.else8:\n  Originalroot := store Node\n  Parentnode := store null\n  Direction := store Nodevariableright\n.loop_start9:\n  t1 := is-not Node, null\n  jumpunless t1, .loop_end10\n  Value := call Node, [Nodeoperationread, Nodevariablevalue, Nodevalueignored]\n  Direction := store Nodevariableright\n  t2 := is-lt Newvalue, Value\n  jumpunless t2, .else11\n  Direction := store Nodevariableleft\n.else11:\n  Parentnode := store Node\n  Node := call Node, [Nodeoperationread, Direction, Nodevalueignored]\n  jump .loop_start9\n.loop_end10:\n  Unusedreturnvalue := call Parentnode, [Nodeoperationwrite, Direction, Newnode]\n  return Originalroot\n\n;\n; Function Inorder takes Node\n;\nf4_Inorder:\n  t0 := is Node, null\n  jumpunless t0, .else12\n  return null\n.else12:\n  Left := call Node, [Nodeoperationread, Nodevariableleft, Nodevalueignored]\n  Unusedreturnvalue := call Inorder, [Left]\n  Value := call Node, [Nodeoperationread, Nodevariablevalue, Nodevalueignored]\n  say Value\n  Right := call Node, [Nodeoperationread, Nodevariableright, Nodevalueignored]\n  Unusedreturnvalue := call Inorder, [Right]\n  return null\n\n;\n; Function Main takes Root\n;\nf5_Main:\n  Root := call Insertnode, [Root, 10097]\n  Root := call Insertnode, [Root, 32533]\n  Root := call Insertnode, [Root, 76520]\n  Root := call Insertnode, [Root, 13586]\n  Root := call Insertnode, [Root, 34673]\n  Root := call Insertnode, [Root, 54876]\n  Root := call Insertnode, [Root, 80959]\n  Root := call Insertnode, [Root, 9117]\n  Root := call Insertnode, [Root, 39292]\n  Root := call Insertnode, [Root, 74945]\n  Root := call Insertnode, [Root, 37542]\n  Root := call Insertnode, [Root, 4805]\n  Root := call Insertnode, [Root, 64894]\n  Root := call Insertnode, [Root, 74296]\n  Root := call Insertnode, [Root, 24805]\n  Root := call Insertnode, [Root, 24037]\n  Root := call Insertnode, [Root, 20636]\n  Root := call Insertnode, [Root, 10402]\n  Root := call Insertnode, [Root, 822]\n  Root := call Insertnode, [Root, 91665]\n  Unusedreturnvalue := call Inorder, [Root]\n"
+stdout = """
+main:
+  Nodeoperationread := store 0
+  Nodeoperationwrite := store 1
+  Nodevalueignored := store 0
+  Nodevariablevalue := store 0
+  Nodevariableleft := store 1
+  Nodevariableright := store 2
+  Makenode := store Function(1)
+  Insertnode := store Function(3)
+  Inorder := store Function(4)
+  Main := store Function(5)
+  Unusedreturnvalue := call Main, [null]
+
+;
+; Function Node takes Operation, Variable, Newvalue
+;
+f2_Node:
+  t0 := is Operation, Nodeoperationread
+  jumpunless t0, .else0
+  t1 := is Variable, Nodevariablevalue
+  jumpunless t1, .else1
+  return Value
+.else1:
+  t2 := is Variable, Nodevariableleft
+  jumpunless t2, .else2
+  return Left
+.else2:
+  t3 := is Variable, Nodevariableright
+  jumpunless t3, .else3
+  return Right
+.else3:
+.else0:
+  t4 := is Operation, Nodeoperationwrite
+  jumpunless t4, .else4
+  t5 := is Variable, Nodevariablevalue
+  jumpunless t5, .else5
+  Value := store Newvalue
+.else5:
+  t6 := is Variable, Nodevariableleft
+  jumpunless t6, .else6
+  Left := store Newvalue
+.else6:
+  t7 := is Variable, Nodevariableright
+  jumpunless t7, .else7
+  Right := store Newvalue
+.else7:
+.else4:
+
+;
+; Function Makenode takes Value, Left, Right
+;
+f1_Makenode:
+  Node := store Function(2)
+  return Node
+
+;
+; Function Insertnode takes Node, Newvalue
+;
+f3_Insertnode:
+  Newnode := call Makenode, [Newvalue, null, null]
+  t0 := is Node, null
+  jumpunless t0, .else8
+  return Newnode
+.else8:
+  Originalroot := store Node
+  Parentnode := store null
+  Direction := store Nodevariableright
+.loop_start9:
+  t1 := is-not Node, null
+  jumpunless t1, .loop_end10
+  Value := call Node, [Nodeoperationread, Nodevariablevalue, Nodevalueignored]
+  Direction := store Nodevariableright
+  t2 := is-lt Newvalue, Value
+  jumpunless t2, .else11
+  Direction := store Nodevariableleft
+.else11:
+  Parentnode := store Node
+  Node := call Node, [Nodeoperationread, Direction, Nodevalueignored]
+  jump .loop_start9
+.loop_end10:
+  Unusedreturnvalue := call Parentnode, [Nodeoperationwrite, Direction, Newnode]
+  return Originalroot
+
+;
+; Function Inorder takes Node
+;
+f4_Inorder:
+  t0 := is Node, null
+  jumpunless t0, .else12
+  return null
+.else12:
+  Left := call Node, [Nodeoperationread, Nodevariableleft, Nodevalueignored]
+  Unusedreturnvalue := call Inorder, [Left]
+  Value := call Node, [Nodeoperationread, Nodevariablevalue, Nodevalueignored]
+  say Value
+  Right := call Node, [Nodeoperationread, Nodevariableright, Nodevalueignored]
+  Unusedreturnvalue := call Inorder, [Right]
+  return null
+
+;
+; Function Main takes Root
+;
+f5_Main:
+  Root := call Insertnode, [Root, 10097]
+  Root := call Insertnode, [Root, 32533]
+  Root := call Insertnode, [Root, 76520]
+  Root := call Insertnode, [Root, 13586]
+  Root := call Insertnode, [Root, 34673]
+  Root := call Insertnode, [Root, 54876]
+  Root := call Insertnode, [Root, 80959]
+  Root := call Insertnode, [Root, 9117]
+  Root := call Insertnode, [Root, 39292]
+  Root := call Insertnode, [Root, 74945]
+  Root := call Insertnode, [Root, 37542]
+  Root := call Insertnode, [Root, 4805]
+  Root := call Insertnode, [Root, 64894]
+  Root := call Insertnode, [Root, 74296]
+  Root := call Insertnode, [Root, 24805]
+  Root := call Insertnode, [Root, 24037]
+  Root := call Insertnode, [Root, 20636]
+  Root := call Insertnode, [Root, 10402]
+  Root := call Insertnode, [Root, 822]
+  Root := call Insertnode, [Root, 91665]
+  Unusedreturnvalue := call Inorder, [Root]
+"""
