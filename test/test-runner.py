@@ -126,6 +126,7 @@ def verify_source_file(src, binary, refresh, tests_for_new_files):
     tests = [
         ['tokens', [binary, 'internal', '--format=tokens', src]],
         ['pretty', [binary, 'internal', '--format=pretty', src]],
+        ['ir', [binary, 'internal', '--format=ir', src]],
         ['run', [binary, 'run', src]],
     ]
 

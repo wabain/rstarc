@@ -6,6 +6,7 @@ extern crate void;
 
 mod ast;
 mod ast_walker;
+mod codegen;
 mod lang_constructs;
 mod lexer;
 mod interpreter;
@@ -26,6 +27,7 @@ enum Action {
     Interpret,
     FormatTokens,
     FormatPretty,
+    DumpIR,
 }
 
 fn main() {
@@ -44,7 +46,7 @@ fn main() {
         .subcommand(clap::SubCommand::with_name("internal")
             .about("Internal debugging utilities")
             .arg(clap::Arg::from_usage("-f, --format <FORMAT>  'Debug output format.'")
-                    .possible_values(&["tokens", "pretty"]))
+                    .possible_values(&["tokens", "pretty", "ir"]))
             .arg_from_usage("<source> 'The source file'"))
 
         .get_matches();
@@ -62,6 +64,7 @@ fn main() {
             match submatches.value_of("format") {
                 Some("tokens") => action = Action::FormatTokens,
                 Some("pretty") => action = Action::FormatPretty,
+                Some("ir") => action = Action::DumpIR,
                 _ => unreachable!(),
             }
         }
@@ -109,6 +112,7 @@ fn run(tokenizer: &Tokenizer, action: Action) -> Result<(), RuntimeError> {
         Action::Interpret => interpreter::interpret(&tree, &scope_map),
         Action::FormatPretty => pretty_print::pretty_print_program(io::stdout(), &tree)?,
         Action::FormatTokens => unreachable!(),
+        Action::DumpIR => codegen::dump_ir(&tree, &scope_map),
     }
 
     Ok(())

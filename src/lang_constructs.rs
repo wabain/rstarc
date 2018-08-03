@@ -1,3 +1,4 @@
+use std::fmt;
 use std::borrow::Cow;
 
 pub const ROCKSTAR_NAN: RockstarNumber = ::std::f64::NAN;
@@ -13,6 +14,15 @@ pub type RockstarString = String;
 pub enum LangVariable<'a> {
     Common(Cow<'a, str>, Cow<'a, str>),
     Proper(Cow<'a, str>),
+}
+
+impl<'a> fmt::Display for LangVariable<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            LangVariable::Common(p, v) => write!(f, "{} {}", p, v),
+            LangVariable::Proper(v) => write!(f, "{}", v),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -66,6 +76,19 @@ impl<F> Value<F> {
             Value::Number(n) => return format!("{}", n).into(),
             Value::Boolean(b) => if b { "true" } else { "false" },
             Value::Function(..) => "[Function]",
+            Value::Null => "null",
+            Value::Mysterious => "mysterious",
+        }.into()
+    }
+}
+
+impl<F> Value<F> where F: fmt::Display {
+    pub fn repr_format(&self) -> Cow<str> {
+        match *self {
+            Value::String(ref s) => return format!("\"{}\"", s).into(),
+            Value::Number(n) => return format!("{}", n).into(),
+            Value::Boolean(b) => if b { "true" } else { "false" },
+            Value::Function(ref func) => return format!("Function({})", func).into(),
             Value::Null => "null",
             Value::Mysterious => "mysterious",
         }.into()

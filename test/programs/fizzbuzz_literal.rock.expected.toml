@@ -1,5 +1,5 @@
 [tests]
-enabled = [ "tokens", "pretty",]
+enabled = [ "tokens", "pretty", "ir",]
 
 [tokens]
 returncode = "0"
@@ -8,3 +8,7 @@ stdout = "0..7 Modulus\n8..13 takes\n14..20 Number\n21..24 and\n25..32 Divisor\n
 [pretty]
 returncode = "0"
 stdout = "Modulus takes Number and Divisor\nWhile Number is as great as Divisor\nPut Number minus Divisor into Number\n\nGive back Number\n\nPut \"100\" into Limit\nPut \"0\" into Counter\nPut \"3\" into Fizz\nPut \"5\" into Buzz\nUntil Counter is Limit\nBuild Counter up\nIf Modulus taking Counter, Fizz is \"0\" and Modulus taking Counter, Buzz is \"0\"\nSay \"FizzBuzz!\"\nContinue\n\nIf Modulus taking Counter, Fizz is \"0\"\nSay \"Fizz!\"\nContinue\n\nIf Modulus taking Counter, Buzz is \"0\"\nSay \"Buzz!\"\nContinue\n\nSay Counter\n\n"
+
+[ir]
+returncode = "0"
+stdout = "main:\n  Modulus := store Function(1)\n  Limit := store \"100\"\n  Counter := store \"0\"\n  Fizz := store \"3\"\n  Buzz := store \"5\"\n.loop_start2:\n  t0 := is Counter, Limit\n  jumpif t0, .loop_end3\n  Counter := add Counter, 1\n  t1 := call Modulus, [Counter, Fizz]\n  t2 := is t1, \"0\"\n  t3 := call Modulus, [Counter, Buzz]\n  t4 := is t3, \"0\"\n  t5 := and t2, t4\n  jumpunless t5, .else4\n  say \"FizzBuzz!\"\n  jump .loop_start2\n.else4:\n  t6 := call Modulus, [Counter, Fizz]\n  t7 := is t6, \"0\"\n  jumpunless t7, .else5\n  say \"Fizz!\"\n  jump .loop_start2\n.else5:\n  t8 := call Modulus, [Counter, Buzz]\n  t9 := is t8, \"0\"\n  jumpunless t9, .else6\n  say \"Buzz!\"\n  jump .loop_start2\n.else6:\n  say Counter\n  jump .loop_start2\n.loop_end3:\n\n;\n; Function Modulus takes Number, Divisor\n;\nf1_Modulus:\n.loop_start0:\n  t0 := is-ge Number, Divisor\n  jumpunless t0, .loop_end1\n  Number := sub Number, Divisor\n  jump .loop_start0\n.loop_end1:\n  return Number\n"
