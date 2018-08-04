@@ -30,6 +30,17 @@ stdout = """
 returncode = "0"
 stdout = """
 main:
+  Inorder := store mysterious
+  Insertnode := store mysterious
+  Main := store mysterious
+  Makenode := store mysterious
+  Nodeoperationread := store mysterious
+  Nodeoperationwrite := store mysterious
+  Nodevalueignored := store mysterious
+  Nodevariableleft := store mysterious
+  Nodevariableright := store mysterious
+  Nodevariablevalue := store mysterious
+  Unusedreturnvalue := store mysterious
   Nodeoperationread := store 0
   Nodeoperationwrite := store 1
   Nodevalueignored := store 0
@@ -44,113 +55,137 @@ main:
 
 ;
 ; Function Node takes Operation, Variable, Newvalue
+; Scope is 2
 ;
 f2_Node:
-  t0 := is Operation, Nodeoperationread
+  Newvalue := load-arg 2
+  Operation := load-arg 0
+  Variable := load-arg 1
+  t0 := is Operation, Nodeoperationread<0>
   jumpunless t0, .else0
-  t1 := is Variable, Nodevariablevalue
+  t1 := is Variable, Nodevariablevalue<0>
   jumpunless t1, .else1
-  return Value
+  return Value<1>
 .else1:
-  t2 := is Variable, Nodevariableleft
+  t2 := is Variable, Nodevariableleft<0>
   jumpunless t2, .else2
-  return Left
+  return Left<1>
 .else2:
-  t3 := is Variable, Nodevariableright
+  t3 := is Variable, Nodevariableright<0>
   jumpunless t3, .else3
-  return Right
+  return Right<1>
 .else3:
 .else0:
-  t4 := is Operation, Nodeoperationwrite
+  t4 := is Operation, Nodeoperationwrite<0>
   jumpunless t4, .else4
-  t5 := is Variable, Nodevariablevalue
+  t5 := is Variable, Nodevariablevalue<0>
   jumpunless t5, .else5
-  Value := store Newvalue
+  Value<1> := store Newvalue
 .else5:
-  t6 := is Variable, Nodevariableleft
+  t6 := is Variable, Nodevariableleft<0>
   jumpunless t6, .else6
-  Left := store Newvalue
+  Left<1> := store Newvalue
 .else6:
-  t7 := is Variable, Nodevariableright
+  t7 := is Variable, Nodevariableright<0>
   jumpunless t7, .else7
-  Right := store Newvalue
+  Right<1> := store Newvalue
 .else7:
 .else4:
 
 ;
 ; Function Makenode takes Value, Left, Right
+; Scope is 1
 ;
 f1_Makenode:
+  Left := load-arg 1
+  Node := store mysterious
+  Right := load-arg 2
+  Value := load-arg 0
   Node := store Function(2)
   return Node
 
 ;
 ; Function Insertnode takes Node, Newvalue
+; Scope is 3
 ;
 f3_Insertnode:
-  Newnode := call Makenode, [Newvalue, null, null]
+  Direction := store mysterious
+  Newnode := store mysterious
+  Newvalue := load-arg 1
+  Node := load-arg 0
+  Originalroot := store mysterious
+  Parentnode := store mysterious
+  Value := store mysterious
+  Newnode := call Makenode<0>, [Newvalue, null, null]
   t0 := is Node, null
   jumpunless t0, .else8
   return Newnode
 .else8:
   Originalroot := store Node
   Parentnode := store null
-  Direction := store Nodevariableright
+  Direction := store Nodevariableright<0>
 .loop_start9:
   t1 := is-not Node, null
   jumpunless t1, .loop_end10
-  Value := call Node, [Nodeoperationread, Nodevariablevalue, Nodevalueignored]
-  Direction := store Nodevariableright
-  t2 := is-lt Newvalue, Value
+  Value := call Node, [Nodeoperationread<0>, Nodevariablevalue<0>, Nodevalueignored<0>]
+  Direction := store Nodevariableright<0>
+  t2 := lt Newvalue, Value
   jumpunless t2, .else11
-  Direction := store Nodevariableleft
+  Direction := store Nodevariableleft<0>
 .else11:
   Parentnode := store Node
-  Node := call Node, [Nodeoperationread, Direction, Nodevalueignored]
+  Node := call Node, [Nodeoperationread<0>, Direction, Nodevalueignored<0>]
   jump .loop_start9
 .loop_end10:
-  Unusedreturnvalue := call Parentnode, [Nodeoperationwrite, Direction, Newnode]
+  Unusedreturnvalue<0> := call Parentnode, [Nodeoperationwrite<0>, Direction, Newnode]
   return Originalroot
 
 ;
 ; Function Inorder takes Node
+; Scope is 4
 ;
 f4_Inorder:
+  Left := store mysterious
+  Node := load-arg 0
+  Right := store mysterious
+  Value := store mysterious
   t0 := is Node, null
   jumpunless t0, .else12
   return null
 .else12:
-  Left := call Node, [Nodeoperationread, Nodevariableleft, Nodevalueignored]
-  Unusedreturnvalue := call Inorder, [Left]
-  Value := call Node, [Nodeoperationread, Nodevariablevalue, Nodevalueignored]
+  Left := call Node, [Nodeoperationread<0>, Nodevariableleft<0>, Nodevalueignored<0>]
+  Unusedreturnvalue<0> := call Inorder<0>, [Left]
+  Value := call Node, [Nodeoperationread<0>, Nodevariablevalue<0>, Nodevalueignored<0>]
   say Value
-  Right := call Node, [Nodeoperationread, Nodevariableright, Nodevalueignored]
-  Unusedreturnvalue := call Inorder, [Right]
+  Right := call Node, [Nodeoperationread<0>, Nodevariableright<0>, Nodevalueignored<0>]
+  Unusedreturnvalue<0> := call Inorder<0>, [Right]
   return null
 
 ;
 ; Function Main takes Root
+; Scope is 5
 ;
 f5_Main:
-  Root := call Insertnode, [Root, 10097]
-  Root := call Insertnode, [Root, 32533]
-  Root := call Insertnode, [Root, 76520]
-  Root := call Insertnode, [Root, 13586]
-  Root := call Insertnode, [Root, 34673]
-  Root := call Insertnode, [Root, 54876]
-  Root := call Insertnode, [Root, 80959]
-  Root := call Insertnode, [Root, 9117]
-  Root := call Insertnode, [Root, 39292]
-  Root := call Insertnode, [Root, 74945]
-  Root := call Insertnode, [Root, 37542]
-  Root := call Insertnode, [Root, 4805]
-  Root := call Insertnode, [Root, 64894]
-  Root := call Insertnode, [Root, 74296]
-  Root := call Insertnode, [Root, 24805]
-  Root := call Insertnode, [Root, 24037]
-  Root := call Insertnode, [Root, 20636]
-  Root := call Insertnode, [Root, 10402]
-  Root := call Insertnode, [Root, 822]
-  Root := call Insertnode, [Root, 91665]
-  Unusedreturnvalue := call Inorder, [Root]
+  Root := load-arg 0
+  Root := call Insertnode<0>, [Root, 10097]
+  Root := call Insertnode<0>, [Root, 32533]
+  Root := call Insertnode<0>, [Root, 76520]
+  Root := call Insertnode<0>, [Root, 13586]
+  Root := call Insertnode<0>, [Root, 34673]
+  Root := call Insertnode<0>, [Root, 54876]
+  Root := call Insertnode<0>, [Root, 80959]
+  Root := call Insertnode<0>, [Root, 9117]
+  Root := call Insertnode<0>, [Root, 39292]
+  Root := call Insertnode<0>, [Root, 74945]
+  Root := call Insertnode<0>, [Root, 37542]
+  Root := call Insertnode<0>, [Root, 4805]
+  Root := call Insertnode<0>, [Root, 64894]
+  Root := call Insertnode<0>, [Root, 74296]
+  Root := call Insertnode<0>, [Root, 24805]
+  Root := call Insertnode<0>, [Root, 24037]
+  Root := call Insertnode<0>, [Root, 20636]
+  Root := call Insertnode<0>, [Root, 10402]
+  Root := call Insertnode<0>, [Root, 822]
+  Root := call Insertnode<0>, [Root, 91665]
+  Unusedreturnvalue<0> := call Inorder<0>, [Root]
 """

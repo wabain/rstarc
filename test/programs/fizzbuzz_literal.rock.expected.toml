@@ -151,6 +151,11 @@ Say Counter
 returncode = "0"
 stdout = """
 main:
+  Buzz := store mysterious
+  Counter := store mysterious
+  Fizz := store mysterious
+  Limit := store mysterious
+  Modulus := store mysterious
   Modulus := store Function(1)
   Limit := store "100"
   Counter := store "0"
@@ -187,10 +192,13 @@ main:
 
 ;
 ; Function Modulus takes Number, Divisor
+; Scope is 1
 ;
 f1_Modulus:
+  Divisor := load-arg 1
+  Number := load-arg 0
 .loop_start0:
-  t0 := is-ge Number, Divisor
+  t0 := ge Number, Divisor
   jumpunless t0, .loop_end1
   Number := sub Number, Divisor
   jump .loop_start0

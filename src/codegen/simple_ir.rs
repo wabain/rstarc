@@ -1,15 +1,24 @@
 use std::fmt;
+use std::borrow::Cow;
+use std::collections::HashSet;
 
 use base_analysis::{ScopeId, ScopeMap};
 use ast::{self, Expr, Conditional, Statement, StatementKind};
 use lang_constructs::{self, LangVariable};
+
+pub fn build_ir<'prog>(program: &'prog [Statement],
+                       scope_map: &'prog ScopeMap<'prog>)
+                       -> IRProgram<'prog>
+{
+    AstAdapter::adapt(program, scope_map)
+}
 
 pub fn dump_ir(program: &[Statement], scope_map: &ScopeMap) {
     let ir = AstAdapter::adapt(program, scope_map);
 
     println!("main:");
     for op in &ir.main {
-        dump_ir_op(op);
+        dump_ir_op(0, op);
     }
 
     for (func_def, func_body) in &ir.funcs {
@@ -19,24 +28,31 @@ pub fn dump_ir(program: &[Statement], scope_map: &ScopeMap) {
         print!("; Function {} takes ", func_def.initial_var);
         for (i, arg) in func_def.args.iter().enumerate() {
             if i == 0 {
-                print!("{}", arg);
+                print!("{}", arg.fmt_scope_relative(func_def.scope_id));
             } else {
-                print!(", {}", arg);
+                print!(", {}", arg.fmt_scope_relative(func_def.scope_id));
             }
         }
         println!("");
+        println!("; Scope is {}", func_def.scope_id);
         println!(";");
 
         let fname = format!("{}", func_def.initial_var).replace(" ", "_");
         println!("f{}_{}:", func_def.scope_id, fname);
 
         for op in func_body {
-            dump_ir_op(op);
+            dump_ir_op(func_def.scope_id, op);
         }
     }
 }
 
-fn dump_ir_op(op: &SimpleIR) {
+fn dump_ir_op(scope_id: ScopeId, op: &SimpleIR) {
+    macro_rules! fmt_scoped {
+        ($v:expr) => {
+            $v.fmt_scope_relative(scope_id)
+        };
+    }
+
     match op {
         SimpleIR::Jump(label) => println!("  jump .{}{}", label.name_hint, label.id),
 
@@ -54,10 +70,10 @@ fn dump_ir_op(op: &SimpleIR) {
             let op_fmt = match op {
                 BinOp::Compare(ast::Comparator::Is) => "is",
                 BinOp::Compare(ast::Comparator::IsNot) => "is-not",
-                BinOp::Compare(ast::Comparator::IsGreaterThan) => "is-gt",
-                BinOp::Compare(ast::Comparator::IsLessThan) => "is-lt",
-                BinOp::Compare(ast::Comparator::IsAsGreatAs) => "is-ge",
-                BinOp::Compare(ast::Comparator::IsAsLittleAs) => "is-le",
+                BinOp::Compare(ast::Comparator::IsGreaterThan) => "gt",
+                BinOp::Compare(ast::Comparator::IsLessThan) => "lt",
+                BinOp::Compare(ast::Comparator::IsAsGreatAs) => "ge",
+                BinOp::Compare(ast::Comparator::IsAsLittleAs) => "le",
                 BinOp::Add => "add",
                 BinOp::Sub => "sub",
                 BinOp::Mul => "mul",
@@ -65,67 +81,168 @@ fn dump_ir_op(op: &SimpleIR) {
                 BinOp::And => "and",
                 BinOp::Or => "or",
             };
-            println!("  {} := {} {}, {}", dst, op_fmt, arg1, arg2);
+            println!("  {} := {} {}, {}",
+                     fmt_scoped!(dst),
+                     op_fmt,
+                     fmt_scoped!(arg1),
+                     fmt_scoped!(arg2));
+        }
+
+        SimpleIR::LoadArg(dst, idx) => {
+            println!("  {} := load-arg {}", fmt_scoped!(dst), idx);
         }
 
         SimpleIR::Store(dst, arg) => {
-            println!("  {} := store {}", dst, arg);
+            println!("  {} := store {}", fmt_scoped!(dst), fmt_scoped!(arg));
         }
 
         SimpleIR::Call(dst, func, args) => {
-            print!("  {} := call {}, [", dst, func);
+            print!("  {} := call {}, [", fmt_scoped!(dst), fmt_scoped!(func));
             for (i, arg) in args.iter().enumerate() {
                 if i == 0 {
-                    print!("{}", arg);
+                    print!("{}", fmt_scoped!(arg));
                 } else {
-                    print!(", {}", arg);
+                    print!(", {}", fmt_scoped!(arg));
                 }
             }
             println!("]");
         }
 
         SimpleIR::Say(arg) => {
-            println!("  say {}", arg);
+            println!("  say {}", fmt_scoped!(arg));
         }
 
         SimpleIR::Return(arg) => {
-            println!("  return {}", arg);
+            println!("  return {}", fmt_scoped!(arg));
+        }
+    }
+}
+
+/// Run some basic sanity checks on the IR. Currently this just verifies that
+/// temporaries are (trivially) in SSA form.
+fn verify_ir_func<'a>(ops: &'a[SimpleIR]) {
+    let mut vals_seen: HashSet<&'a IRLValue> = HashSet::new();
+
+    let handle_write = |vals_seen: &mut HashSet<_>, v: &'a IRLValue| {
+        match v {
+            IRLValue::LocalTemp(_) => {
+                if vals_seen.contains(&v) {
+                    panic!("Multiple writes to {}", &v);
+                }
+                vals_seen.insert(v);
+            }
+            IRLValue::Variable(..) => {
+                vals_seen.insert(v);
+            }
+        }
+    };
+
+    for op in ops {
+        match op {
+            SimpleIR::Jump(..) => {}
+            SimpleIR::JumpIf(..) => {}
+            SimpleIR::Label(..) => {}
+            SimpleIR::Operate(_, lval, _, _) => {
+                handle_write(&mut vals_seen, lval);
+            }
+            SimpleIR::LoadArg(lval, _) => {
+                handle_write(&mut vals_seen, lval);
+            }
+            SimpleIR::Store(lval, _) => {
+                handle_write(&mut vals_seen, lval);
+            }
+            SimpleIR::Call(lval, _, _) => {
+                handle_write(&mut vals_seen, lval);
+            }
+            SimpleIR::Say(_) | SimpleIR::Return(_) => {}
         }
     }
 }
 
 #[derive(Debug, Copy, Clone)]
-struct Label {
+pub struct Label {
     id: u64,
     name_hint: &'static str,
 }
 
-type LiteralValue = lang_constructs::Value<ScopeId>;
-
-#[derive(Debug, Copy, Clone)]
-struct LocalTemp(u64);
-
-#[derive(Debug)]
-enum IRValue<'prog> {
-    Literal(LiteralValue),
-    LocalTemp(LocalTemp),
-    Variable(LangVariable<'prog>),
+impl Label {
+    pub fn name(&self) -> String {
+        format!("{}{}", self.name_hint, self.id)
+    }
 }
 
-impl<'prog> fmt::Display for IRValue<'prog> {
+type LiteralValue = lang_constructs::Value<ScopeId>;
+
+#[derive(Debug, Hash, PartialEq, Eq, Copy, Clone)]
+pub struct LocalTemp(u64);
+
+impl fmt::Display for LocalTemp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            IRValue::Literal(lit) => write!(f, "{}", lit.repr_format()),
-            IRValue::LocalTemp(t) => write!(f, "t{}", t.0),
-            IRValue::Variable(v) => write!(f, "{}", v),
-        }
+        write!(f, "t{}", self.0)
     }
 }
 
 #[derive(Debug, Clone)]
-enum IRLValue<'prog> {
+pub enum IRValue<'prog> {
+    Literal(LiteralValue),
     LocalTemp(LocalTemp),
-    Variable(LangVariable<'prog>),
+    Variable(LangVariable<'prog>, ScopeId),
+}
+
+impl<'prog> IRValue<'prog> {
+    fn fmt_scope_relative<'a>(&'a self, ref_scope: ScopeId) -> IRValuePrinter<'a> {
+        IRValuePrinter {
+            ir_value: Cow::Borrowed(&self),
+            ref_scope: Some(ref_scope),
+        }
+    }
+}
+
+impl<'prog> fmt::Display for IRValue<'prog> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        IRValuePrinter {
+            ir_value: Cow::Borrowed(self),
+            ref_scope: None,
+        }.fmt(f)
+    }
+}
+
+struct IRValuePrinter<'a> {
+    ir_value: Cow<'a, IRValue<'a>>,
+    ref_scope: Option<ScopeId>,
+}
+
+impl<'a> fmt::Display for IRValuePrinter<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.ir_value.as_ref() {
+            IRValue::Literal(lit) => write!(f, "{}", lit.repr_format()),
+            IRValue::LocalTemp(t) => write!(f, "{}", t),
+            IRValue::Variable(v, i) => {
+                let is_local = self.ref_scope.map_or(false, |r| r == *i);
+                if is_local {
+                    write!(f, "{}", v)
+                } else {
+                    write!(f, "{}<{}>", v, i)
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+pub enum IRLValue<'prog> {
+    LocalTemp(LocalTemp),
+    Variable(LangVariable<'prog>, ScopeId),
+}
+
+impl<'prog> IRLValue<'prog> {
+    fn fmt_scope_relative(&self, scope_id: ScopeId) -> IRValuePrinter {
+        let val = self.clone().into();
+        IRValuePrinter {
+            ir_value: Cow::Owned(val),
+            ref_scope: Some(scope_id),
+        }
+    }
 }
 
 impl<'prog> fmt::Display for IRLValue<'prog> {
@@ -139,26 +256,26 @@ impl<'prog> Into<IRValue<'prog>> for IRLValue<'prog> {
     fn into(self) -> IRValue<'prog> {
         match self {
             IRLValue::LocalTemp(t) => IRValue::LocalTemp(t),
-            IRLValue::Variable(v) => IRValue::Variable(v),
+            IRLValue::Variable(v, i) => IRValue::Variable(v, i),
         }
     }
 }
 
-#[derive(Debug)]
-struct IRProgram<'prog> {
-    main: Vec<SimpleIR<'prog>>,
-    funcs: Vec<(IRFunc<'prog>, Vec<SimpleIR<'prog>>)>,
+pub struct IRProgram<'prog> {
+    pub scope_map: &'prog ScopeMap<'prog>,
+    pub main: Vec<SimpleIR<'prog>>,
+    pub funcs: Vec<(IRFunc<'prog>, Vec<SimpleIR<'prog>>)>,
 }
 
 #[derive(Debug)]
-struct IRFunc<'prog> {
-    scope_id: ScopeId,
-    initial_var: LangVariable<'prog>,
-    args: Vec<LangVariable<'prog>>,
+pub struct IRFunc<'prog> {
+    pub scope_id: ScopeId,
+    pub initial_var: LangVariable<'prog>,
+    pub args: Vec<IRLValue<'prog>>,
 }
 
 #[derive(Debug, Copy, Clone)]
-enum JumpType {
+pub enum JumpType {
     If,
     IfNot
 }
@@ -173,7 +290,7 @@ impl JumpType {
 }
 
 #[derive(Debug, Copy, Clone)]
-enum BinOp {
+pub enum BinOp {
     Compare(ast::Comparator),
     Add,
     Sub,
@@ -186,10 +303,11 @@ enum BinOp {
 /// Simple intermediate representation. This is just a flattened
 /// version of the source AST, with control flow translated to jumps.
 #[derive(Debug)]
-enum SimpleIR<'prog> {
+pub enum SimpleIR<'prog> {
     Jump(Label),
     JumpIf(Label, JumpType, IRValue<'prog>),
     Label(Label),
+    LoadArg(IRLValue<'prog>, usize),
     Operate(BinOp, IRLValue<'prog>, IRValue<'prog>, IRValue<'prog>),
     Store(IRLValue<'prog>, IRValue<'prog>),
     Call(IRLValue<'prog>, IRValue<'prog>, Vec<IRValue<'prog>>),
@@ -197,14 +315,36 @@ enum SimpleIR<'prog> {
     Return(IRValue<'prog>),
 }
 
-#[derive(Default)]
 struct IRBuilder<'prog> {
+    scope_map: &'prog ScopeMap<'prog>,
+    ref_scope: ScopeId,
     temp_id: u64,
     ops: Vec<SimpleIR<'prog>>,
     loop_labels: Vec<[Label; 2]>,
 }
 
 impl<'prog> IRBuilder<'prog> {
+    fn new(scope_map: &'prog ScopeMap<'prog>, ref_scope: ScopeId) -> Self {
+        IRBuilder {
+            scope_map,
+            ref_scope,
+            temp_id: 0,
+            ops: Vec::new(),
+            loop_labels: Vec::new(),
+        }
+    }
+
+    // XXX inline this?
+    fn lookup_scope(&self, var: &LangVariable) -> ScopeId {
+        self.scope_map.get_owning_scope_for_var(var, self.ref_scope)
+            .expect("variable scope lookup")
+    }
+
+    fn resolve_lang_variable(&self, var: &LangVariable<'prog>) -> IRLValue<'prog> {
+        let scope_id = self.lookup_scope(var);
+        IRLValue::Variable(var.clone(), scope_id)
+    }
+
     fn emit(&mut self, ir_entry: SimpleIR<'prog>) {
         self.ops.push(ir_entry);
     }
@@ -236,17 +376,18 @@ impl<'prog> IRBuilder<'prog> {
     {
         match expr {
             Expr::LValue(lval) => {
-                let var = resolve_lval(lval);
+                let var = resolve_ast_lval(lval);
+                let ir_val = self.resolve_lang_variable(&var).into();
 
                 if let Some(ir_lval) = dst {
                     self.emit(SimpleIR::Store(
                         ir_lval.clone(),
-                        IRValue::Variable(var)
+                        ir_val,
                     ));
 
                     ir_lval.into()
                 } else {
-                    IRValue::Variable(var)
+                    ir_val
                 }
             }
             Expr::Literal(tok) => {
@@ -362,6 +503,21 @@ impl<'prog> IRBuilder<'prog> {
         ));
         dst
     }
+
+    fn emit_scope_initializers(&mut self, args: &[IRLValue<'prog>]) {
+        for var in self.scope_map.get_owned_vars_for_scope(self.ref_scope) {
+            let ir_lval = self.resolve_lang_variable(var);
+
+            if let Some((idx, _)) = args.iter().enumerate().find(|(_, v)| *v == &ir_lval) {
+                self.emit(SimpleIR::LoadArg(ir_lval, idx));
+            } else {
+                self.emit(SimpleIR::Store(
+                    ir_lval,
+                    IRValue::Literal(lang_constructs::Value::Mysterious),
+                ));
+            }
+        }
+    }
 }
 
 /// This is the first pass to lowering the AST to assembly.
@@ -381,10 +537,16 @@ impl<'prog> AstAdapter<'prog> {
             func_bodies: Vec::new(),
         };
 
-        let mut main_builder = IRBuilder::default();
-        adapter.visit_statements(&mut main_builder, program);
+        let mut main_builder = IRBuilder::new(scope_map, 0);
+        adapter.visit_function_body(&mut main_builder, &[], program);
+
+        verify_ir_func(&main_builder.ops);
+        for (_, body) in &adapter.func_bodies {
+            verify_ir_func(body);
+        }
 
         IRProgram {
+            scope_map,
             main: main_builder.ops,
             funcs: adapter.func_bodies,
         }
@@ -396,6 +558,15 @@ impl<'prog> AstAdapter<'prog> {
         Label { id, name_hint }
     }
 
+    fn visit_function_body(&mut self,
+                           ir_builder: &mut IRBuilder<'prog>,
+                           args: &[IRLValue<'prog>],
+                           statements: &'prog [Statement])
+    {
+        ir_builder.emit_scope_initializers(args);
+        self.visit_statements(ir_builder, statements);
+    }
+
     fn visit_statements(&mut self, ir_builder: &mut IRBuilder<'prog>, statements: &'prog [Statement]) {
         for statement in statements {
             self.visit_statement(ir_builder, statement);
@@ -405,11 +576,13 @@ impl<'prog> AstAdapter<'prog> {
     fn visit_statement(&mut self, ir_builder: &mut IRBuilder<'prog>, statement: &'prog Statement) {
         match &statement.kind {
             StatementKind::Assign(lval, expr) => {
-                let var = resolve_lval(lval);
-                ir_builder.emit_expr(Some(IRLValue::Variable(var)), expr);
+                let var = resolve_ast_lval(lval);
+                let ir_lval = ir_builder.resolve_lang_variable(&var);
+                ir_builder.emit_expr(Some(ir_lval), expr);
             }
             StatementKind::Incr(lval) | StatementKind::Decr(lval) => {
-                let var = resolve_lval(lval);
+                let var = resolve_ast_lval(lval);
+                let ir_lval = ir_builder.resolve_lang_variable(&var);
 
                 let add_val = match &statement.kind {
                     StatementKind::Incr(..) =>
@@ -420,8 +593,8 @@ impl<'prog> AstAdapter<'prog> {
                 };
 
                 ir_builder.emit(SimpleIR::Operate(BinOp::Add,
-                                                  IRLValue::Variable(var.clone()),
-                                                  IRValue::Variable(var),
+                                                  ir_lval.clone(),
+                                                  ir_lval.into(),
                                                   add_val));
             }
             StatementKind::Say(expr) => {
@@ -478,22 +651,23 @@ impl<'prog> AstAdapter<'prog> {
                 }
             }
             StatementKind::FuncDef(var, args, body) => {
-                let initial_var = var.to_lang_variable();
                 let scope_id = self.scope_map.get_scope_for_func_declaration(statement);
 
+                let initial_var = var.to_lang_variable();
+                let args: Vec<_> = args.iter().map(|v| {
+                    IRLValue::Variable(v.to_lang_variable(), scope_id)
+                }).collect();
+
+                let ir_lval = ir_builder.resolve_lang_variable(&initial_var);
                 ir_builder.emit(SimpleIR::Store(
-                    IRLValue::Variable(initial_var.clone()),
+                    ir_lval,
                     IRValue::Literal(lang_constructs::Value::Function(scope_id)),
                 ));
 
-                let mut func_builder = IRBuilder::default();
-                self.visit_statements(&mut func_builder, body);
+                let mut func_builder = IRBuilder::new(self.scope_map, scope_id);
+                self.visit_function_body(&mut func_builder, &args, body);
 
-                let func_def = IRFunc {
-                    initial_var,
-                    scope_id,
-                    args: args.iter().map(|v| v.to_lang_variable()).collect(),
-                };
+                let func_def = IRFunc { initial_var, scope_id, args };
 
                 self.func_bodies.push((func_def, func_builder.ops));
             }
@@ -527,9 +701,30 @@ impl<'prog> AstAdapter<'prog> {
     }
 }
 
-fn resolve_lval<'prog>(lval: &'prog ast::LValue) -> LangVariable<'prog> {
+fn resolve_ast_lval<'prog>(lval: &'prog ast::LValue) -> LangVariable<'prog> {
     match lval {
         ast::LValue::Pronoun(..) => unreachable!(),
         ast::LValue::Variable(var) => var.to_lang_variable(),
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use lang_constructs::Value;
+    use super::{verify_ir_func, SimpleIR, IRValue, IRLValue, LocalTemp};
+
+    #[test]
+    #[should_panic]
+    fn verify_ir_double_write_temporary() {
+        verify_ir_func(&[
+            SimpleIR::Store(
+                IRLValue::LocalTemp(LocalTemp(1)),
+                IRValue::Literal(Value::Mysterious),
+            ),
+            SimpleIR::Store(
+                IRLValue::LocalTemp(LocalTemp(1)),
+                IRValue::Literal(Value::Null),
+            ),
+        ])
     }
 }

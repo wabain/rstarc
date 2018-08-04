@@ -1,5 +1,5 @@
 # Generated file
 /src/parser.rs
 
-/target/
+target/
 **/*.rs.bk

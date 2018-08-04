@@ -6,6 +6,7 @@ use lalrpop_util::ParseError;
 use void::Void;
 
 use base_analysis::CompileError;
+use codegen::CodegenError;
 use lexer::{LexicalError, Token};
 use ast::Pos;
 
@@ -15,12 +16,13 @@ pub enum RuntimeError {
     Lexer(LexicalError),
     Parser(ParseError<usize, Token, Void>),
     Compile(CompileError),
+    Codegen(CodegenError),
 }
 
 impl RuntimeError {
     pub fn span(&self) -> Option<(usize, usize)> {
         match *self {
-            RuntimeError::Io(_) => None,
+            RuntimeError::Io(_) | RuntimeError::Codegen(_) => None,
             RuntimeError::Lexer(LexicalError::UnexpectedInput(p1, p2)) |
             RuntimeError::Compile(CompileError::UnexpectedReturn(Pos(p1, p2))) |
             RuntimeError::Compile(CompileError::UnexpectedLoopControl(Pos(p1, p2))) => {
@@ -47,6 +49,7 @@ impl error::Error for RuntimeError {
             RuntimeError::Lexer(e) => Some(e),
             RuntimeError::Parser(e) => Some(e),
             RuntimeError::Compile(e) => Some(e),
+            RuntimeError::Codegen(e) => Some(e)
         }
     }
 }
@@ -86,6 +89,10 @@ impl fmt::Display for RuntimeError {
             RuntimeError::Compile(e) => {
                 write!(f, "error: {}", e)
             }
+            RuntimeError::Codegen(e) => {
+                let err_header = if e.is_internal() { "internal " } else { "" };
+                write!(f, "{}error: {}", err_header, e)
+            }
         }
     }
 }
@@ -98,23 +105,20 @@ fn tok_desc(token: &Option<(usize, Token, usize)>) -> String {
     }
 }
 
-impl From<io::Error> for RuntimeError {
-    fn from(e: io::Error) -> Self {
-        RuntimeError::Io(e)
+macro_rules! from_variant {
+    ($src_ty:ty, $runtime_constructor:expr) => {
+        impl From<$src_ty> for RuntimeError {
+            fn from(e: $src_ty) -> Self {
+                $runtime_constructor(e)
+            }
+        }
     }
 }
 
-impl From<LexicalError> for RuntimeError {
-    fn from(e: LexicalError) -> Self {
-        RuntimeError::Lexer(e)
-    }
-}
-
-impl From<CompileError> for RuntimeError {
-    fn from(e: CompileError) -> Self {
-        RuntimeError::Compile(e)
-    }
-}
+from_variant!(io::Error, RuntimeError::Io);
+from_variant!(LexicalError, RuntimeError::Lexer);
+from_variant!(CompileError, RuntimeError::Compile);
+from_variant!(CodegenError, RuntimeError::Codegen);
 
 impl From<ParseError<usize, Token, LexicalError>> for RuntimeError {
     fn from(e: ParseError<usize, Token, LexicalError>) -> Self {

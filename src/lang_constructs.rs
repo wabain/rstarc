@@ -10,7 +10,7 @@ pub type RockstarNumber = f64;
 // is actually visible
 pub type RockstarString = String;
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
 pub enum LangVariable<'a> {
     Common(Cow<'a, str>, Cow<'a, str>),
     Proper(Cow<'a, str>),

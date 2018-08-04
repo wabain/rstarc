@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 use std::collections::hash_map::{HashMap, Entry};
 
 use void::Void;
@@ -20,7 +20,10 @@ pub fn identify_variable_scopes(program: &[Statement]) -> ScopeMap {
 }
 
 struct ScopeData<'prog> {
-    owned_variables: HashSet<LangVariable<'prog>>,
+    // Use a binary tree to get a stable iteration order. Ideally we'd
+    // probably use insertion order, but that would also push extra
+    // requirements into the the scope analysis pass.
+    owned_variables: BTreeSet<LangVariable<'prog>>,
     parent: Option<ScopeId>,
 }
 
@@ -49,6 +52,14 @@ impl<'prog> ScopeMap<'prog> {
         }
 
         None
+    }
+
+    pub fn get_owned_vars_for_scope(&self, scope_id: ScopeId) -> Vec<&LangVariable<'prog>> {
+        if let Some(d) = self.scope_data.get(&scope_id) {
+            d.owned_variables.iter().collect()
+        } else {
+            Vec::new()
+        }
     }
 }
 
@@ -81,14 +92,14 @@ impl<'prog> AssignmentObserver<'prog> {
     fn to_scope_map(self) -> ScopeMap<'prog> {
         let mut scope_data: HashMap<_, _> = self.scope_parent.into_iter()
             .map(|(scope, parent)| (scope, ScopeData {
-                owned_variables: HashSet::new(),
+                owned_variables: BTreeSet::new(),
                 parent: Some(parent),
             }))
             .collect();
 
         // Add the root scope
         scope_data.insert(0, ScopeData {
-            owned_variables: HashSet::new(),
+            owned_variables: BTreeSet::new(),
             parent: None,
         });
 

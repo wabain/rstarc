@@ -1,6 +1,7 @@
 extern crate clap;
 extern crate lalrpop_util;
 #[macro_use] extern crate lazy_static;
+extern crate llvm_sys as llvm;
 extern crate regex;
 extern crate void;
 
@@ -23,15 +24,18 @@ use std::fs::File;
 use runtime_error::RuntimeError;
 use lexer::{LexicalError, Tokenizer};
 
+pub const BINARY_NAME: &str = "rstarc";
+
 enum Action {
     Interpret,
     FormatTokens,
     FormatPretty,
     DumpIR,
+    DumpLLVM,
 }
 
 fn main() {
-    let matches = clap::App::new("rstarc")
+    let matches = clap::App::new(BINARY_NAME)
         .about("A Rockstar compiler")
 
         .settings(&[
@@ -46,7 +50,7 @@ fn main() {
         .subcommand(clap::SubCommand::with_name("internal")
             .about("Internal debugging utilities")
             .arg(clap::Arg::from_usage("-f, --format <FORMAT>  'Debug output format.'")
-                    .possible_values(&["tokens", "pretty", "ir"]))
+                    .possible_values(&["tokens", "pretty", "ir", "llvm"]))
             .arg_from_usage("<source> 'The source file'"))
 
         .get_matches();
@@ -65,6 +69,7 @@ fn main() {
                 Some("tokens") => action = Action::FormatTokens,
                 Some("pretty") => action = Action::FormatPretty,
                 Some("ir") => action = Action::DumpIR,
+                Some("llvm") => action = Action::DumpLLVM,
                 _ => unreachable!(),
             }
         }
@@ -73,7 +78,7 @@ fn main() {
 
     let (tokenizer, err) = match load_source(source) {
         Ok(tokenizer) => {
-            let err = run(&tokenizer, action).err();
+            let err = run(source, &tokenizer, action).err();
             (Some(tokenizer), err)
         }
         Err(e) => (None, Some(e.into())),
@@ -98,7 +103,7 @@ fn load_source(source: &str) -> io::Result<Tokenizer> {
     Ok(Tokenizer::from_file(&mut src_buf)?)
 }
 
-fn run(tokenizer: &Tokenizer, action: Action) -> Result<(), RuntimeError> {
+fn run(source: &str, tokenizer: &Tokenizer, action: Action) -> Result<(), RuntimeError> {
     if let Action::FormatTokens = action {
         output_tokens(&tokenizer)?;
         return Ok(());
@@ -113,6 +118,15 @@ fn run(tokenizer: &Tokenizer, action: Action) -> Result<(), RuntimeError> {
         Action::FormatPretty => pretty_print::pretty_print_program(io::stdout(), &tree)?,
         Action::FormatTokens => unreachable!(),
         Action::DumpIR => codegen::dump_ir(&tree, &scope_map),
+        Action::DumpLLVM => {
+            let opts = &codegen::CodegenOptions {
+                source_file: source,
+                llvm_dump: true,
+                output: None,
+                opt_level: 3,
+            };
+            codegen::lower_llvm(&tree, &scope_map, opts)?;
+        }
     }
 
     Ok(())

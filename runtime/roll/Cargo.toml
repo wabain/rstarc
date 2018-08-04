@@ -1,0 +1,25 @@
+[package]
+authors = ["William Bain <bain.william.a@gmail.com>"]
+name = "roll"
+version = "0.1.0"
+
+[features]
+ad-hoc-debugs = []
+
+[dependencies]
+libc = { version = "0.2", default-features = false }
+sc = "0.2.2"
+
+[lib]
+crate-type = ["staticlib"]
+name = "roll"
+
+[patch.crates-io.sc]
+branch = "macos-syscall-class"
+git = "https://github.com/wabain/syscall.rs.git"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
