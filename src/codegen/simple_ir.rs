@@ -54,17 +54,13 @@ fn dump_ir_op(scope_id: ScopeId, op: &SimpleIR) {
     }
 
     match op {
-        SimpleIR::Jump(label) => println!("  jump .{}{}", label.name_hint, label.id),
+        SimpleIR::Jump(label) => println!("  jump .{}", label.name()),
 
-        SimpleIR::JumpIf(label, jump_type, cond) => {
-            let type_fmt = match jump_type {
-                JumpType::If => "if",
-                JumpType::IfNot => "unless",
-            };
-            println!("  jump{} {}, .{}{}", type_fmt, cond, label.name_hint, label.id);
+        SimpleIR::JumpIf(cond, then_label, else_label) => {
+            println!("  jumpif {}, .{}, .{}", cond, then_label.name(), else_label.name());
         }
 
-        SimpleIR::Label(label) => println!(".{}{}:", label.name_hint, label.id),
+        SimpleIR::Label(label) => println!(".{}:", label.name()),
 
         SimpleIR::Operate(op, dst, arg1, arg2) => {
             let op_fmt = match op {
@@ -115,6 +111,10 @@ fn dump_ir_op(scope_id: ScopeId, op: &SimpleIR) {
         SimpleIR::Return(arg) => {
             println!("  return {}", fmt_scoped!(arg));
         }
+
+        SimpleIR::ReturnDefault => {
+            println!("  return-default");
+        }
     }
 }
 
@@ -139,22 +139,23 @@ fn verify_ir_func<'a>(ops: &'a[SimpleIR]) {
 
     for op in ops {
         match op {
-            SimpleIR::Jump(..) => {}
-            SimpleIR::JumpIf(..) => {}
+            // Branching ops
+            SimpleIR::Jump(..) |
+            SimpleIR::JumpIf(..) |
             SimpleIR::Label(..) => {}
-            SimpleIR::Operate(_, lval, _, _) => {
-                handle_write(&mut vals_seen, lval);
-            }
-            SimpleIR::LoadArg(lval, _) => {
-                handle_write(&mut vals_seen, lval);
-            }
-            SimpleIR::Store(lval, _) => {
-                handle_write(&mut vals_seen, lval);
-            }
+
+            // Write ops
+            SimpleIR::Operate(_, lval, _, _) |
+            SimpleIR::LoadArg(lval, _) |
+            SimpleIR::Store(lval, _) |
             SimpleIR::Call(lval, _, _) => {
                 handle_write(&mut vals_seen, lval);
             }
-            SimpleIR::Say(_) | SimpleIR::Return(_) => {}
+
+            // Other no-write ops
+            SimpleIR::Say(_) |
+            SimpleIR::Return(_) |
+            SimpleIR::ReturnDefault => {}
         }
     }
 }
@@ -275,21 +276,6 @@ pub struct IRFunc<'prog> {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub enum JumpType {
-    If,
-    IfNot
-}
-
-impl JumpType {
-    fn flip(&self) -> JumpType {
-        match self {
-            JumpType::If => JumpType::IfNot,
-            JumpType::IfNot => JumpType::If,
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
 pub enum BinOp {
     Compare(ast::Comparator),
     Add,
@@ -305,7 +291,7 @@ pub enum BinOp {
 #[derive(Debug)]
 pub enum SimpleIR<'prog> {
     Jump(Label),
-    JumpIf(Label, JumpType, IRValue<'prog>),
+    JumpIf(IRValue<'prog>, Label, Label),
     Label(Label),
     LoadArg(IRLValue<'prog>, usize),
     Operate(BinOp, IRLValue<'prog>, IRValue<'prog>, IRValue<'prog>),
@@ -313,11 +299,31 @@ pub enum SimpleIR<'prog> {
     Call(IRLValue<'prog>, IRValue<'prog>, Vec<IRValue<'prog>>),
     Say(IRValue<'prog>),
     Return(IRValue<'prog>),
+    ReturnDefault,
+}
+
+impl<'prog> SimpleIR<'prog> {
+    pub fn is_terminator(&self) -> bool {
+        match self {
+            SimpleIR::Jump(..) |
+            SimpleIR::JumpIf(..) |
+            SimpleIR::Return(..) |
+            SimpleIR::ReturnDefault => true,
+
+            SimpleIR::Label(..) |
+            SimpleIR::LoadArg(..) |
+            SimpleIR::Operate(..) |
+            SimpleIR::Store(..) |
+            SimpleIR::Call(..) |
+            SimpleIR::Say(..) => false,
+        }
+    }
 }
 
 struct IRBuilder<'prog> {
     scope_map: &'prog ScopeMap<'prog>,
     ref_scope: ScopeId,
+    label_id: u64,
     temp_id: u64,
     ops: Vec<SimpleIR<'prog>>,
     loop_labels: Vec<[Label; 2]>,
@@ -328,6 +334,7 @@ impl<'prog> IRBuilder<'prog> {
         IRBuilder {
             scope_map,
             ref_scope,
+            label_id: 0,
             temp_id: 0,
             ops: Vec::new(),
             loop_labels: Vec::new(),
@@ -346,7 +353,39 @@ impl<'prog> IRBuilder<'prog> {
     }
 
     fn emit(&mut self, ir_entry: SimpleIR<'prog>) {
-        self.ops.push(ir_entry);
+        let is_block_end = self.ops.last()
+            .map_or(false, |o| o.is_terminator());
+
+        let mut insert_new_entry = true;
+
+        if let SimpleIR::Label(label) = ir_entry {
+            // Insert a jump when falling through to a label
+            if !is_block_end {
+                self.ops.push(SimpleIR::Jump(label));
+            }
+        } else if is_block_end {
+            // This operation will be unreachable. If it is one which is
+            // auto-generated, we can silently drop it without complicating
+            // the control flow. If it's user-originated, we'll insert it.
+            //
+            // TODO(wabain): Figure out how to lint on unreachable code.
+            // Presumably it's possible to do this and other linting after
+            // lowering to LLVM. But if that's too hard, just walk the Simple
+            // IR and find the blocks emitted below.
+            match ir_entry {
+                SimpleIR::Jump(..) |
+                SimpleIR::JumpIf(..) |
+                SimpleIR::ReturnDefault => { insert_new_entry = false; }
+                _ => {
+                    let unreachable_label = self.label("unreachable");
+                    self.ops.push(SimpleIR::Label(unreachable_label));
+                }
+            }
+        }
+
+        if insert_new_entry {
+            self.ops.push(ir_entry);
+        }
     }
 
     fn enter_loop(&mut self, labels: [Label; 2]) {
@@ -369,6 +408,16 @@ impl<'prog> IRBuilder<'prog> {
         let id = self.temp_id;
         self.temp_id += 1;
         IRLValue::LocalTemp(LocalTemp(id))
+    }
+
+    fn label(&mut self, name_hint: &'static str) -> Label {
+        let id = self.label_id;
+        self.label_id += 1;
+        Label { id, name_hint }
+    }
+
+    fn emit_label(&mut self, label: Label) {
+        self.emit(SimpleIR::Label(label));
     }
 
     fn emit_expr(&mut self, dst: Option<IRLValue<'prog>>, expr: &'prog ast::Expr)
@@ -524,7 +573,6 @@ impl<'prog> IRBuilder<'prog> {
 /// Here we simply unroll block statements and split up the separate
 /// functions to be generated.
 struct AstAdapter<'prog> {
-    label_id: u64,
     scope_map: &'prog ScopeMap<'prog>,
     func_bodies: Vec<(IRFunc<'prog>, Vec<SimpleIR<'prog>>)>,
 }
@@ -532,7 +580,6 @@ struct AstAdapter<'prog> {
 impl<'prog> AstAdapter<'prog> {
     fn adapt(program: &'prog [Statement], scope_map: &'prog ScopeMap<'prog>) -> IRProgram<'prog> {
         let mut adapter = AstAdapter {
-            label_id: 0,
             scope_map,
             func_bodies: Vec::new(),
         };
@@ -552,12 +599,6 @@ impl<'prog> AstAdapter<'prog> {
         }
     }
 
-    fn label(&mut self, name_hint: &'static str) -> Label {
-        let id = self.label_id;
-        self.label_id += 1;
-        Label { id, name_hint }
-    }
-
     fn visit_function_body(&mut self,
                            ir_builder: &mut IRBuilder<'prog>,
                            args: &[IRLValue<'prog>],
@@ -565,6 +606,10 @@ impl<'prog> AstAdapter<'prog> {
     {
         ir_builder.emit_scope_initializers(args);
         self.visit_statements(ir_builder, statements);
+
+        if !ir_builder.ops.last().map_or(false, |o| o.is_terminator()) {
+            ir_builder.emit(SimpleIR::ReturnDefault);
+        }
     }
 
     fn visit_statements(&mut self, ir_builder: &mut IRBuilder<'prog>, statements: &'prog [Statement]) {
@@ -616,38 +661,40 @@ impl<'prog> AstAdapter<'prog> {
             }
 
             StatementKind::While(cond, body) => {
-                self.handle_loop(ir_builder, cond, JumpType::If, body);
+                self.handle_loop(ir_builder, cond, true, body);
             }
             StatementKind::Until(cond, body) => {
-                self.handle_loop(ir_builder, cond, JumpType::IfNot, body);
+                self.handle_loop(ir_builder, cond, false, body);
             }
             StatementKind::Condition(cond, if_block, else_block) => {
-                let else_label = self.label("else");
+                let if_label = ir_builder.label("then");
+                let else_label = ir_builder.label("else");
 
-                let else_end_label = if else_block.is_empty() {
+                let if_end_label = if else_block.is_empty() {
                     None
                 } else {
-                    Some(self.label("else_end"))
+                    Some(ir_builder.label("if_end"))
                 };
 
                 let ir_cond = ir_builder.emit_cond(None, cond);
                 ir_builder.emit(SimpleIR::JumpIf(
-                    else_label,
-                    JumpType::IfNot,
                     ir_cond.into(),
+                    if_label,
+                    else_label,
                 ));
 
+                ir_builder.emit_label(if_label);
                 self.visit_statements(ir_builder, if_block);
 
-                if let Some(end_label) = else_end_label {
+                if let Some(end_label) = if_end_label {
                     ir_builder.emit(SimpleIR::Jump(end_label));
                 }
 
-                ir_builder.emit(SimpleIR::Label(else_label));
+                ir_builder.emit_label(else_label);
                 self.visit_statements(ir_builder, else_block);
 
-                if let Some(end_label) = else_end_label {
-                    ir_builder.emit(SimpleIR::Label(end_label));
+                if let Some(end_label) = if_end_label {
+                    ir_builder.emit_label(end_label);
                 }
             }
             StatementKind::FuncDef(var, args, body) => {
@@ -677,27 +724,37 @@ impl<'prog> AstAdapter<'prog> {
     fn handle_loop(&mut self,
                    ir_builder: &mut IRBuilder<'prog>,
                    cond: &'prog Conditional,
-                   jump_type: JumpType,
+                   loop_while_true: bool,
                    body: &'prog [Statement])
     {
-        let start_label = self.label("loop_start");
-        let end_label = self.label("loop_end");
+        let check_label = ir_builder.label("loop_check");
+        let start_label = ir_builder.label("loop_start");
+        let end_label = ir_builder.label("loop_end");
 
-        ir_builder.emit(SimpleIR::Label(start_label));
+        ir_builder.emit_label(check_label);
 
         let ir_cond = ir_builder.emit_cond(None, cond);
-        ir_builder.emit(SimpleIR::JumpIf(
-            end_label,
-            jump_type.flip(),
-            ir_cond.into(),
-        ));
+        if loop_while_true {
+            ir_builder.emit(SimpleIR::JumpIf(
+                ir_cond.into(),
+                start_label,
+                end_label,
+            ));
+        } else {
+            ir_builder.emit(SimpleIR::JumpIf(
+                ir_cond.into(),
+                end_label,
+                start_label,
+            ));
+        }
 
-        ir_builder.enter_loop([start_label, end_label]);
+        ir_builder.emit_label(start_label);
+        ir_builder.enter_loop([check_label, end_label]);
         self.visit_statements(ir_builder, body);
         ir_builder.exit_loop();
 
-        ir_builder.emit(SimpleIR::Jump(start_label));
-        ir_builder.emit(SimpleIR::Label(end_label));
+        ir_builder.emit(SimpleIR::Jump(check_label));
+        ir_builder.emit_label(end_label);
     }
 }
 

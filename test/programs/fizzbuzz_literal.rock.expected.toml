@@ -161,34 +161,40 @@ main:
   Counter := store "0"
   Fizz := store "3"
   Buzz := store "5"
-.loop_start2:
+  jump .loop_check0
+.loop_check0:
   t0 := is Counter, Limit
-  jumpif t0, .loop_end3
+  jumpif t0, .loop_end2, .loop_start1
+.loop_start1:
   Counter := add Counter, 1
   t1 := call Modulus, [Counter, Fizz]
   t2 := is t1, "0"
   t3 := call Modulus, [Counter, Buzz]
   t4 := is t3, "0"
   t5 := and t2, t4
-  jumpunless t5, .else4
+  jumpif t5, .then3, .else4
+.then3:
   say "FizzBuzz!"
-  jump .loop_start2
+  jump .loop_check0
 .else4:
   t6 := call Modulus, [Counter, Fizz]
   t7 := is t6, "0"
-  jumpunless t7, .else5
+  jumpif t7, .then5, .else6
+.then5:
   say "Fizz!"
-  jump .loop_start2
-.else5:
+  jump .loop_check0
+.else6:
   t8 := call Modulus, [Counter, Buzz]
   t9 := is t8, "0"
-  jumpunless t9, .else6
+  jumpif t9, .then7, .else8
+.then7:
   say "Buzz!"
-  jump .loop_start2
-.else6:
+  jump .loop_check0
+.else8:
   say Counter
-  jump .loop_start2
-.loop_end3:
+  jump .loop_check0
+.loop_end2:
+  return-default
 
 ;
 ; Function Modulus takes Number, Divisor
@@ -197,11 +203,13 @@ main:
 f1_Modulus:
   Divisor := load-arg 1
   Number := load-arg 0
-.loop_start0:
+  jump .loop_check0
+.loop_check0:
   t0 := ge Number, Divisor
-  jumpunless t0, .loop_end1
+  jumpif t0, .loop_start1, .loop_end2
+.loop_start1:
   Number := sub Number, Divisor
-  jump .loop_start0
-.loop_end1:
+  jump .loop_check0
+.loop_end2:
   return Number
 """

@@ -52,6 +52,7 @@ main:
   Inorder := store Function(4)
   Main := store Function(5)
   Unusedreturnvalue := call Main, [null]
+  return-default
 
 ;
 ; Function Node takes Operation, Variable, Newvalue
@@ -62,35 +63,49 @@ f2_Node:
   Operation := load-arg 0
   Variable := load-arg 1
   t0 := is Operation, Nodeoperationread<0>
-  jumpunless t0, .else0
+  jumpif t0, .then0, .else1
+.then0:
   t1 := is Variable, Nodevariablevalue<0>
-  jumpunless t1, .else1
+  jumpif t1, .then2, .else3
+.then2:
   return Value<1>
-.else1:
-  t2 := is Variable, Nodevariableleft<0>
-  jumpunless t2, .else2
-  return Left<1>
-.else2:
-  t3 := is Variable, Nodevariableright<0>
-  jumpunless t3, .else3
-  return Right<1>
 .else3:
-.else0:
-  t4 := is Operation, Nodeoperationwrite<0>
-  jumpunless t4, .else4
-  t5 := is Variable, Nodevariablevalue<0>
-  jumpunless t5, .else5
-  Value<1> := store Newvalue
+  t2 := is Variable, Nodevariableleft<0>
+  jumpif t2, .then4, .else5
+.then4:
+  return Left<1>
 .else5:
-  t6 := is Variable, Nodevariableleft<0>
-  jumpunless t6, .else6
-  Left<1> := store Newvalue
-.else6:
-  t7 := is Variable, Nodevariableright<0>
-  jumpunless t7, .else7
-  Right<1> := store Newvalue
+  t3 := is Variable, Nodevariableright<0>
+  jumpif t3, .then6, .else7
+.then6:
+  return Right<1>
 .else7:
-.else4:
+  jump .else1
+.else1:
+  t4 := is Operation, Nodeoperationwrite<0>
+  jumpif t4, .then8, .else9
+.then8:
+  t5 := is Variable, Nodevariablevalue<0>
+  jumpif t5, .then10, .else11
+.then10:
+  Value<1> := store Newvalue
+  jump .else11
+.else11:
+  t6 := is Variable, Nodevariableleft<0>
+  jumpif t6, .then12, .else13
+.then12:
+  Left<1> := store Newvalue
+  jump .else13
+.else13:
+  t7 := is Variable, Nodevariableright<0>
+  jumpif t7, .then14, .else15
+.then14:
+  Right<1> := store Newvalue
+  jump .else15
+.else15:
+  jump .else9
+.else9:
+  return-default
 
 ;
 ; Function Makenode takes Value, Left, Right
@@ -118,25 +133,30 @@ f3_Insertnode:
   Value := store mysterious
   Newnode := call Makenode<0>, [Newvalue, null, null]
   t0 := is Node, null
-  jumpunless t0, .else8
+  jumpif t0, .then0, .else1
+.then0:
   return Newnode
-.else8:
+.else1:
   Originalroot := store Node
   Parentnode := store null
   Direction := store Nodevariableright<0>
-.loop_start9:
+  jump .loop_check2
+.loop_check2:
   t1 := is-not Node, null
-  jumpunless t1, .loop_end10
+  jumpif t1, .loop_start3, .loop_end4
+.loop_start3:
   Value := call Node, [Nodeoperationread<0>, Nodevariablevalue<0>, Nodevalueignored<0>]
   Direction := store Nodevariableright<0>
   t2 := lt Newvalue, Value
-  jumpunless t2, .else11
+  jumpif t2, .then5, .else6
+.then5:
   Direction := store Nodevariableleft<0>
-.else11:
+  jump .else6
+.else6:
   Parentnode := store Node
   Node := call Node, [Nodeoperationread<0>, Direction, Nodevalueignored<0>]
-  jump .loop_start9
-.loop_end10:
+  jump .loop_check2
+.loop_end4:
   Unusedreturnvalue<0> := call Parentnode, [Nodeoperationwrite<0>, Direction, Newnode]
   return Originalroot
 
@@ -150,9 +170,10 @@ f4_Inorder:
   Right := store mysterious
   Value := store mysterious
   t0 := is Node, null
-  jumpunless t0, .else12
+  jumpif t0, .then0, .else1
+.then0:
   return null
-.else12:
+.else1:
   Left := call Node, [Nodeoperationread<0>, Nodevariableleft<0>, Nodevalueignored<0>]
   Unusedreturnvalue<0> := call Inorder<0>, [Left]
   Value := call Node, [Nodeoperationread<0>, Nodevariablevalue<0>, Nodevalueignored<0>]
@@ -188,4 +209,5 @@ f5_Main:
   Root := call Insertnode<0>, [Root, 822]
   Root := call Insertnode<0>, [Root, 91665]
   Unusedreturnvalue<0> := call Inorder<0>, [Root]
+  return-default
 """

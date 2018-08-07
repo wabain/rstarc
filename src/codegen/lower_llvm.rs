@@ -6,7 +6,7 @@ use base_analysis::ScopeId;
 
 use codegen::CodegenError;
 use codegen::simple_ir::{IRProgram, SimpleIR, IRValue, IRLValue, BinOp,
-                         JumpType, LocalTemp};
+                         LocalTemp};
 use codegen::llvm_api::*;
 
 // TODO: Find a way to share these with the runtime
@@ -128,64 +128,34 @@ fn lower_function(llh: &mut LLVMHandle,
     }
 
     // Translate ops
-    let mut last_was_return = false;
-    let mut prec_was_br = false;
-
     for op in body {
-        last_was_return = false;
-
-        let mut is_br = false;
-
         match op {
             SimpleIR::Jump(label) => {
                 let block = vmgr.basic_block(llh, label.name());
                 llh.build_br(block);
-
-                is_br = true;
             }
-            SimpleIR::JumpIf(label, jump_type, val) => {
-                // TODO: The simple IR can generate the alt branch
-                let label_name = label.name();
-                let alt_label_name = format!("{}.alt", &label_name);
-
-                let val_ref = vmgr.val_to_llvm(llh, val);
+            SimpleIR::JumpIf(cond, if_label, else_label) => {
+                let cond_ref = vmgr.val_to_llvm(llh, cond);
 
                 // XXX: Assume that the value is a bool. I think the
                 // parser forces this to be true at the moment. Probably
                 // better to make this stuff conditional and let LLVM
                 // prove it though.
                 let tag_bytes = llh.const_uint(int64_type(), 3);
-                let coerced_val_ref = llh.build_lshr(
-                    val_ref,
+                let coerced_cond_ref = llh.build_lshr(
+                    cond_ref,
                     tag_bytes,
                     "coerce_bool",
                 );
-                let truncd_val_ref = llh.build_trunc(coerced_val_ref, int1_type(), "trunc_bool");
+                let truncd_cond_ref = llh.build_trunc(coerced_cond_ref, int1_type(), "trunc_bool");
 
-                let (named_bb, alt_bb);
+                let if_bb = vmgr.basic_block(llh, if_label.name());
+                let else_bb = vmgr.basic_block(llh, else_label.name());
 
-                if let JumpType::If = jump_type {
-                    named_bb = vmgr.basic_block(llh, label_name);
-                    alt_bb = llh.new_block(llvm_func, &alt_label_name);
-
-                    llh.build_cond_br(truncd_val_ref, named_bb, alt_bb);
-                } else {
-                    alt_bb = llh.new_block(llvm_func, &alt_label_name);
-                    named_bb = vmgr.basic_block(llh, label_name);
-
-                    llh.build_cond_br(truncd_val_ref, alt_bb, named_bb);
-                }
-
-                llh.enter_block(alt_bb);
+                llh.build_cond_br(truncd_cond_ref, if_bb, else_bb);
             }
             SimpleIR::Label(label) => {
                 let block = vmgr.basic_block(llh, label.name());
-
-                // LLVM really doesn't like redundant branches
-                if !prec_was_br {
-                    llh.build_br(block);
-                }
-
                 llh.enter_block(block);
             }
             SimpleIR::Operate(bin_op, out, in1, in2) => {
@@ -241,22 +211,17 @@ fn lower_function(llh: &mut LLVMHandle,
             SimpleIR::Return(val) => {
                 let arg = vmgr.val_to_llvm(llh, val);
                 llh.build_return(arg);
+            }
+            SimpleIR::ReturnDefault => {
+                let retval = if is_main {
+                    llh.const_uint(int32_type(), 0)
+                } else {
+                    llh.const_uint(int64_type(), MYSTERIOUS_BITS)
+                };
 
-                last_was_return = true;
+                llh.build_return(retval);
             }
         }
-
-        prec_was_br = is_br;
-    }
-
-    if !last_was_return {
-        let retval;
-        if is_main {
-            retval = llh.const_uint(int32_type(), 0);
-        } else {
-            retval = llh.const_uint(int64_type(), MYSTERIOUS_BITS);
-        }
-        llh.build_return(retval);
     }
 }
 
