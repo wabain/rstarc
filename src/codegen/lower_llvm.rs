@@ -170,8 +170,6 @@ fn lower_function(llh: &mut LLVMHandle,
                     BinOp::Sub => "roll_sub",
                     BinOp::Mul => "roll_mul",
                     BinOp::Div => "roll_div",
-                    BinOp::And => "roll_and",
-                    BinOp::Or => "roll_or",
                 };
                 let arg1 = vmgr.val_to_llvm(llh, in1);
                 let arg2 = vmgr.val_to_llvm(llh, in2);

@@ -74,8 +74,6 @@ fn dump_ir_op(scope_id: ScopeId, op: &SimpleIR) {
                 BinOp::Sub => "sub",
                 BinOp::Mul => "mul",
                 BinOp::Div => "div",
-                BinOp::And => "and",
-                BinOp::Or => "or",
             };
             println!("  {} := {} {}, {}",
                      fmt_scoped!(dst),
@@ -282,8 +280,6 @@ pub enum BinOp {
     Sub,
     Mul,
     Div,
-    And,
-    Or,
 }
 
 /// Simple intermediate representation. This is just a flattened
@@ -500,36 +496,31 @@ impl<'prog> IRBuilder<'prog> {
         }
     }
 
-    fn emit_cond(&mut self, dst: Option<IRLValue<'prog>>, cond: &'prog ast::Conditional)
-        -> IRLValue<'prog>
+    fn emit_cond(&mut self,
+                 cond: &'prog ast::Conditional,
+                 then_label: Label,
+                 else_label: Label)
     {
-        use ast::Conditional;
-
         match cond {
-            Conditional::Comparison(comp) => self.emit_comparison(dst, comp),
+            Conditional::Comparison(comp) => {
+                let dst = self.emit_comparison(None, comp);
+                self.emit(SimpleIR::JumpIf(dst.into(), then_label, else_label));
+            }
             Conditional::And(c1, c2) => {
-                let a1 = self.emit_cond(None, c1);
-                let a2 = self.emit_cond(None, c2);
-                let dst = dst.unwrap_or_else(|| self.temp());
-                self.emit(SimpleIR::Operate(
-                    BinOp::And,
-                    dst.clone(),
-                    a1.into(),
-                    a2.into(),
-                ));
-                dst
+                let and_label = self.label("and");
+
+                self.emit_cond(c1, and_label, else_label);
+
+                self.emit_label(and_label);
+                self.emit_cond(c2, then_label, else_label);
             }
             Conditional::Or(c1, c2) => {
-                let a1 = self.emit_cond(None, c1);
-                let a2 = self.emit_cond(None, c2);
-                let dst = dst.unwrap_or_else(|| self.temp());
-                self.emit(SimpleIR::Operate(
-                    BinOp::Or,
-                    dst.clone(),
-                    a1.into(),
-                    a2.into(),
-                ));
-                dst
+                let or_label = self.label("or");
+
+                self.emit_cond(c1, then_label, or_label);
+
+                self.emit_label(or_label);
+                self.emit_cond(c2, then_label, else_label);
             }
         }
     }
@@ -676,12 +667,7 @@ impl<'prog> AstAdapter<'prog> {
                     Some(ir_builder.label("if_end"))
                 };
 
-                let ir_cond = ir_builder.emit_cond(None, cond);
-                ir_builder.emit(SimpleIR::JumpIf(
-                    ir_cond.into(),
-                    if_label,
-                    else_label,
-                ));
+                ir_builder.emit_cond(cond, if_label, else_label);
 
                 ir_builder.emit_label(if_label);
                 self.visit_statements(ir_builder, if_block);
@@ -733,19 +719,10 @@ impl<'prog> AstAdapter<'prog> {
 
         ir_builder.emit_label(check_label);
 
-        let ir_cond = ir_builder.emit_cond(None, cond);
         if loop_while_true {
-            ir_builder.emit(SimpleIR::JumpIf(
-                ir_cond.into(),
-                start_label,
-                end_label,
-            ));
+            ir_builder.emit_cond(cond, start_label, end_label);
         } else {
-            ir_builder.emit(SimpleIR::JumpIf(
-                ir_cond.into(),
-                end_label,
-                start_label,
-            ));
+            ir_builder.emit_cond(cond, end_label, start_label);
         }
 
         ir_builder.emit_label(start_label);

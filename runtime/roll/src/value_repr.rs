@@ -109,18 +109,6 @@ impl<'a> Scalar<'a> {
     }
 
     #[inline]
-    pub fn read_immediate(&self) -> Option<RockstarValue<'a>> {
-        match self.scalar_type() {
-            TagType::Null => Some(RockstarValue::Null),
-            TagType::Immediate => Some(immediate_from_bits(self.bits)),
-            TagType::HeapPointer |
-            TagType::ConstString => None,
-            TagType::HeapNumber |
-            TagType::HeapString => unreachable!(),
-        }
-    }
-
-    #[inline]
     pub fn deref_rec(&self) -> RockstarValue<'a> {
         unsafe {
             match self.scalar_type() {

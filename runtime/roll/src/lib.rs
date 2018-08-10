@@ -149,37 +149,6 @@ pub extern fn roll_le(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
     value_repr::scalar_bool(coerce_number(&v1) <= coerce_number(&v2))
 }
 
-// FIXME: I shouldn't be eagerly evaluating these operands in the first place!
-#[no_mangle]
-pub extern fn roll_and(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
-    let v1 = value_repr::Scalar::new(p1).read_immediate();
-    let v2 = value_repr::Scalar::new(p2).read_immediate();
-
-    let anded = match (v1, v2) {
-        (Some(RockstarValue::Boolean(true)),
-         Some(RockstarValue::Boolean(true))) => true,
-        _ => false,
-    };
-
-    value_repr::scalar_bool(anded)
-}
-
-#[no_mangle]
-pub extern fn roll_or(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
-    let v1 = value_repr::Scalar::new(p1).read_immediate();
-    let v2 = value_repr::Scalar::new(p2).read_immediate();
-
-    let ored = match v1 {
-        Some(RockstarValue::Boolean(true)) => true,
-        _ => match v2 {
-            Some(RockstarValue::Boolean(true)) => true,
-            _ => false,
-        }
-    };
-
-    value_repr::scalar_bool(ored)
-}
-
 #[inline]
 fn new_number(value: f64) -> u64 {
     let p = alloc::alloc(16) as *mut u64;
