@@ -1,7 +1,14 @@
 [tests]
 enabled = ["run", "ir"]
 
-[run]
+["run.exec"]
+returncode = "101"
+stderr = """
+thread 'main' panicked at 'not yet implemented: non-local reads (read for scope 0 from scope 2)', src/codegen/lower_llvm.rs:404:13
+note: Run with `RUST_BACKTRACE=1` for a backtrace.
+"""
+
+["run.interpret"]
 returncode = "0"
 stdout = """
 822

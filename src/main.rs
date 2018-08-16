@@ -20,6 +20,7 @@ mod base_analysis;
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::process;
 use std::io;
 use std::fs::File;
@@ -34,25 +35,29 @@ pub const BINARY_NAME: &str = "rstarc";
 fn main() {
     let action = build_action(&build_cli().get_matches());
 
-    let (tokenizer, err) = match load_source(&action.source) {
+    let (tokenizer, res) = match load_source(&action.source) {
         Ok(tokenizer) => {
-            let err = run(&action, &tokenizer).err();
-            (Some(tokenizer), err)
+            let res = run(&action, &tokenizer);
+            (Some(tokenizer), res)
         }
-        Err(e) => (None, Some(e.into())),
+        Err(e) => (None, Err(e.into())),
     };
 
-    if let Some(err) = err {
-        eprintln!("{}", err);
+    match res {
+        Err(err) => {
+            eprintln!("{}", err);
 
-        if let Some((start, end)) = err.span() {
-            if let Some(t) = tokenizer {
-                eprintln!("");
-                eprint_location(&t, start, end);
+            if let Some((start, end)) = err.span() {
+                if let Some(t) = tokenizer {
+                    eprintln!("");
+                    eprint_location(&t, start, end);
+                }
             }
-        }
 
-        process::exit(1);
+            process::exit(1);
+        }
+        Ok(Some(code)) => process::exit(code),
+        Ok(None) => {}
     }
 }
 
@@ -371,7 +376,7 @@ fn load_source(source: &str) -> io::Result<Tokenizer> {
     Ok(Tokenizer::from_file(&mut src_buf)?)
 }
 
-fn run(action: &Action, tokenizer: &Tokenizer) -> Result<(), RuntimeError> {
+fn run(action: &Action, tokenizer: &Tokenizer) -> Result<Option<i32>, RuntimeError> {
     let Action {
         ref source,
         execution_mode,
@@ -384,7 +389,7 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<(), RuntimeError> {
     }
 
     if !action.needs_ast_pass() {
-        return Ok(());
+        return Ok(None);
     }
 
     let tree = parser::ProgramParser::new().parse(tokenizer.tokenize())?;
@@ -395,7 +400,7 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<(), RuntimeError> {
     // them
     if execution_mode == Some(ExecutionMode::Interpret) {
         interpreter::interpret(&tree, &scope_map);
-        return Ok(());
+        return Ok(None);
     }
 
     match debug_output {
@@ -412,7 +417,7 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<(), RuntimeError> {
     }
 
     if !action.needs_lowering_pass() {
-        return Ok(());
+        return Ok(None);
     }
 
     let compile_options = action.compile_options
@@ -440,7 +445,7 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<(), RuntimeError> {
     )?;
 
     if !action.needs_linking() {
-        return Ok(());
+        return Ok(None);
     }
 
     let exec_output = compile_options.exec_output
@@ -456,7 +461,19 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<(), RuntimeError> {
         &get_runtime_lib_path()?,
     )?;
 
-    Ok(())
+    if execution_mode == Some(ExecutionMode::SpawnBinary) {
+        let status = Command::new(exec_output.as_os_str())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()?;
+
+        if !status.success() {
+            let code = status.code().unwrap_or(1);
+            return Ok(Some(code));
+        }
+    }
+
+    Ok(None)
 }
 
 // FIXME: For now, hardcode a recursion into the runtime release target

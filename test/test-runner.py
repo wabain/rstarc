@@ -17,9 +17,9 @@ logger = logging.getLogger(BASENAME)
 
 def main():
     parser = argparse.ArgumentParser(BASENAME)
-    parser.add_argument('--bin', help='A precompiled rockstarc binary to use')
+    parser.add_argument('--bin', help='Use a prebuilt compiler binary')
     parser.add_argument('--no-rebuild',
-                        help='Build and run the debug binary (if no binary is specified)',
+                        help='Skip rebuilding the compiler and runtime',
                         action='store_false',
                         dest='rebuild',
                         default=True)
@@ -39,7 +39,7 @@ def main():
                         default=['tokens', 'pretty'])
 
     parser.add_argument('-v', '--verbose', action='count', default=0)
-    parser.add_argument('files', nargs='*', help='Files to test')
+    parser.add_argument('sources', nargs='*', help='Files and directories to test')
 
     args = parser.parse_args()
 
@@ -56,10 +56,22 @@ def main():
         binary = os.path.join(basedir, 'target', 'debug', 'rstarc')
 
         if args.rebuild:
-            logger.info('Invoking cargo build from %s', basedir)
-            subprocess.check_call(['cargo', 'build'], cwd=basedir)
+            cmd = ['cargo', 'build']
+            logger.info('Invoking %s from %s', cmd, basedir)
+            subprocess.check_call(cmd, cwd=basedir)
 
-    files = args.files if args.files else get_files(basedir)
+    if args.rebuild:
+        cmd = [os.path.join(basedir, 'mkrun.py'), 'build', '--release']
+        logger.info('Invoking %s from %s', cmd, basedir)
+        subprocess.check_call(cmd, cwd=basedir)
+
+    if args.sources:
+        sources = args.sources
+    else:
+        sources = [os.path.join(basedir, 'test/programs')]
+
+    files = get_files(sources)
+    logger.debug('Targeting files %s', files)
 
     if not verify_output(files,
                          binary=binary,
@@ -68,9 +80,24 @@ def main():
         sys.exit(1)
 
 
-def get_files(basedir):
+def get_files(locations):
     files = []
-    for (dirpath, _, filenames) in os.walk(os.path.join(basedir, 'test/programs')):
+
+    logger.debug('Searching locations %s', locations)
+
+    for loc in locations:
+        if os.path.isdir(loc):
+            files.extend(get_files_in_dir(loc))
+        else:
+            files.append(loc)
+
+    return files
+
+
+def get_files_in_dir(dir):
+    files = []
+
+    for (dirpath, _, filenames) in os.walk(dir):
         for name in filenames:
             if name.endswith('.rock'):
                 files.append(os.path.join(dirpath, name))
@@ -78,21 +105,23 @@ def get_files(basedir):
 
 
 def verify_output(files, *, binary, refresh, tests_for_new_files):
+    results = []
+
+    for src in files:
+        result = verify_source_file(src,
+                                    binary=binary,
+                                    refresh=refresh,
+                                    tests_for_new_files=tests_for_new_files)
+        results.append(result)
+
     failures = []
     success_count = 0
 
-    for src in files:
-        outcomes = verify_source_file(src,
-                                      binary=binary,
-                                      refresh=refresh,
-                                      tests_for_new_files=tests_for_new_files)
+    for result in results:
+        for test, failed_reasons in result.failed_tests():
+            failures.append((result.input_program, test, failed_reasons))
 
-        for test, failed_reasons in sorted(outcomes.items()):
-
-            if failed_reasons:
-                failures.append((src, test, failed_reasons))
-            else:
-                success_count += 1
+        success_count += len(result.successful_tests())
 
     for src, test, reasons in failures:
         print()
@@ -112,9 +141,6 @@ def verify_output(files, *, binary, refresh, tests_for_new_files):
 def verify_source_file(src, binary, refresh, tests_for_new_files):
     logger.info('Verifying %s', src)
 
-    actual_output = {}
-    failures_by_test = {}
-
     config_filename = src + '.expected.toml'
 
     try:
@@ -130,44 +156,161 @@ def verify_source_file(src, binary, refresh, tests_for_new_files):
         }
         logger.debug('Configuration file %s missing', config_filename)
 
-    tests = [
-        ['tokens', [binary, 'internal', '--debug-print=tokens', src]],
-        ['pretty', [binary, 'internal', '--debug-print=pretty', src]],
-        ['ir', [binary, 'internal', '--debug-print=ir', src]],
-        ['run', [binary, 'run', '--interpret', src]],
-    ]
-
     try:
         enabled_tests = config['tests']['enabled']
     except KeyError:
         raise ValueError('manifest for {} is missing enabled tests field'.format(src))
 
-    for test, cmd in tests:
-        if test not in enabled_tests:
-            continue
+    test_results = TestResults(src)
 
-        actual_output[test], failures_by_test[test] = \
-            run_test(test_name=test, src=src, cmd=cmd, config=config)
+    for test in TestRegistry.expand_tests(enabled_tests):
+        cmd = TestRegistry.command_for_test(test, binary=binary, src=src)
 
-    if needs_refresh(refresh, failures_by_test):
+        output, failures = run_test(test_name=test, src=src, cmd=cmd, config=config)
+        test_results.register_result(test=test, output=output, failures=failures)
+
+    if needs_refresh(refresh, test_results):
         logger.info('Updating %s', config_filename)
 
-        for k, v in actual_output.items():
+        config = {
+            'tests': config['tests'],
+        }
+
+        for k, v in test_results.contract_output():
             config[k] = v
 
         write_toml(config, config_filename)
 
-    return failures_by_test
+    return test_results
 
 
-def needs_refresh(refresh, failures_by_test):
+def needs_refresh(refresh, test_results):
     if not refresh:
         return False
 
     if refresh == 'force':
         return True
 
-    return any(failures for failures in failures_by_test.values())
+    return bool(test_results.failed_tests())
+
+
+class TestRegistry:
+    _registered = {
+        'tokens': lambda src: ['internal', '--debug-print=tokens', src],
+        'pretty': lambda src: ['internal', '--debug-print=pretty', src],
+        'ir': lambda src: ['internal', '--debug-print=ir', src],
+        'run.exec': lambda src: ['run', src],
+        'run.interpret': lambda src: ['run', '--interpret', src],
+    }
+
+    @classmethod
+    def command_for_test(cls, test, *, binary, src):
+        try:
+            registered = cls._registered[test]
+        except KeyError:
+            raise ValueError(f'Unknown test {test} configured for {src}')
+
+        return [binary] + registered(src=src)
+
+    @classmethod
+    def expand_tests(cls, enabled_tests):
+        expanded = []
+
+        for test_name in enabled_tests:
+            for full_name in cls._registered:
+                if (full_name == test_name or
+                        full_name.startswith(test_name + '.')):
+
+                    if full_name not in expanded:
+                        expanded.append(full_name)
+
+        return expanded
+
+    @classmethod
+    def prefixes_by_precedence(cls):
+        """
+        Return prefixes in an order such that more-specific prefixes follow
+        their less-specific counterparts. The ordering is otherwise
+        unspecified.
+        """
+        all_prefixes = {}
+
+        for test in cls._registered:
+            parts = test.split('.')
+            for i in range(len(parts) - 1):
+                prefix = '.'.join(parts[:i + 1])
+                all_prefixes.setdefault(prefix, []).append(test)
+
+        return sorted(all_prefixes.items(), key=lambda item: len(item[0]))
+
+
+class TestResults:
+    def __init__(self, input_program):
+        self.input_program = input_program
+        self.actual_output = {}
+        self.failures_by_test = {}
+
+    def register_result(self, test, output, failures):
+        assert test not in self.actual_output
+        assert test not in self.failures_by_test
+        self.actual_output[test] = output
+        self.failures_by_test[test] = failures
+
+    def failed_tests(self):
+        return sorted((k, v) for k, v in self.failures_by_test.items() if v)
+
+    def successful_tests(self):
+        return sorted(k for k, v in self.failures_by_test.items() if not v)
+
+    def contract_output(self):
+        contracted = {}
+
+        tests_covered = set()
+        prefixes_tested = set()
+
+        prefixes = TestRegistry.prefixes_by_precedence()
+
+        # Do dict construction in a single pass so that output ordering
+        # matches the ordering of results
+        #
+        # FIXME: Is that really an invariant worth maintaining?
+
+        for test, result in self.actual_output.items():
+            if test in tests_covered:
+                continue
+
+            for prefix, subtests in prefixes:
+                if prefix in prefixes_tested or test not in subtests:
+                    continue
+
+                prefixes_tested.add(prefix)
+                summary_result = self._aggregate_results(subtests)
+
+                if summary_result is not None:
+                    tests_covered.update(subtests)
+                    contracted[prefix] = summary_result
+                    break
+
+            else:
+                tests_covered.add(test)
+                contracted[test] = result
+
+        return list(contracted.items())
+
+    def _aggregate_results(self, tests):
+        aggregate = None
+
+        for test in tests:
+            if test not in self.actual_output:
+                return None
+
+            if aggregate is None:
+                aggregate = self.actual_output[test]
+
+            elif self.actual_output[test] != aggregate:
+                return None
+
+        return aggregate
 
 
 def run_test(test_name, src, cmd, config):
@@ -196,13 +339,24 @@ def run_test(test_name, src, cmd, config):
 def validate_output(test_name, config, output):
     failures = []
 
-    if not test_name in config:
+    expected = get_expected_output(test_name, config)
+
+    if expected is None:
         failures.append(UnexpectedOutput(output))
     else:
         for field in ['returncode', 'stdout', 'stderr']:
-            validate_field(failures, field, config[test_name], output)
+            validate_field(failures, field, expected, output)
 
     return failures
+
+
+def get_expected_output(test_name, config):
+    parts = test_name.split('.')
+    for i in reversed(range(1, len(parts) + 1)):
+        prefix = '.'.join(parts[:i])
+        if prefix in config:
+            return config[prefix]
+    return None
 
 
 def validate_field(failures, field, test_config, output):
