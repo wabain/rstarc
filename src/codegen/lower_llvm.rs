@@ -22,7 +22,7 @@ pub struct CodegenOptions<'a> {
     pub source_file: &'a str,
     pub llvm_dump: bool,
     pub output: Option<&'a str>,
-    pub opt_level: i32,
+    pub opt_level: u32,
 }
 
 pub fn lower_ir(program: &IRProgram, opts: &CodegenOptions)

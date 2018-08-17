@@ -131,10 +131,10 @@ def verify_source_file(src, binary, refresh, tests_for_new_files):
         logger.debug('Configuration file %s missing', config_filename)
 
     tests = [
-        ['tokens', [binary, 'internal', '--format=tokens', src]],
-        ['pretty', [binary, 'internal', '--format=pretty', src]],
-        ['ir', [binary, 'internal', '--format=ir', src]],
-        ['run', [binary, 'run', src]],
+        ['tokens', [binary, 'internal', '--debug-print=tokens', src]],
+        ['pretty', [binary, 'internal', '--debug-print=pretty', src]],
+        ['ir', [binary, 'internal', '--debug-print=ir', src]],
+        ['run', [binary, 'run', '--interpret', src]],
     ]
 
     try:

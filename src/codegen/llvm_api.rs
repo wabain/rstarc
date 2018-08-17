@@ -536,13 +536,13 @@ impl Drop for LLVMTargetData {
 }
 
 // FIXME: Error checking
-fn optimise_ir(module: *mut LLVMModule, llvm_opt: i32) {
+fn optimise_ir(module: *mut LLVMModule, llvm_opt: u32) {
     use llvm::transforms::pass_manager_builder::*;
 
     unsafe {
         let builder = LLVMPassManagerBuilderCreate();
 
-        LLVMPassManagerBuilderSetOptLevel(builder, llvm_opt as u32);
+        LLVMPassManagerBuilderSetOptLevel(builder, llvm_opt);
 
         let pass_manager = LLVMCreatePassManager();
         LLVMPassManagerBuilderPopulateModulePassManager(builder, pass_manager);
