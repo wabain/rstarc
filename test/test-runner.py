@@ -237,7 +237,7 @@ class NonMatching:
                               self.actual.splitlines(keepends=True))
 
         for line in diff:
-            print(line, end='')
+            print(line, end='' if line.endswith('\n') else '\n')
 
 
 if __name__ == '__main__':
