@@ -129,8 +129,10 @@ LValue: ast::LValue = {
 }
 
 Variable: ast::Variable = {
-    TProperVar => ast::Variable::ProperVar(<>),
-    TCommonPrep TCommonVar => ast::Variable::CommonVar(<>),
+    <start:@L> <v:TProperVar> <end:@R> =>
+        ast::Variable::ProperVar(v, ast::Pos(start, end)),
+    <start:@L> <p:TCommonPrep> <v:TCommonVar> <end:@R> =>
+        ast::Variable::CommonVar(p, v, ast::Pos(start, end)),
 }
 
 extern {

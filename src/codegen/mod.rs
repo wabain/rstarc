@@ -6,9 +6,9 @@ mod lower_llvm;
 mod simple_ir;
 mod link;
 
-use super::BINARY_NAME;
 use base_analysis::ScopeMap;
 use ast::Statement;
+use runtime_error::RuntimeError;
 
 pub use self::lower_llvm::CodegenOptions;
 pub use self::simple_ir::dump_ir;
@@ -17,15 +17,15 @@ pub use self::link::perform_link;
 pub fn lower_llvm(program: &[Statement],
                   scope_map: &ScopeMap,
                   opts: &CodegenOptions)
-    -> Result<(), CodegenError>
+    -> Result<(), RuntimeError>
 {
-    let ir = simple_ir::build_ir(program, scope_map);
-    lower_llvm::lower_ir(&ir, opts)
+    let ir = simple_ir::build_ir(program, scope_map)?;
+    lower_llvm::lower_ir(&ir, opts)?;
+    Ok(())
 }
 
 #[derive(Debug)]
 pub enum CodegenError {
-    UnsupportedTarget { target: String, is_native_target: bool },
     LinkingFailed { exit_status: Option<i32>, stderr: String },
     LLVMError(String),
 }
@@ -33,7 +33,6 @@ pub enum CodegenError {
 impl CodegenError {
     pub fn is_internal(&self) -> bool {
         match self {
-            CodegenError::UnsupportedTarget { .. } |
             CodegenError::LinkingFailed { .. } => false,
             CodegenError::LLVMError(..) => true,
         }
@@ -45,14 +44,6 @@ impl error::Error for CodegenError {}
 impl fmt::Display for CodegenError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            CodegenError::UnsupportedTarget { target, is_native_target } => {
-                write!(f, "Compiling to machine code on {} is not currently supported.", target)?;
-                if *is_native_target {
-                    write!(f, "\n\nTry executing your program using '{} run \
-                               <program>' instead", BINARY_NAME)?;
-                }
-                Ok(())
-            }
             CodegenError::LinkingFailed { exit_status, stderr } => {
                 if let Some(code) = exit_status {
                     write!(f, "Linking the final executable failed with code {}", code)?;

@@ -1,0 +1,29 @@
+[tests]
+enabled = ["pretty", "run"]
+
+[pretty]
+returncode = "0"
+stdout = """
+Put null into the sun
+Perseverance takes a lot
+Put 4166 into the sun
+
+Say the sun
+"""
+
+["run.exec"]
+returncode = "1"
+stderr = """
+error: using non-local variable 'the sun' in compiled code is not supported.
+
+Try executing your program using 'rstarc run --interpret <program>' instead
+
+3:  The sun is like a smooth meadow
+    ^^^^^^^
+"""
+
+["run.interpret"]
+returncode = "0"
+stdout = """
+null
+"""

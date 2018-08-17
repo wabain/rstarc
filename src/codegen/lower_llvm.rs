@@ -318,9 +318,8 @@ impl<'a> ValueTracker<'a> {
 
     fn lval_to_llvm(&mut self, lval: &IRLValue<'a>) -> LLWriteTarget {
         match lval {
-            IRLValue::Variable(v, i) => {
-                // XXX: Make read_alloca take lang_variable
-                LLWriteTarget::Mem(self.read_alloca(v, *i))
+            IRLValue::Variable(v, i, _pos) => {
+                LLWriteTarget::Mem(self.get_alloca(v, *i))
             }
             IRLValue::LocalTemp(t) => {
                 LLWriteTarget::Temp(*t)
@@ -338,8 +337,8 @@ impl<'a> ValueTracker<'a> {
                         panic!("Missing write to temporary {}", temp)
                     })
             }
-            IRValue::Variable(var, scope_id) => {
-                let alloca = self.read_alloca(var, *scope_id);
+            IRValue::Variable(var, scope_id, _pos) => {
+                let alloca = self.get_alloca(var, *scope_id);
                 llh.build_load(alloca, &format!("{}.load", var))
             }
             IRValue::Literal(Value::Null) => {
@@ -399,12 +398,12 @@ impl<'a> ValueTracker<'a> {
         alloca
     }
 
-    fn read_alloca(&mut self, var: &LangVariable<'a>, scope_id: ScopeId) -> LLVMValueRef {
-        if scope_id != self.scope_id {
-            unimplemented!("non-local reads (read for scope {} from scope {})",
-                           scope_id,
-                           self.scope_id);
-        }
+    fn get_alloca(&mut self, var: &LangVariable<'a>, scope_id: ScopeId) -> LLVMValueRef {
+        assert!(scope_id == self.scope_id,
+                "non-local alloca (for var {} in scope {} from scope {})",
+                var,
+                scope_id,
+                self.scope_id);
 
         *self.allocas.get(var).unwrap_or_else(|| {
             panic!("read of {} alloca should follow write", var);

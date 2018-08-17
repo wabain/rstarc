@@ -4,6 +4,7 @@ use std::process::Command;
 
 use runtime_error::RuntimeError;
 use codegen::CodegenError;
+use base_analysis::CompileError;
 
 pub fn perform_link(output: &Path, source_object: &Path, runtime: &Path) -> Result<(), RuntimeError> {
     let linker = Linker::native()?;
@@ -34,15 +35,18 @@ struct Linker {
 impl Linker {
     // Shell out to the C compiler. Should probably use MSVC eventually, but
     // I think this would work as written with MinGW.
-    pub fn native() -> Result<Linker, CodegenError> {
+    pub fn native() -> Result<Linker, RuntimeError> {
         let target_size_opt = match mem::size_of::<usize>() {
             4 => "-m32",
             8 => "-m64",
             n => {
-                return Err(CodegenError::UnsupportedTarget {
-                    target: format!("{}-bit platform", n * 8),
-                    is_native_target: true,
-                })
+                return Err(CompileError::UnsupportedFeature {
+                    feature: format!("compiling on {}-bit platforms", n * 8),
+                    // NOTE: true only because this is the native target;
+                    // might not make sense for cross-compilation
+                    has_interpreter_support: true,
+                    pos: None,
+                }.into());
             }
         };
 

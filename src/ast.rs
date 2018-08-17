@@ -2,7 +2,7 @@ use std::fmt;
 use lexer::Token;
 use lang_constructs::LangVariable;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Pos(pub usize, pub usize);
 
 #[derive(Debug)]
@@ -69,8 +69,8 @@ pub enum LValue {
 impl fmt::Debug for LValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            LValue::Variable(Variable::ProperVar(p)) => write!(f, "ProperVar({})", p),
-            LValue::Variable(Variable::CommonVar(p, v)) => write!(f, "CommonVar({} {})", p, v),
+            LValue::Variable(Variable::ProperVar(p, pos)) => write!(f, "ProperVar({} [{:?}])", p, pos),
+            LValue::Variable(Variable::CommonVar(p, v, pos)) => write!(f, "CommonVar({} {}, [{:?}])", p, v, pos),
             LValue::Pronoun(p) => write!(f, "Pronoun({})", p),
         }
     }
@@ -78,21 +78,30 @@ impl fmt::Debug for LValue {
 
 #[derive(Debug)]
 pub enum Variable {
-    ProperVar(Token),
-    CommonVar(Token, Token),
+    ProperVar(Token, Pos),
+    CommonVar(Token, Token, Pos),
 }
 
 impl Variable {
     pub fn to_lang_variable<'a>(&'a self) -> LangVariable<'a> {
         match self {
-            Variable::CommonVar(prep, common) => {
+            Variable::CommonVar(prep, common, _pos) => {
                 LangVariable::Common(
                     prep.deref_common_prep().into(),
                     common.deref_common_var().into(),
                 )
             },
-            Variable::ProperVar(proper) => {
+            Variable::ProperVar(proper, _pos) => {
                 LangVariable::Proper(proper.deref_proper_var().into())
+            },
+        }
+    }
+
+    pub fn pos(&self) -> Pos {
+        match *self {
+            Variable::CommonVar(_, _, pos) |
+            Variable::ProperVar(_, pos) => {
+                pos
             },
         }
     }

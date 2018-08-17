@@ -409,7 +409,7 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<Option<i32>, RuntimeErr
         }
         Some(DebugOutputFormat::IR) => {
             // FIXME: IR may be generated twice along this path
-            codegen::dump_ir(&tree, &scope_map);
+            codegen::dump_ir(&tree, &scope_map)?;
         }
         Some(DebugOutputFormat::LLVM) |
         Some(DebugOutputFormat::Tokens) |

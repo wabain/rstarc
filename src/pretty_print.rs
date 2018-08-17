@@ -164,10 +164,10 @@ impl PrettyPrint for LValue {
 impl PrettyPrint for Variable {
     fn pretty_print<W>(&self, out: &mut W) -> io::Result<()> where W: io::Write {
         match *self {
-            Variable::CommonVar(ref prep, ref var) => {
+            Variable::CommonVar(ref prep, ref var, _pos) => {
                 write!(out, "{} {}", prep, var)
             }
-            Variable::ProperVar(ref var) => {
+            Variable::ProperVar(ref var, _pos) => {
                 write!(out, "{}", var)
             }
         }

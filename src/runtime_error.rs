@@ -8,7 +8,6 @@ use void::Void;
 use base_analysis::CompileError;
 use codegen::CodegenError;
 use lexer::{LexicalError, Token};
-use ast::Pos;
 
 #[derive(Debug)]
 pub enum RuntimeError {
@@ -23,11 +22,10 @@ impl RuntimeError {
     pub fn span(&self) -> Option<(usize, usize)> {
         match *self {
             RuntimeError::Io(_) | RuntimeError::Codegen(_) => None,
-            RuntimeError::Lexer(LexicalError::UnexpectedInput(p1, p2)) |
-            RuntimeError::Compile(CompileError::UnexpectedReturn(Pos(p1, p2))) |
-            RuntimeError::Compile(CompileError::UnexpectedLoopControl(Pos(p1, p2))) => {
+            RuntimeError::Lexer(LexicalError::UnexpectedInput(p1, p2)) => {
                 Some((p1, p2))
             }
+            RuntimeError::Compile(ref e) => e.span(),
             RuntimeError::Parser(ParseError::InvalidToken { location }) => {
                 Some((location, location))
             }

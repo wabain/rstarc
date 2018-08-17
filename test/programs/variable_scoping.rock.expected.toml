@@ -2,10 +2,14 @@
 enabled = ["run"]
 
 ["run.exec"]
-returncode = "101"
+returncode = "1"
 stderr = """
-thread 'main' panicked at 'not yet implemented: non-local reads (read for scope 0 from scope 2)', src/codegen/lower_llvm.rs:404:13
-note: Run with `RUST_BACKTRACE=1` for a backtrace.
+error: using non-local variable 'Z' in compiled code is not supported.
+
+Try executing your program using 'rstarc run --interpret <program>' instead
+
+3:          If Z is not mysterious
+               ^
 """
 
 ["run.interpret"]
