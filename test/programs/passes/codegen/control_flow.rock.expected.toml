@@ -1,0 +1,56 @@
+[tests]
+enabled = ["pretty", "run"]
+
+[pretty]
+returncode = "0"
+stdout = """
+If true is true
+Say "if, no else"
+
+If false is true
+Say "FAILED: if with else"
+
+Else
+Say "if with else"
+
+Put null into X
+While X is not 3
+Say "While loop"
+Say X
+Build X up
+
+Put null into X
+Until X is 3
+Say "Until loop"
+Say X
+Build X up
+
+Put null into X
+Until X is 3
+Say "Early loop exit with unreachable"
+Break
+Until X is 3
+Build X up
+
+
+"""
+
+[run]
+returncode = "0"
+stdout = """
+if, no else
+if with else
+While loop
+null
+While loop
+1
+While loop
+2
+Until loop
+null
+Until loop
+1
+Until loop
+2
+Early loop exit with unreachable
+"""

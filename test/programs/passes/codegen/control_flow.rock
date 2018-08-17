@@ -1,0 +1,33 @@
+(
+    Basic control flow tests.
+)
+
+If true is true
+    Say "if, no else"
+
+If false is true
+    Say "FAILED: if with else"
+Else
+    Say "if with else"
+
+Put nothing into X
+While X is not 3
+    Say "While loop"
+    Say X
+    Build X up
+
+Put nothing into X
+Until X is 3
+    Say "Until loop"
+    Say X
+    Build X up
+
+(Break before loop start)
+Put nothing into X
+Until X is 3
+    Say "Early loop exit with unreachable"
+    Break
+    Until X is 3
+        Build X up
+    (End inner loop)
+(End outer loop)
