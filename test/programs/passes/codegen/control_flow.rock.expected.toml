@@ -1,5 +1,5 @@
 [tests]
-enabled = ["pretty", "run"]
+enabled = ["pretty", "ir", "run"]
 
 [pretty]
 returncode = "0"
@@ -33,6 +33,68 @@ Until X is 3
 Build X up
 
 
+"""
+
+[ir]
+returncode = "0"
+stdout = """
+main:
+  X := store mysterious
+  t0 := is true, true
+  jumpif t0, .then0, .else1
+.then0:
+  say "if, no else"
+  jump .else1
+.else1:
+  t1 := is false, true
+  jumpif t1, .then2, .else3
+.then2:
+  say "FAILED: if with else"
+  jump .if_end4
+.else3:
+  say "if with else"
+  jump .if_end4
+.if_end4:
+  X := store null
+  jump .loop_check5
+.loop_check5:
+  t2 := is-not X, 3
+  jumpif t2, .loop_start6, .loop_end7
+.loop_start6:
+  say "While loop"
+  say X
+  X := add X, 1
+  jump .loop_check5
+.loop_end7:
+  X := store null
+  jump .loop_check8
+.loop_check8:
+  t3 := is X, 3
+  jumpif t3, .loop_end10, .loop_start9
+.loop_start9:
+  say "Until loop"
+  say X
+  X := add X, 1
+  jump .loop_check8
+.loop_end10:
+  X := store null
+  jump .loop_check11
+.loop_check11:
+  t4 := is X, 3
+  jumpif t4, .loop_end13, .loop_start12
+.loop_start12:
+  say "Early loop exit with unreachable"
+  jump .loop_end13
+.loop_check14:
+  t5 := is X, 3
+  jumpif t5, .loop_end16, .loop_start15
+.loop_start15:
+  X := add X, 1
+  jump .loop_check14
+.loop_end16:
+  jump .loop_check11
+.loop_end13:
+  return-default
 """
 
 [run]

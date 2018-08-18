@@ -1,18 +1,60 @@
 [tests]
-enabled = ["run"]
+enabled = ["ir", "run"]
 
-["run.exec"]
-returncode = "1"
-stderr = """
-error: using non-local variable 'Z' in compiled code is not supported.
+[ir]
+returncode = "0"
+stdout = """
+global Z<0>
 
-Try executing your program using 'rstarc run --interpret <program>' instead
+main:
+  Func One := store mysterious
+  Temp := store mysterious
+  X := store mysterious
+  Y := store mysterious
+  X := store 1
+  Y := store 1
+  Z := store 1
+  Func One := store Function(1)
+  say "invoking function"
+  Temp := call Func One, [1]
+  say "checking globals"
+  say "x"
+  say X
+  say "y"
+  say Y
+  say "z"
+  say Z
+  return-default
 
-11:      Say Z
-             ^
+;
+; Function Func One takes X, Y
+; Scope is 1
+;
+f1_Func_One:
+  X := load-arg 0
+  Y := load-arg 1
+  say "x"
+  say X
+  say "y"
+  say Y
+  say "z"
+  say Z<0>
+  say ""
+  say "incrementing within function"
+  X := add X, 1
+  Y := add Y, 1
+  Z<0> := add Z<0>, 1
+  say "x"
+  say X
+  say "y"
+  say Y
+  say "z"
+  say Z<0>
+  say ""
+  return-default
 """
 
-["run.interpret"]
+[run]
 returncode = "0"
 stdout = """
 invoking function

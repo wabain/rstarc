@@ -2,7 +2,7 @@ use std::fmt;
 use std::borrow::Cow;
 use std::collections::HashSet;
 
-use base_analysis::{ScopeId, ScopeMap};
+use base_analysis::{ScopeId, ScopeMap, VariableType};
 use ast::{self, Expr, Conditional, Statement, StatementKind, Pos};
 use lang_constructs::{self, LangVariable};
 
@@ -19,6 +19,14 @@ pub fn dump_ir(program: &[Statement], scope_map: &ScopeMap)
     -> Result<(), CompileError>
 {
     let ir = AstAdapter::adapt(program, scope_map)?;
+
+    for (global_var, var_scope) in &ir.globals {
+        println!("global {}<{}>", global_var, var_scope);
+    }
+
+    if ir.globals.len() > 0 {
+        println!();
+    }
 
     println!("main:");
     for op in &ir.main {
@@ -126,17 +134,29 @@ fn dump_ir_op(scope_id: ScopeId, op: &SimpleIR) {
 ///
 /// Currently this verifies that temporaries are (trivially) in SSA form,
 /// and that no unsupported cross-scope reads occur.
-fn verify_ir_func<'a>(scope_id: ScopeId, ops: &'a[SimpleIR]) -> Result<(), CompileError> {
+fn verify_ir_func<'a>(scope_map: &ScopeMap,
+                      scope_id: ScopeId,
+                      ops: &'a[SimpleIR])
+    -> Result<(), CompileError>
+{
     let mut vals_seen: HashSet<&'a IRLValue> = HashSet::new();
 
     let handle_value = |v: &IRValue| -> Result<(), CompileError> {
         match v {
             IRValue::Variable(var, i, p) if *i != scope_id => {
-                Err(CompileError::UnsupportedFeature {
-                    feature: format!("using non-local variable '{}'", var),
-                    has_interpreter_support: true,
-                    pos: Some(*p),
-                })
+                let var_type = scope_map.get_scope_data(*i)
+                    .get_variable_type(var)
+                    .expect("get variable in owner");
+
+                if var_type == VariableType::Closure {
+                    Err(CompileError::UnsupportedFeature {
+                        feature: format!("using non-local variable '{}'", var),
+                        has_interpreter_support: true,
+                        pos: Some(*p),
+                    })
+                } else {
+                    Ok(())
+                }
             }
             _ => Ok(())
         }
@@ -306,6 +326,7 @@ impl<'prog> Into<IRValue<'prog>> for IRLValue<'prog> {
 
 pub struct IRProgram<'prog> {
     pub scope_map: &'prog ScopeMap<'prog>,
+    pub globals: Vec<(LangVariable<'prog>, ScopeId)>,
     pub main: Vec<SimpleIR<'prog>>,
     pub funcs: Vec<(IRFunc<'prog>, Vec<SimpleIR<'prog>>)>,
 }
@@ -596,7 +617,11 @@ impl<'prog> IRBuilder<'prog> {
         dst
     }
 
-    fn emit_scope_initializers(&mut self, func_pos: Pos, args: &[IRLValue<'prog>]) {
+    fn emit_scope_initializers(&mut self,
+                               globals: &mut Vec<(LangVariable<'prog>, ScopeId)>,
+                               func_pos: Pos,
+                               args: &[IRLValue<'prog>])
+    {
         fn unwrap_variable<'a>(ir_lval: &'a IRLValue) -> &'a LangVariable<'a> {
             match ir_lval {
                 IRLValue::Variable(v, ..) => v,
@@ -605,17 +630,20 @@ impl<'prog> IRBuilder<'prog> {
             }
         };
 
+        let scope_data = self.scope_map.get_scope_data(self.ref_scope);
+
         for var in self.scope_map.get_owned_vars_for_scope(self.ref_scope) {
             if let Some((idx, arg)) = args.iter().enumerate().find(|(_, v)| {
                 unwrap_variable(*v) == var
             }) {
                 self.emit(SimpleIR::LoadArg(arg.clone(), idx));
+            } else if scope_data.get_variable_type(var) == Some(VariableType::Global) {
+                let scope_id = self.lookup_scope(var);
+                globals.push((var.clone(), scope_id));
             } else {
                 let ir_lval = self.synthesize_ir_lval(var, func_pos);
-                self.emit(SimpleIR::Store(
-                    ir_lval,
-                    IRValue::Literal(lang_constructs::Value::Mysterious),
-                ));
+                let initial_value = IRValue::Literal(lang_constructs::Value::Mysterious);
+                self.emit(SimpleIR::Store(ir_lval, initial_value));
             }
         }
     }
@@ -626,6 +654,7 @@ impl<'prog> IRBuilder<'prog> {
 /// functions to be generated.
 struct AstAdapter<'prog> {
     scope_map: &'prog ScopeMap<'prog>,
+    globals: Vec<(LangVariable<'prog>, ScopeId)>,
     func_bodies: Vec<(IRFunc<'prog>, Vec<SimpleIR<'prog>>)>,
 }
 
@@ -635,6 +664,7 @@ impl<'prog> AstAdapter<'prog> {
     {
         let mut adapter = AstAdapter {
             scope_map,
+            globals: Vec::new(),
             func_bodies: Vec::new(),
         };
 
@@ -644,13 +674,14 @@ impl<'prog> AstAdapter<'prog> {
         // in main
         adapter.visit_function_body(&mut main_builder, Pos(0, 0), &[], program);
 
-        verify_ir_func(0, &main_builder.ops)?;
+        verify_ir_func(scope_map, 0, &main_builder.ops)?;
         for (func_def, body) in &adapter.func_bodies {
-            verify_ir_func(func_def.scope_id, body)?;
+            verify_ir_func(scope_map, func_def.scope_id, body)?;
         }
 
         Ok(IRProgram {
             scope_map,
+            globals: adapter.globals,
             main: main_builder.ops,
             funcs: adapter.func_bodies,
         })
@@ -662,7 +693,7 @@ impl<'prog> AstAdapter<'prog> {
                            args: &[IRLValue<'prog>],
                            statements: &'prog [Statement])
     {
-        ir_builder.emit_scope_initializers(func_pos, args);
+        ir_builder.emit_scope_initializers(&mut self.globals, func_pos, args);
         self.visit_statements(ir_builder, statements);
 
         if !ir_builder.ops.last().map_or(false, |o| o.is_terminator()) {
@@ -817,7 +848,8 @@ mod test {
     #[test]
     #[should_panic]
     fn verify_ir_double_write_temporary() {
-        verify_ir_func(0, &[
+        let scope_map = Default::default();
+        verify_ir_func(&scope_map, 0, &[
             SimpleIR::Store(
                 IRLValue::LocalTemp(LocalTemp(1)),
                 IRValue::Literal(Value::Mysterious),

@@ -4,12 +4,12 @@ enabled = ["run", "ir"]
 ["run.exec"]
 returncode = "1"
 stderr = """
-error: using non-local variable 'Nodeoperationread' in compiled code is not supported.
+error: using non-local variable 'Value' in compiled code is not supported.
 
 Try executing your program using 'rstarc run --interpret <program>' instead
 
-12:          If Operation is Nodeoperationread
-                             ^^^^^^^^^^^^^^^^^
+14:                  Give back Value
+                               ^^^^^
 """
 
 ["run.interpret"]
@@ -40,10 +40,10 @@ stdout = """
 [ir]
 returncode = "1"
 stderr = """
-error: using non-local variable 'Nodeoperationread' in compiled code is not supported.
+error: using non-local variable 'Value' in compiled code is not supported.
 
 Try executing your program using 'rstarc run --interpret <program>' instead
 
-12:          If Operation is Nodeoperationread
-                             ^^^^^^^^^^^^^^^^^
+14:                  Give back Value
+                               ^^^^^
 """

@@ -1,5 +1,5 @@
 [tests]
-enabled = ["pretty", "run"]
+enabled = ["pretty", "ir", "run"]
 
 [pretty]
 returncode = "0"
@@ -11,18 +11,29 @@ Put 4166 into the sun
 Say the sun
 """
 
-["run.exec"]
-returncode = "1"
-stderr = """
-error: using non-local variable 'the sun' in compiled code is not supported.
+[ir]
+returncode = "0"
+stdout = """
+global the sun<0>
 
-Try executing your program using 'rstarc run --interpret <program>' instead
+main:
+  Perseverance := store mysterious
+  the sun := store null
+  Perseverance := store Function(1)
+  say the sun
+  return-default
 
-3:  The sun is like a smooth meadow
-    ^^^^^^^
+;
+; Function Perseverance takes a lot
+; Scope is 1
+;
+f1_Perseverance:
+  a lot := load-arg 0
+  the sun<0> := store 4166
+  return-default
 """
 
-["run.interpret"]
+[run]
 returncode = "0"
 stdout = """
 null

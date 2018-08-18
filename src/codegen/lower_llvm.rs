@@ -2,7 +2,7 @@ use std::collections::hash_map::{HashMap, Entry};
 
 use lang_constructs::{LangVariable, Value};
 use ast::Comparator;
-use base_analysis::ScopeId;
+use base_analysis::{ScopeId, VariableType};
 
 use codegen::CodegenError;
 use codegen::simple_ir::{IRProgram, SimpleIR, IRFunc, IRValue, IRLValue, BinOp,
@@ -70,10 +70,15 @@ pub fn lower_ir(program: &IRProgram, opts: &CodegenOptions)
 
     declare_builtin_functions(&mut llh);
 
+    let declarations = Declarations {
+        globals: build_global_var_refs(&mut llh, program),
+        functions: func_decs,
+    };
+
     // Lower main
     lower_function(&mut llh,
                    program,
-                   &func_decs,
+                   &declarations,
                    0,
                    &program.main,
                    true);
@@ -82,13 +87,48 @@ pub fn lower_ir(program: &IRProgram, opts: &CodegenOptions)
     for (func_def, func_body) in &program.funcs {
         lower_function(&mut llh,
                        program,
-                       &func_decs,
+                       &declarations,
                        func_def.scope_id,
                        func_body,
                        false);
     }
 
     llh.finalize(opts)
+}
+
+struct Declarations<'a> {
+    globals: HashMap<(&'a LangVariable<'a>, ScopeId), LLVMValueRef>,
+    functions: HashMap<ScopeId, FunctionTarget>,
+}
+
+struct FunctionTarget {
+    direct_func: FunctionHandle,
+    shim_func: Option<FunctionHandle>,
+}
+
+/// Declare and initialize global variables
+fn build_global_var_refs<'a>(llh: &mut LLVMHandle,
+                             program: &'a IRProgram<'a>)
+    -> HashMap<(&'a LangVariable<'a>, ScopeId), LLVMValueRef>
+{
+    let i64t = int64_type();
+    let initial_value = llh.const_uint(i64t, MYSTERIOUS_BITS);
+
+    let mut globals = HashMap::new();
+
+    for (var, scope) in &program.globals {
+        let global_ref = llh.add_global(
+            i64t,
+            &format!("{}<{}>", var, scope),
+            Some(initial_value),
+            Some(LLVMLinkage::LLVMPrivateLinkage),
+            None,
+        );
+
+        globals.insert((var, 0), global_ref);
+    }
+
+    globals
 }
 
 /// Build a shim function to normalize function arguments before passing them
@@ -161,11 +201,6 @@ fn build_shim_branch(llh: &mut LLVMHandle,
     bb
 }
 
-struct FunctionTarget {
-    direct_func: FunctionHandle,
-    shim_func: Option<FunctionHandle>,
-}
-
 fn declare_builtin_functions(llh: &mut LLVMHandle) {
     let f64t = float64_type();
     let i64t = int64_type();
@@ -199,13 +234,13 @@ fn declare_builtin_functions(llh: &mut LLVMHandle) {
 
 fn lower_function(llh: &mut LLVMHandle,
                   program: &IRProgram,
-                  func_decs: &HashMap<ScopeId, FunctionTarget>,
+                  declarations: &Declarations,
                   scope_id: ScopeId,
                   body: &[SimpleIR],
                   is_main: bool)
 {
-    let mut vmgr = ValueTracker::new(func_decs, scope_id);
-    let llvm_func = func_decs.get(&scope_id)
+    let mut vmgr = ValueTracker::new(program, declarations, scope_id);
+    let llvm_func = declarations.functions.get(&scope_id)
         .expect("function by scope")
         .direct_func;
 
@@ -215,7 +250,7 @@ fn lower_function(llh: &mut LLVMHandle,
 
     // Initialize allocas
     for var in program.scope_map.get_owned_vars_for_scope(scope_id) {
-        vmgr.build_alloca(llh, var.clone(), scope_id);
+        vmgr.prepare_variable(llh, &var, scope_id);
     }
 
     // Translate ops
@@ -368,9 +403,10 @@ impl LLWriteTarget {
 }
 
 struct ValueTracker<'a> {
+    program: &'a IRProgram<'a>,
+    declarations: &'a Declarations<'a>,
     func_target: &'a FunctionTarget,
-    func_decs: &'a HashMap<ScopeId, FunctionTarget>,
-    #[allow(unused)] scope_id: ScopeId,
+    scope_id: ScopeId,
 
     temps: HashMap<LocalTemp, LLVMValueRef>,
     allocas: HashMap<LangVariable<'a>, LLVMValueRef>,
@@ -379,15 +415,17 @@ struct ValueTracker<'a> {
 }
 
 impl<'a> ValueTracker<'a> {
-    fn new(func_decs: &'a HashMap<ScopeId, FunctionTarget>,
+    fn new(program: &'a IRProgram,
+           declarations: &'a Declarations<'a>,
            scope_id: ScopeId) -> Self
     {
-        let func_target = func_decs.get(&scope_id)
+        let func_target = declarations.functions.get(&scope_id)
             .expect("ValueTracker own scope func handle");
 
         ValueTracker {
+            program,
+            declarations,
             func_target,
-            func_decs,
             scope_id,
 
             temps: HashMap::new(),
@@ -443,7 +481,7 @@ impl<'a> ValueTracker<'a> {
     fn lval_to_llvm(&mut self, lval: &IRLValue<'a>) -> LLWriteTarget {
         match lval {
             IRLValue::Variable(v, i, _pos) => {
-                LLWriteTarget::Mem(self.get_alloca(v, *i))
+                LLWriteTarget::Mem(self.get_memory_variable(v, *i))
             }
             IRLValue::LocalTemp(t) => {
                 LLWriteTarget::Temp(*t)
@@ -462,8 +500,8 @@ impl<'a> ValueTracker<'a> {
                     })
             }
             IRValue::Variable(var, scope_id, _pos) => {
-                let alloca = self.get_alloca(var, *scope_id);
-                llh.build_load(alloca, &format!("{}.load", var))
+                let mem_ref = self.get_memory_variable(var, *scope_id);
+                llh.build_load(mem_ref, &format!("{}.load", var))
             }
             IRValue::Literal(Value::Null) => {
                 llh.const_uint(int64_type(), NULL_BITS)
@@ -493,7 +531,7 @@ impl<'a> ValueTracker<'a> {
                 llh.build_call(mk, &mut [value], "num_mk")
             }
             IRValue::Literal(Value::Function(scope_id)) => {
-                let func_ref = self.func_decs.get(scope_id)
+                let func_ref = self.declarations.functions.get(scope_id)
                     .expect("function literal scope")
                     .shim_func
                     .expect("user-called function")
@@ -504,21 +542,39 @@ impl<'a> ValueTracker<'a> {
         }
     }
 
-    fn build_alloca(&mut self,
-                    llh: &mut LLVMHandle,
-                    var: LangVariable<'a>,
-                    scope_id: ScopeId)
-        -> LLVMValueRef
+    fn prepare_variable(&mut self,
+                        llh: &mut LLVMHandle,
+                        var: &LangVariable<'a>,
+                        scope_id: ScopeId)
     {
         assert_eq!(self.scope_id, scope_id,
-                   "Alloca request for non-local variable");
+                   "Variable initialization request for non-local variable");
 
-        let alloca = llh.build_alloca(int64_type(), &format!("{}", &var));
-        self.allocas.insert(var, alloca);
-        alloca
+        let var_type = self.program.scope_map
+            .get_scope_data(scope_id)
+            .get_variable_type(var);
+
+        match var_type {
+            None | Some(VariableType::Closure) => {
+                unreachable!("Variable type {:?}", var_type);
+            }
+            Some(VariableType::Global) => {
+                // Already addressed
+            },
+            Some(VariableType::Local) => {
+                let alloca = llh.build_alloca(int64_type(), &format!("{}", &var));
+                self.allocas.insert(var.clone(), alloca);
+            }
+        }
     }
 
-    fn get_alloca(&mut self, var: &LangVariable<'a>, scope_id: ScopeId) -> LLVMValueRef {
+    fn get_memory_variable(&mut self, var: &LangVariable<'a>, scope_id: ScopeId)
+        -> LLVMValueRef
+    {
+        if let Some(mem_ref) = self.declarations.globals.get(&(var, scope_id)) {
+            return *mem_ref;
+        }
+
         assert!(scope_id == self.scope_id,
                 "non-local alloca (for var {} in scope {} from scope {})",
                 var,

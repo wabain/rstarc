@@ -10,7 +10,8 @@ use super::BINARY_NAME;
 use super::ast::Pos;
 
 pub use self::control_flow_verifier::verify_control_flow;
-pub use self::scoping::{ScopeId, ScopeMap, identify_variable_scopes};
+pub use self::scoping::{ScopeId, ScopeMap, VariableType,
+                        identify_variable_scopes};
 
 #[derive(Debug)]
 pub enum CompileError {

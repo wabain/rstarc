@@ -1,18 +1,69 @@
 [tests]
-enabled = ["run"]
+enabled = ["ir", "run"]
 
-["run.exec"]
-returncode = "1"
-stderr = """
-error: using non-local variable 'Z' in compiled code is not supported.
+[ir]
+returncode = "0"
+stdout = """
+global Z<0>
 
-Try executing your program using 'rstarc run --interpret <program>' instead
+main:
+  Dummy := store mysterious
+  FB := store mysterious
+  FuncA := store mysterious
+  FuncA := store Function(1)
+  FB := call FuncA, [null]
+  say Z
+  Dummy := call FB, [100]
+  say Z
+  Dummy := call FuncA, [200]
+  say Z
+  Z := add 300, Z
+  say Z
+  return-default
 
-3:          If Z is not mysterious
-               ^
+;
+; Function FuncB takes Y
+; Scope is 2
+;
+f2_FuncB:
+  Y := load-arg 0
+  t0 := is-not Z<0>, mysterious
+  jumpif t0, .then0, .else1
+.then0:
+  Z<0> := add Y, Z<0>
+  jump .if_end2
+.else1:
+  Z<0> := store Y
+  jump .if_end2
+.if_end2:
+  return-default
+
+;
+; Function FuncA takes X
+; Scope is 1
+;
+f1_FuncA:
+  FuncB := store mysterious
+  X := load-arg 0
+  FuncB := store Function(2)
+  t0 := is-not X, null
+  jumpif t0, .then0, .else1
+.then0:
+  t1 := is-not Z<0>, mysterious
+  jumpif t1, .then2, .else3
+.then2:
+  Z<0> := add X, Z<0>
+  jump .if_end4
+.else3:
+  Z<0> := store X
+  jump .if_end4
+.if_end4:
+  jump .else1
+.else1:
+  return FuncB
 """
 
-["run.interpret"]
+[run]
 returncode = "0"
 stdout = """
 mysterious

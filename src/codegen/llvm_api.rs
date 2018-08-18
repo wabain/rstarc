@@ -243,6 +243,33 @@ impl LLVMHandle {
         }
     }
 
+    pub fn add_global(&mut self,
+                      ty: LLVMTypeRef,
+                      name: &str,
+                      initial_value: Option<LLVMValueRef>,
+                      linkage: Option<LLVMLinkage>,
+                      alignment: Option<u32>)
+        -> LLVMValueRef
+    {
+        unsafe {
+            let global = LLVMAddGlobal(self.module, ty, self.new_cstr(name));
+
+            if let Some(initial_value) = initial_value {
+                LLVMSetInitializer(global, initial_value);
+            }
+
+            if let Some(linkage) = linkage {
+                LLVMSetLinkage(global, LLVMLinkage::LLVMPrivateLinkage);
+            }
+
+            if let Some(alignment) = alignment {
+                LLVMSetAlignment(global, alignment);
+            }
+
+            global
+        }
+    }
+
     pub fn build_const_string_ptr(&mut self, value: &str, name: &str) -> LLVMValueRef {
         let c_value = self.new_cstr(value);
 
@@ -253,20 +280,18 @@ impl LLVMHandle {
         let dont_null_terminate = 1;
 
         unsafe {
-            let global = LLVMAddGlobal(
-                self.module,
-                LLVMArrayType(LLVMInt8Type(), value_len),
-                self.new_cstr(name),
-            );
-            LLVMSetLinkage(global, LLVMLinkage::LLVMPrivateLinkage);
-            LLVMSetGlobalConstant(global, 1);
-
             let const_str = LLVMConstString(c_value, value_len, dont_null_terminate);
 
-            LLVMSetInitializer(global, const_str);
+            let global = self.add_global(
+                LLVMArrayType(LLVMInt8Type(), value_len),
+                name,
+                Some(const_str),
+                Some(LLVMLinkage::LLVMPrivateLinkage),
+                // Needed for tagging
+                Some(8),
+            );
 
-            // Needed for tagging
-            LLVMSetAlignment(global, 8);
+            LLVMSetGlobalConstant(global, 1);
 
             global
         }
