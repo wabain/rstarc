@@ -1,6 +1,7 @@
 #![allow(unused)]
 
 use llvm::core::*;
+use llvm::initialization::LLVM_InitializeAllCodegenComponents;
 use llvm::prelude::*;
 use llvm::target::*;
 use llvm::target_machine::*;
@@ -103,7 +104,8 @@ impl LLVMHandle {
                         args: &mut [LLVMTypeRef],
                         ret: LLVMTypeRef,
                         linkage: Option<LLVMLinkage>,
-                        alignment: Option<u32>)
+                        alignment: Option<u32>,
+                        gc_strategy: Option<&str>)
                         -> FunctionHandle
     {
         let func;
@@ -118,6 +120,10 @@ impl LLVMHandle {
             if let Some(alignment) = alignment {
                 LLVMSetAlignment(func, alignment);
             }
+
+            if let Some(gc_strategy) = gc_strategy {
+                LLVMSetGC(func, self.new_cstr(gc_strategy));
+            }
         }
         // FIXME: How long does func live?
         FunctionHandle { func }
@@ -129,7 +135,7 @@ impl LLVMHandle {
                                     args: &mut [LLVMTypeRef],
                                     ret: LLVMTypeRef)
     {
-        let f = self.add_function(name, args, ret, None, None).func;
+        let f = self.add_function(name, args, ret, None, None, None).func;
         match self.builtins.entry(name) {
             Entry::Occupied(_) => panic!("Duplicate builtin function {}", name),
             Entry::Vacant(e) => { e.insert(f); }
@@ -435,6 +441,10 @@ impl LLVMHandle {
         unsafe {
             // TODO: Support cross-compilation
             // TODO: Error checking
+
+            // NOTE: This is added through a local patch to llvm-sys
+            LLVM_InitializeAllCodegenComponents();
+
             LLVM_InitializeNativeTarget();
             LLVM_InitializeNativeAsmPrinter();
 

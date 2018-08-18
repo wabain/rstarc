@@ -40,6 +40,7 @@ pub fn lower_ir(program: &IRProgram, opts: &CodegenOptions)
             int32_type(),
             None,
             None,
+            Some("shadow-stack"),
         );
 
         func_decs.insert(0, FunctionTarget {
@@ -58,6 +59,7 @@ pub fn lower_ir(program: &IRProgram, opts: &CodegenOptions)
             i64t,
             Some(LLVMLinkage::LLVMPrivateLinkage),
             None,
+            Some("shadow-stack"),
         );
 
         let mut shim_func = build_shim_function(&mut llh, func_def, &llvm_func);
@@ -153,6 +155,7 @@ pub fn build_shim_function(llh: &mut LLVMHandle,
         i64t,
         Some(LLVMLinkage::LLVMPrivateLinkage),
         Some(8),
+        Some("shadow-stack"),
     );
 
     let mut args: Vec<_> = (0..arity).map(|i| shim_hdl.param(i + 1)).collect();
