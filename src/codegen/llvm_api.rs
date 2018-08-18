@@ -181,6 +181,24 @@ impl LLVMHandle {
         }
     }
 
+    pub fn const_null(&self, ty: LLVMTypeRef) -> LLVMValueRef {
+        unsafe {
+            LLVMConstPointerNull(ty)
+        }
+    }
+
+    pub fn const_bit_cast(&self, val: LLVMValueRef, ty: LLVMTypeRef) -> LLVMValueRef {
+        unsafe {
+            LLVMConstBitCast(val, ty)
+        }
+    }
+
+    pub fn const_int_to_ptr(&self, val: LLVMValueRef, ty: LLVMTypeRef) -> LLVMValueRef {
+        unsafe {
+            LLVMConstIntToPtr(val, ty)
+        }
+    }
+
     //
     // Instructions
     //
@@ -203,11 +221,20 @@ impl LLVMHandle {
                       name: &str)
                       -> LLVMValueRef
     {
-        let i64t = int64_type();
         let len = args.len() as u32;
         unsafe {
             LLVMBuildCall(self.builder, fn_val, args.as_mut_ptr(), len, self.new_cstr(name))
         }
+    }
+
+    pub fn build_call_builtin(&mut self,
+                              builtin: &str,
+                              args: &mut [LLVMValueRef],
+                              name: &str)
+                              -> LLVMValueRef
+    {
+        let fn_val = self.builtin_ptr(builtin);
+        self.build_call(fn_val, args, name)
     }
 
     // Call a builtin that takes two Rockstar values and returns one
@@ -237,6 +264,34 @@ impl LLVMHandle {
 
     pub fn builtin_ptr(&self, name: &str) -> LLVMValueRef {
         *self.builtins.get(name).expect("Builtin lookup")
+    }
+
+    pub fn build_ptr_cast(&mut self,
+                          val: LLVMValueRef,
+                          dest_ty: LLVMTypeRef,
+                          name: &str)
+        -> LLVMValueRef
+    {
+        unsafe {
+            LLVMBuildPointerCast(self.builder,
+                                 val,
+                                 dest_ty,
+                                 self.new_cstr(name))
+        }
+    }
+
+    pub fn build_bit_cast(&mut self,
+                          val: LLVMValueRef,
+                          dest_ty: LLVMTypeRef,
+                          name: &str)
+        -> LLVMValueRef
+    {
+        unsafe {
+            LLVMBuildBitCast(self.builder,
+                             val,
+                             dest_ty,
+                             self.new_cstr(name))
+        }
     }
 
     pub fn build_cond_br(&mut self,

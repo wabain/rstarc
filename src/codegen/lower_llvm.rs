@@ -50,13 +50,13 @@ pub fn lower_ir(program: &IRProgram, opts: &CodegenOptions)
     }
 
     for func_def in &program.funcs {
-        let i64t = int64_type();
-        let mut arg_ts: Vec<_> = func_def.args().iter().map(|_| i64t).collect();
+        let vt = value_type();
+        let mut arg_ts: Vec<_> = func_def.args().iter().map(|_| vt).collect();
 
         let mut llvm_func = llh.add_function(
             &func_def.name(),
             &mut arg_ts,
-            i64t,
+            vt,
             Some(LLVMLinkage::LLVMPrivateLinkage),
             None,
             Some("shadow-stack"),
@@ -109,14 +109,14 @@ fn build_global_var_refs<'a>(llh: &mut LLVMHandle,
                              program: &'a IRProgram<'a>)
     -> HashMap<(&'a LangVariable<'a>, ScopeId), LLVMValueRef>
 {
-    let i64t = int64_type();
-    let initial_value = llh.const_uint(i64t, MYSTERIOUS_BITS);
+    let vt = value_type();
+    let initial_value = const_immediate(llh, MYSTERIOUS_BITS);
 
     let mut globals = HashMap::new();
 
     for (var, scope) in &program.globals {
         let global_ref = llh.add_global(
-            i64t,
+            vt,
             &format!("{}<{}>", var, scope),
             Some(initial_value),
             Some(LLVMLinkage::LLVMPrivateLinkage),
@@ -147,12 +147,16 @@ pub fn build_shim_function(llh: &mut LLVMHandle,
 {
     let arity = func_def.args().len();
     let i64t = int64_type();
+    let vt = value_type();
 
-    let mut arg_ts: Vec<_> = (0..arity + 1).map(|_| i64t).collect();
+    let mut arg_ts: Vec<_> = (0..arity + 1)
+        .map(|i| if i == 0 { i64t } else { vt })
+        .collect();
+
     let shim_hdl = llh.add_function(
         &format!("{}.shim", func_def.name()),
         &mut arg_ts,
-        i64t,
+        vt,
         Some(LLVMLinkage::LLVMPrivateLinkage),
         Some(8),
         Some("shadow-stack"),
@@ -166,7 +170,7 @@ pub fn build_shim_function(llh: &mut LLVMHandle,
     llh.enter_block(entry);
 
     let switch_inst = llh.build_switch(shim_hdl.param(0), full_bb, arity as u32);
-    let mysterious_value = llh.const_uint(i64t, MYSTERIOUS_BITS);
+    let mysterious_value = const_immediate(llh, MYSTERIOUS_BITS);
 
     for missing_count in 1..=arity {
         let arg_count = arity - missing_count;
@@ -201,14 +205,23 @@ fn build_shim_branch(llh: &mut LLVMHandle,
 }
 
 fn declare_builtin_functions(llh: &mut LLVMHandle) {
+    let vt = value_type();
     let f64t = float64_type();
     let i64t = int64_type();
     let void = void_type();
 
-    llh.declare_builtin_function("roll_say", &mut [i64t], void);
-    llh.declare_builtin_function("roll_alloc", &mut [i64t], ptr_type(i64t));
-    llh.declare_builtin_function("roll_mk_number", &mut [f64t], i64t);
-    llh.declare_builtin_function("roll_coerce_function", &mut [i64t], i64t);
+    // declare void @llvm.gcroot(i8** %ptrloc, i8* %metadata)
+    llh.declare_builtin_function("llvm.gcroot",
+                                 &mut [
+                                    ptr_type(ptr_type(int8_type())),
+                                    ptr_type(int8_type()),
+                                 ],
+                                 void);
+
+    llh.declare_builtin_function("roll_say", &mut [vt], void);
+    llh.declare_builtin_function("roll_alloc", &mut [i64t], ptr_type(vt));
+    llh.declare_builtin_function("roll_mk_number", &mut [f64t], vt);
+    llh.declare_builtin_function("roll_coerce_function", &mut [vt], ptr_type(int8_type()));
 
     // Binary operations
     let bin_ops = &[
@@ -227,7 +240,7 @@ fn declare_builtin_functions(llh: &mut LLVMHandle) {
     ];
 
     for op in bin_ops {
-        llh.declare_builtin_function(op, &mut [i64t, i64t], i64t);
+        llh.declare_builtin_function(op, &mut [vt, vt], vt);
     }
 }
 
@@ -266,8 +279,9 @@ fn lower_function(llh: &mut LLVMHandle,
                 // better to make this stuff conditional and let LLVM
                 // prove it though.
                 let tag_bytes = llh.const_uint(int64_type(), 3);
+                let cond_scalar = llh.build_ptr_to_int(cond_ref, int64_type(), "scalar");
                 let coerced_cond_ref = llh.build_lshr(
-                    cond_ref,
+                    cond_scalar,
                     tag_bytes,
                     "coerce_bool",
                 );
@@ -340,7 +354,10 @@ fn lower_function(llh: &mut LLVMHandle,
                 let retval = if func_def.is_main() {
                     llh.const_uint(int32_type(), 0)
                 } else {
-                    llh.const_uint(int64_type(), MYSTERIOUS_BITS)
+                    llh.const_int_to_ptr(
+                        llh.const_uint(int64_type(), MYSTERIOUS_BITS),
+                        value_type(),
+                    )
                 };
 
                 llh.build_return(retval);
@@ -356,6 +373,7 @@ fn build_dynamic_call(llh: &mut LLVMHandle,
                       name: &str)
                       -> LLVMValueRef
 {
+    let vt = value_type();
     let i64t = int64_type();
 
     let fn_coerced = llh.build_call_coerce_function(
@@ -370,14 +388,28 @@ fn build_dynamic_call(llh: &mut LLVMHandle,
     shim_args.push(arg_count_ref);
     shim_args.extend(args.iter());
 
-    let mut shim_arg_types: Vec<_> = shim_args.iter().map(|_| i64t).collect();
-    let fn_type = ptr_type(func_type(&mut shim_arg_types, i64t));
+    let mut shim_arg_types: Vec<_> = (0..shim_args.len())
+        .map(|i| if i == 0 { i64t } else { vt })
+        .collect();
 
-    let fn_cast = llh.build_int_to_ptr(fn_coerced,
-                                       fn_type,
-                                       &format!("{}.fn_cast", ir_fn));
+    let fn_type = ptr_type(func_type(&mut shim_arg_types, vt));
+
+    let fn_cast = llh.build_ptr_cast(fn_coerced,
+                                     fn_type,
+                                     &format!("{}.fn_cast", ir_fn));
 
     llh.build_call(fn_cast, &mut shim_args, name)
+}
+
+fn value_type() -> LLVMTypeRef {
+    ptr_type(int64_type())
+}
+
+fn const_immediate(llh: &LLVMHandle, bits: u64) -> LLVMValueRef {
+    llh.const_int_to_ptr(
+        llh.const_uint(int64_type(), bits),
+        value_type(),
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -502,10 +534,10 @@ impl<'a> ValueTracker<'a> {
                 llh.build_load(mem_ref, &format!("{}.load", var))
             }
             IRValue::Literal(Value::Null) => {
-                llh.const_uint(int64_type(), NULL_BITS)
+                const_immediate(llh, NULL_BITS)
             }
             IRValue::Literal(Value::Mysterious) => {
-                llh.const_uint(int64_type(), MYSTERIOUS_BITS)
+                const_immediate(llh, MYSTERIOUS_BITS)
             }
             IRValue::Literal(Value::String(s)) => {
                 let global = match self.string_cache.get(s) {
@@ -521,7 +553,7 @@ impl<'a> ValueTracker<'a> {
                 tag_pointer(llh, global, CONST_STRING_TAG, "const_str")
             }
             IRValue::Literal(Value::Boolean(b)) => {
-                llh.const_uint(int64_type(), if *b { TRUE_BITS } else { FALSE_BITS })
+                const_immediate(llh, if *b { TRUE_BITS } else { FALSE_BITS })
             }
             IRValue::Literal(Value::Number(n)) => {
                 let mk = llh.builtin_ptr("roll_mk_number");
@@ -560,8 +592,16 @@ impl<'a> ValueTracker<'a> {
                 // Already addressed
             },
             Some(VariableType::Local) => {
-                let alloca = llh.build_alloca(int64_type(), &format!("{}", &var));
+                let alloca = llh.build_alloca(value_type(), &format!("{}", &var));
                 self.allocas.insert(var.clone(), alloca);
+
+                let cast = llh.build_bit_cast(alloca,
+                                              ptr_type(ptr_type(int8_type())),
+                                              &format!("{}.gccast", &var));
+
+                let null_meta = llh.const_null(ptr_type(int8_type()));
+
+                llh.build_call_builtin("llvm.gcroot", &mut [cast, null_meta], "");
             }
         }
     }
@@ -592,10 +632,12 @@ fn tag_pointer(llh: &mut LLVMHandle,
                -> LLVMValueRef
 {
     let i64t = int64_type();
+    let vt = value_type();
     let scalar_ref = llh.build_ptr_to_int(ptr_ref,
                                           i64t,
                                           &format!("{}.scalar", kind));
 
     let func_tag = llh.const_uint(i64t, tag);
-    llh.build_xor(scalar_ref, func_tag, &format!("{}.tagged", kind))
+    let tagged = llh.build_xor(scalar_ref, func_tag, &format!("{}.tagged", kind));
+    llh.build_int_to_ptr(tagged, vt, &format!("{}.tagged.cast", kind))
 }
