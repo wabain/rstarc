@@ -5,7 +5,7 @@ use ast::Comparator;
 use base_analysis::ScopeId;
 
 use codegen::CodegenError;
-use codegen::simple_ir::{IRProgram, SimpleIR, IRValue, IRLValue, BinOp,
+use codegen::simple_ir::{IRProgram, SimpleIR, IRFunc, IRValue, IRLValue, BinOp,
                          LocalTemp};
 use codegen::llvm_api::*;
 
@@ -37,9 +37,13 @@ pub fn lower_ir(program: &IRProgram, opts: &CodegenOptions)
             "main",
             &mut [],
             int32_type(),
+            None,
         );
 
-        func_decs.insert(0, llvm_func);
+        func_decs.insert(0, FunctionTarget {
+            direct_func: llvm_func,
+            shim_func: None,
+        });
     }
 
     for (func_def, _) in &program.funcs {
@@ -50,9 +54,15 @@ pub fn lower_ir(program: &IRProgram, opts: &CodegenOptions)
             &format!("{}", func_def.initial_var),
             &mut arg_ts,
             i64t,
+            Some(LLVMLinkage::LLVMPrivateLinkage),
         );
 
-        func_decs.insert(func_def.scope_id, llvm_func);
+        let mut shim_func = build_shim_function(&mut llh, func_def, &llvm_func);
+
+        func_decs.insert(func_def.scope_id, FunctionTarget {
+            direct_func: llvm_func,
+            shim_func: Some(shim_func),
+        });
     }
 
     declare_builtin_functions(&mut llh);
@@ -76,6 +86,80 @@ pub fn lower_ir(program: &IRProgram, opts: &CodegenOptions)
     }
 
     llh.finalize(opts)
+}
+
+/// Build a shim function to normalize function arguments before passing them
+/// to the real function.
+///
+/// The way this is done is by passing the argument count as the first
+/// argument to the shim function, which then switches over it and passes
+/// the correct number of arguments to the underlying function.
+///
+/// I don't really know how safe this is in general, and it may come back
+/// to haunt me! Offhand, this seems to work (for 64-bit programs, on MacOS,
+/// at least). It could break for calling conventions that put more
+/// responsibility on the callee.
+pub fn build_shim_function(llh: &mut LLVMHandle,
+                           func_def: &IRFunc,
+                           func_hdl: &FunctionHandle)
+                           -> FunctionHandle
+{
+    let arity = func_def.args.len();
+    let i64t = int64_type();
+
+    let mut arg_ts: Vec<_> = (0..arity + 1).map(|_| i64t).collect();
+    let shim_hdl = llh.add_function(
+        &format!("{}.shim", &format!("{}", func_def.initial_var)),
+        &mut arg_ts,
+        i64t,
+        Some(LLVMLinkage::LLVMPrivateLinkage),
+    );
+
+    let mut args: Vec<_> = (0..arity).map(|i| shim_hdl.param(i + 1)).collect();
+
+    let entry = llh.new_block(&shim_hdl, "entry");
+    let full_bb = build_shim_branch(llh, &shim_hdl, func_hdl, &mut args, arity);
+
+    llh.enter_block(entry);
+
+    let switch_inst = llh.build_switch(shim_hdl.param(0), full_bb, arity as u32);
+    let mysterious_value = llh.const_uint(i64t, MYSTERIOUS_BITS);
+
+    for missing_count in 1..=arity {
+        let arg_count = arity - missing_count;
+        args[arg_count] = mysterious_value;
+
+        let branch = build_shim_branch(llh, &shim_hdl, func_hdl, &mut args, arg_count);
+        let arg_count_ref = llh.const_uint(i64t, arg_count as u64);
+        llh.add_case(switch_inst, arg_count_ref, branch);
+    }
+
+    shim_hdl
+}
+
+fn build_shim_branch(llh: &mut LLVMHandle,
+                     shim_hdl: &FunctionHandle,
+                     direct_hdl: &FunctionHandle,
+                     args: &mut [LLVMValueRef],
+                     arg_count: usize)
+                     -> LLVMBasicBlockRef
+{
+    let bb = llh.new_block(shim_hdl, &format!("argcount.{}", arg_count));
+    llh.enter_block(bb);
+
+    let out_ref = llh.build_call(
+        direct_hdl.func_ref(),
+        args,
+        &format!("argcount.{}.out", arg_count),
+    );
+
+    llh.build_return(out_ref);
+    bb
+}
+
+struct FunctionTarget {
+    direct_func: FunctionHandle,
+    shim_func: Option<FunctionHandle>,
 }
 
 fn declare_builtin_functions(llh: &mut LLVMHandle) {
@@ -110,13 +194,15 @@ fn declare_builtin_functions(llh: &mut LLVMHandle) {
 
 fn lower_function(llh: &mut LLVMHandle,
                   program: &IRProgram,
-                  func_decs: &HashMap<ScopeId, FunctionHandle>,
+                  func_decs: &HashMap<ScopeId, FunctionTarget>,
                   scope_id: ScopeId,
                   body: &[SimpleIR],
                   is_main: bool)
 {
     let mut vmgr = ValueTracker::new(func_decs, scope_id);
-    let llvm_func = func_decs.get(&scope_id).expect("function by scope");
+    let llvm_func = func_decs.get(&scope_id)
+        .expect("function by scope")
+        .direct_func;
 
     // Create entry block
     let entry_block = vmgr.basic_block(llh, "entry".into());
@@ -195,7 +281,9 @@ fn lower_function(llh: &mut LLVMHandle,
                     .collect();
 
                 vmgr.store(llh, out, &format!("{}.return", func), |llh, name| {
-                    llh.build_call_dynamic(
+                    build_dynamic_call(
+                        llh,
+                        func,
                         func_ref,
                         &mut arg_refs,
                         name,
@@ -223,6 +311,31 @@ fn lower_function(llh: &mut LLVMHandle,
     }
 }
 
+fn build_dynamic_call(llh: &mut LLVMHandle,
+                      ir_fn: &IRValue,
+                      fn_val: LLVMValueRef,
+                      args: &mut [LLVMValueRef],
+                      name: &str)
+                      -> LLVMValueRef
+{
+    let i64t = int64_type();
+
+    let arg_count = args.len();
+    let arg_count_ref = llh.const_uint(int64_type(), arg_count as u64);
+
+    let mut shim_args = Vec::with_capacity(arg_count + 1);
+    shim_args.push(arg_count_ref);
+    shim_args.extend(args.iter());
+
+    let mut shim_arg_types: Vec<_> = shim_args.iter().map(|_| i64t).collect();
+    let fn_type = ptr_type(func_type(&mut shim_arg_types, i64t));
+    let fn_cast = llh.build_int_to_ptr(fn_val,
+                                       fn_type,
+                                       &format!("{}.fn_cast", ir_fn));
+
+    llh.build_call(fn_cast, &mut shim_args, name)
+}
+
 #[derive(Debug, Clone, Copy)]
 enum LLWriteTarget {
     /// Temporary to be instantiated
@@ -244,8 +357,8 @@ impl LLWriteTarget {
 }
 
 struct ValueTracker<'a> {
-    func_handle: &'a FunctionHandle,
-    func_decs: &'a HashMap<ScopeId, FunctionHandle>,
+    func_target: &'a FunctionTarget,
+    func_decs: &'a HashMap<ScopeId, FunctionTarget>,
     #[allow(unused)] scope_id: ScopeId,
 
     temps: HashMap<LocalTemp, LLVMValueRef>,
@@ -255,14 +368,14 @@ struct ValueTracker<'a> {
 }
 
 impl<'a> ValueTracker<'a> {
-    fn new(func_decs: &'a HashMap<ScopeId, FunctionHandle>,
+    fn new(func_decs: &'a HashMap<ScopeId, FunctionTarget>,
            scope_id: ScopeId) -> Self
     {
-        let func_handle = func_decs.get(&scope_id)
+        let func_target = func_decs.get(&scope_id)
             .expect("ValueTracker own scope func handle");
 
         ValueTracker {
-            func_handle,
+            func_target,
             func_decs,
             scope_id,
 
@@ -277,7 +390,7 @@ impl<'a> ValueTracker<'a> {
         match self.basic_blocks.entry(name) {
             Entry::Occupied(e) => *e.get(),
             Entry::Vacant(e) => {
-                let func_handle = self.func_handle;
+                let func_handle = self.func_target.direct_func;
                 let bb = llh.new_block(&func_handle, e.key());
                 e.insert(bb);
                 bb
@@ -377,6 +490,8 @@ impl<'a> ValueTracker<'a> {
             IRValue::Literal(Value::Function(scope_id)) => {
                 let func_ref = self.func_decs.get(scope_id)
                     .expect("function literal scope")
+                    .shim_func
+                    .expect("user-called function")
                     .func_ref();
 
                 llh.build_ptr_to_int(func_ref, int64_type(), "func_scalar")

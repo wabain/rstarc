@@ -4,8 +4,9 @@ use llvm::core::*;
 use llvm::prelude::*;
 use llvm::target::*;
 use llvm::target_machine::*;
-use llvm::{LLVMModule, LLVMBuilder, LLVMLinkage};
+use llvm::{LLVMModule, LLVMBuilder};
 // Reexports
+pub use llvm::LLVMLinkage;
 pub use llvm::prelude::{LLVMTypeRef, LLVMValueRef, LLVMBasicBlockRef};
 
 use std::collections::hash_map::{HashMap, Entry};
@@ -100,13 +101,18 @@ impl LLVMHandle {
     pub fn add_function(&mut self,
                         name: &str,
                         args: &mut [LLVMTypeRef],
-                        ret: LLVMTypeRef)
+                        ret: LLVMTypeRef,
+                        linkage: Option<LLVMLinkage>)
                         -> FunctionHandle
     {
         let func;
         unsafe {
             let fn_type = func_type(args, ret);
             func = LLVMAddFunction(self.module, self.new_cstr(name), fn_type);
+
+            if let Some(linkage) = linkage {
+                LLVMSetLinkage(func, linkage);
+            }
         }
         // FIXME: How long does func live?
         FunctionHandle { func }
@@ -118,7 +124,7 @@ impl LLVMHandle {
                                     args: &mut [LLVMTypeRef],
                                     ret: LLVMTypeRef)
     {
-        let f = self.add_function(name, args, ret).func;
+        let f = self.add_function(name, args, ret, None).func;
         match self.builtins.entry(name) {
             Entry::Occupied(_) => panic!("Duplicate builtin function {}", name),
             Entry::Vacant(e) => { e.insert(f); }
@@ -211,20 +217,6 @@ impl LLVMHandle {
         self.build_call(fn_val, &mut [arg], "");
     }
 
-    pub fn build_call_dynamic(&mut self,
-                              fn_val: LLVMValueRef,
-                              args: &mut [LLVMValueRef],
-                              name: &str)
-                              -> LLVMValueRef
-    {
-        let i64t = int64_type();
-
-        let mut arg_types: Vec<_> = args.iter().map(|_| i64t).collect();
-        let fn_type = ptr_type(func_type(&mut arg_types, i64t));
-        let fn_cast = self.build_int_to_ptr(fn_val, fn_type, "fn_upcast");
-        self.build_call(fn_cast, args, name)
-    }
-
     pub fn builtin_ptr(&self, name: &str) -> LLVMValueRef {
         *self.builtins.get(name).expect("Builtin lookup")
     }
@@ -254,7 +246,7 @@ impl LLVMHandle {
                 LLVMArrayType(LLVMInt8Type(), value_len),
                 self.new_cstr(name),
             );
-            LLVMSetLinkage(global, LLVMLinkage::LLVMInternalLinkage);
+            LLVMSetLinkage(global, LLVMLinkage::LLVMPrivateLinkage);
             LLVMSetGlobalConstant(global, 1);
 
             let const_str = LLVMConstString(c_value, value_len, dont_null_terminate);
@@ -332,6 +324,27 @@ impl LLVMHandle {
     pub fn build_store(&mut self, val: LLVMValueRef, ptr: LLVMValueRef) -> LLVMValueRef {
         unsafe {
             LLVMBuildStore(self.builder, val, ptr)
+        }
+    }
+
+    pub fn build_switch(&mut self,
+                        value: LLVMValueRef,
+                        default_block: LLVMBasicBlockRef,
+                        num_cases: u32)
+                        -> LLVMValueRef
+    {
+        unsafe {
+            LLVMBuildSwitch(self.builder, value, default_block, num_cases)
+        }
+    }
+
+    pub fn add_case(&mut self,
+                    switch_inst: LLVMValueRef,
+                    value: LLVMValueRef,
+                    block: LLVMBasicBlockRef)
+    {
+        unsafe {
+            LLVMAddCase(switch_inst, value, block);
         }
     }
 

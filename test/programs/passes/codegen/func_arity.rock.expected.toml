@@ -1,0 +1,74 @@
+[tests]
+enabled = ["ir", "run"]
+
+[ir]
+returncode = "0"
+stdout = """
+main:
+  Bar := store mysterious
+  Baz := store mysterious
+  Foo := store mysterious
+  Hidden Condition := store mysterious
+  Unused := store mysterious
+  Hidden Condition := store Function(1)
+  Foo := store Function(2)
+  Bar := store Function(3)
+  t0 := call Hidden Condition, [1, 2]
+  t1 := gt t0, 7
+  jumpif t1, .then0, .else1
+.then0:
+  Baz := store Foo
+  jump .if_end2
+.else1:
+  Baz := store Bar
+  jump .if_end2
+.if_end2:
+  say "Pass 1 argument to two-argument function"
+  Unused := call Baz, [1]
+  say "Pass 12 arguments to two-argument function"
+  Unused := call Baz, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+  return-default
+
+;
+; Function Hidden Condition takes X, Y
+; Scope is 1
+;
+f1_Hidden_Condition:
+  X := load-arg 0
+  Y := load-arg 1
+  t0 := add X, Y
+  return t0
+
+;
+; Function Foo takes X, Y
+; Scope is 2
+;
+f2_Foo:
+  X := load-arg 0
+  Y := load-arg 1
+  say X
+  say Y
+  return-default
+
+;
+; Function Bar takes X, Y
+; Scope is 3
+;
+f3_Bar:
+  X := load-arg 0
+  Y := load-arg 1
+  say X
+  say Y
+  return-default
+"""
+
+[run]
+returncode = "0"
+stdout = """
+Pass 1 argument to two-argument function
+1
+mysterious
+Pass 12 arguments to two-argument function
+1
+2
+"""
