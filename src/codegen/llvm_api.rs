@@ -102,7 +102,8 @@ impl LLVMHandle {
                         name: &str,
                         args: &mut [LLVMTypeRef],
                         ret: LLVMTypeRef,
-                        linkage: Option<LLVMLinkage>)
+                        linkage: Option<LLVMLinkage>,
+                        alignment: Option<u32>)
                         -> FunctionHandle
     {
         let func;
@@ -112,6 +113,10 @@ impl LLVMHandle {
 
             if let Some(linkage) = linkage {
                 LLVMSetLinkage(func, linkage);
+            }
+
+            if let Some(alignment) = alignment {
+                LLVMSetAlignment(func, alignment);
             }
         }
         // FIXME: How long does func live?
@@ -124,7 +129,7 @@ impl LLVMHandle {
                                     args: &mut [LLVMTypeRef],
                                     ret: LLVMTypeRef)
     {
-        let f = self.add_function(name, args, ret, None).func;
+        let f = self.add_function(name, args, ret, None, None).func;
         match self.builtins.entry(name) {
             Entry::Occupied(_) => panic!("Duplicate builtin function {}", name),
             Entry::Vacant(e) => { e.insert(f); }
@@ -215,6 +220,13 @@ impl LLVMHandle {
     pub fn build_call_say(&mut self, arg: LLVMValueRef) {
         let fn_val = self.builtin_ptr("roll_say");
         self.build_call(fn_val, &mut [arg], "");
+    }
+
+    pub fn build_call_coerce_function(&mut self, arg: LLVMValueRef, name: &str)
+        -> LLVMValueRef
+    {
+        let fn_val = self.builtin_ptr("roll_coerce_function");
+        self.build_call(fn_val, &mut [arg], name)
     }
 
     pub fn builtin_ptr(&self, name: &str) -> LLVMValueRef {

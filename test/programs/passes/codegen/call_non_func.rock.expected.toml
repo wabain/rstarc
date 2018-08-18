@@ -1,0 +1,55 @@
+[tests]
+enabled = ["ir", "run"]
+
+[ir]
+returncode = "0"
+stdout = """
+main:
+  Bar := store mysterious
+  Foo := store mysterious
+  Hidden Condition := store mysterious
+  Result := store mysterious
+  Hidden Condition := store Function(1)
+  Foo := store Function(2)
+  t0 := call Hidden Condition, [1, 2]
+  t1 := gt t0, 7
+  jumpif t1, .then0, .else1
+.then0:
+  Bar := store Foo
+  jump .else1
+.else1:
+  say "Calling non-function..."
+  Result := call Bar, [1]
+  say Result
+  return-default
+
+;
+; Function Hidden Condition takes X, Y
+; Scope is 1
+;
+f1_Hidden_Condition:
+  X := load-arg 0
+  Y := load-arg 1
+  t0 := add X, Y
+  return t0
+
+;
+; Function Foo takes X, Y
+; Scope is 2
+;
+f2_Foo:
+  X := load-arg 0
+  Y := load-arg 1
+  say X
+  say Y
+  return-default
+"""
+
+[run]
+returncode = "1"
+stdout = """
+Calling non-function...
+"""
+stderr = """
+error: Cannot call value 'mysterious'
+"""

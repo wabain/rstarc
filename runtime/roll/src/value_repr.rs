@@ -13,12 +13,13 @@
 //!
 //! Scalar values:
 //!
-//!     Null        0b0...00000000
-//!     False       0b0...00000010
-//!     True        0b0...00001010
-//!     Mysterious  0b0...00010010
-//!     Heap ptr    [61 bits] 0b000
-//!     Const str   [61 bits] 0b011
+//!     Null        0b0.......00000
+//!     False       0b0.......00010
+//!     True        0b0.......01010
+//!     Mysterious  0b0.......10010
+//!     Heap ptr    [61 bits]...000
+//!     Const str   [61 bits]...011
+//!     Function    [61 bits]...110
 //!
 //! One motivation for this choice of tags was to avoid having false = 0x1,
 //! while still allowing booleans to be coerced to their conventional values
@@ -47,6 +48,7 @@ pub const CONST_IMMEDIATE_TAG: u64 = 0x2;
 pub const CONST_STRING_TAG: u64 = 0x3;
 pub const HEAP_NUMBER_TAG: u64 = 0x4;
 pub const HEAP_STRING_TAG: u64 = 0x5;
+pub const FUNCTION_TAG: u64 = 0x6;
 
 pub const STRING_LEN_BITS: u64 = 32;
 
@@ -75,6 +77,7 @@ pub enum TagType {
     Immediate,
     HeapPointer,
     ConstString,
+    Function,
     HeapNumber,
     HeapString,
 }
@@ -96,7 +99,8 @@ impl<'a> Scalar<'a> {
                 TagType::Null |
                 TagType::Immediate |
                 TagType::HeapPointer |
-                TagType::ConstString => true,
+                TagType::ConstString |
+                TagType::Function => true,
                 TagType::HeapNumber |
                 TagType::HeapString => false,
             },
@@ -116,6 +120,7 @@ impl<'a> Scalar<'a> {
                 TagType::Immediate => immediate_from_bits(self.bits),
                 TagType::HeapPointer => deref_heap_pointer(self.bits),
                 TagType::ConstString => deref_const_string(self.bits),
+                TagType::Function => extract_function_ptr(self.bits),
                 TagType::HeapNumber |
                 TagType::HeapString => unreachable!(),
             }
@@ -147,6 +152,7 @@ impl<'a> HeapValue<'a> {
                 TagType::Immediate => immediate_from_bits(head),
                 TagType::HeapPointer => deref_heap_pointer(head),
                 TagType::ConstString => deref_const_string(head),
+                TagType::Function => extract_function_ptr(head),
                 TagType::HeapNumber => deref_heap_number(head, self.ptr),
                 TagType::HeapString => deref_heap_string(head, self.ptr),
             }
@@ -164,6 +170,7 @@ fn get_tag_type(bits: u64) -> TagType {
             CONST_IMMEDIATE_TAG => TagType::Immediate,
             HEAP_PTR_TAG => TagType::HeapPointer,
             CONST_STRING_TAG => TagType::ConstString,
+            FUNCTION_TAG => TagType::Function,
             HEAP_NUMBER_TAG => TagType::HeapNumber,
             HEAP_STRING_TAG => TagType::HeapString,
             _ => panic!("Unexpected value tag in 0x{:x}", bits),
@@ -204,6 +211,12 @@ unsafe fn deref_const_string<'a>(bits: u64) -> RockstarValue<'a> {
     let s = str::from_utf8_unchecked(slice::from_raw_parts(ptr, len));
 
     RockstarValue::String(s)
+}
+
+#[inline]
+unsafe fn extract_function_ptr<'a>(bits: u64) -> RockstarValue<'a> {
+    let ptr = tag_to_ptr!((const) VoidPtr, FUNCTION_TAG, bits);
+    RockstarValue::Function(ptr)
 }
 
 #[inline]

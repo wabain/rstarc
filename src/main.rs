@@ -401,7 +401,7 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<Option<i32>, RuntimeErr
     // If interpreting, allow compile options to be passed but ignore
     // them
     if execution_mode == Some(ExecutionMode::Interpret) {
-        interpreter::interpret(&tree, &scope_map);
+        interpreter::interpret(&tree, &scope_map)?;
         return Ok(None);
     }
 

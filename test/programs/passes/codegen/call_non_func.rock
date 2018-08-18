@@ -1,0 +1,16 @@
+Hidden Condition takes X, Y
+    Give back X with Y
+    (End function)
+
+Foo takes X, Y
+    Say X
+    Say Y
+    (End function)
+
+If Hidden Condition taking 1, 2 is greater than 7
+    Put Foo into Bar
+    (End if)
+
+Say "Calling non-function..."
+Put Bar taking 1 into Result
+Say Result

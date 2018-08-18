@@ -7,6 +7,7 @@ use void::Void;
 
 use base_analysis::CompileError;
 use codegen::CodegenError;
+use interpreter::InterpreterError;
 use lexer::{LexicalError, Token};
 
 #[derive(Debug)]
@@ -16,12 +17,15 @@ pub enum RuntimeError {
     Parser(ParseError<usize, Token, Void>),
     Compile(CompileError),
     Codegen(CodegenError),
+    Interpreter(InterpreterError),
 }
 
 impl RuntimeError {
     pub fn span(&self) -> Option<(usize, usize)> {
         match *self {
-            RuntimeError::Io(_) | RuntimeError::Codegen(_) => None,
+            RuntimeError::Io(_) |
+            RuntimeError::Codegen(_) |
+            RuntimeError::Interpreter(_) => None,
             RuntimeError::Lexer(LexicalError::UnexpectedInput(p1, p2)) => {
                 Some((p1, p2))
             }
@@ -47,7 +51,8 @@ impl error::Error for RuntimeError {
             RuntimeError::Lexer(e) => Some(e),
             RuntimeError::Parser(e) => Some(e),
             RuntimeError::Compile(e) => Some(e),
-            RuntimeError::Codegen(e) => Some(e)
+            RuntimeError::Codegen(e) => Some(e),
+            RuntimeError::Interpreter(e) => Some(e),
         }
     }
 }
@@ -91,6 +96,9 @@ impl fmt::Display for RuntimeError {
                 let err_header = if e.is_internal() { "internal " } else { "" };
                 write!(f, "{}error: {}", err_header, e)
             }
+            RuntimeError::Interpreter(e) => {
+                write!(f, "error: {}", e)
+            }
         }
     }
 }
@@ -117,6 +125,7 @@ from_variant!(io::Error, RuntimeError::Io);
 from_variant!(LexicalError, RuntimeError::Lexer);
 from_variant!(CompileError, RuntimeError::Compile);
 from_variant!(CodegenError, RuntimeError::Codegen);
+from_variant!(InterpreterError, RuntimeError::Interpreter);
 
 impl From<ParseError<usize, Token, LexicalError>> for RuntimeError {
     fn from(e: ParseError<usize, Token, LexicalError>) -> Self {

@@ -15,6 +15,7 @@ const FALSE_BITS: u64 = 0x2;
 const TRUE_BITS: u64 = 0xa;
 const MYSTERIOUS_BITS: u64 = 0x12;
 const CONST_STRING_TAG: u64 = 0x3;
+const FUNCTION_TAG: u64 = 0x6;
 
 // Leave file paths as strings because that's how they're input from the CLI
 // and the complexity of interacting between paths and FFI isn't worth it.
@@ -38,6 +39,7 @@ pub fn lower_ir(program: &IRProgram, opts: &CodegenOptions)
             &mut [],
             int32_type(),
             None,
+            None,
         );
 
         func_decs.insert(0, FunctionTarget {
@@ -55,6 +57,7 @@ pub fn lower_ir(program: &IRProgram, opts: &CodegenOptions)
             &mut arg_ts,
             i64t,
             Some(LLVMLinkage::LLVMPrivateLinkage),
+            None,
         );
 
         let mut shim_func = build_shim_function(&mut llh, func_def, &llvm_func);
@@ -113,6 +116,7 @@ pub fn build_shim_function(llh: &mut LLVMHandle,
         &mut arg_ts,
         i64t,
         Some(LLVMLinkage::LLVMPrivateLinkage),
+        Some(8),
     );
 
     let mut args: Vec<_> = (0..arity).map(|i| shim_hdl.param(i + 1)).collect();
@@ -170,6 +174,7 @@ fn declare_builtin_functions(llh: &mut LLVMHandle) {
     llh.declare_builtin_function("roll_say", &mut [i64t], void);
     llh.declare_builtin_function("roll_alloc", &mut [i64t], ptr_type(i64t));
     llh.declare_builtin_function("roll_mk_number", &mut [f64t], i64t);
+    llh.declare_builtin_function("roll_coerce_function", &mut [i64t], i64t);
 
     // Binary operations
     let bin_ops = &[
@@ -320,6 +325,11 @@ fn build_dynamic_call(llh: &mut LLVMHandle,
 {
     let i64t = int64_type();
 
+    let fn_coerced = llh.build_call_coerce_function(
+        fn_val,
+        &format!("{}.coerce", ir_fn),
+    );
+
     let arg_count = args.len();
     let arg_count_ref = llh.const_uint(int64_type(), arg_count as u64);
 
@@ -329,7 +339,8 @@ fn build_dynamic_call(llh: &mut LLVMHandle,
 
     let mut shim_arg_types: Vec<_> = shim_args.iter().map(|_| i64t).collect();
     let fn_type = ptr_type(func_type(&mut shim_arg_types, i64t));
-    let fn_cast = llh.build_int_to_ptr(fn_val,
+
+    let fn_cast = llh.build_int_to_ptr(fn_coerced,
                                        fn_type,
                                        &format!("{}.fn_cast", ir_fn));
 
@@ -461,8 +472,6 @@ impl<'a> ValueTracker<'a> {
                 llh.const_uint(int64_type(), MYSTERIOUS_BITS)
             }
             IRValue::Literal(Value::String(s)) => {
-                let i64t = int64_type();
-
                 let global = match self.string_cache.get(s) {
                     Some(g) => Some(*g),
                     None => None,
@@ -473,11 +482,7 @@ impl<'a> ValueTracker<'a> {
                     g
                 });
 
-                let global_int = llh.build_ptr_to_int(global, i64t, "scalar");
-
-                let const_str_tag = llh.const_uint(i64t, CONST_STRING_TAG);
-
-                llh.build_xor(global_int, const_str_tag, "const_string")
+                tag_pointer(llh, global, CONST_STRING_TAG, "const_str")
             }
             IRValue::Literal(Value::Boolean(b)) => {
                 llh.const_uint(int64_type(), if *b { TRUE_BITS } else { FALSE_BITS })
@@ -494,7 +499,7 @@ impl<'a> ValueTracker<'a> {
                     .expect("user-called function")
                     .func_ref();
 
-                llh.build_ptr_to_int(func_ref, int64_type(), "func_scalar")
+                tag_pointer(llh, func_ref, FUNCTION_TAG, "func")
             }
         }
     }
@@ -524,4 +529,19 @@ impl<'a> ValueTracker<'a> {
             panic!("read of {} alloca should follow write", var);
         })
     }
+}
+
+fn tag_pointer(llh: &mut LLVMHandle,
+               ptr_ref: LLVMValueRef,
+               tag: u64,
+               kind: &str)
+               -> LLVMValueRef
+{
+    let i64t = int64_type();
+    let scalar_ref = llh.build_ptr_to_int(ptr_ref,
+                                          i64t,
+                                          &format!("{}.scalar", kind));
+
+    let func_tag = llh.const_uint(i64t, tag);
+    llh.build_xor(scalar_ref, func_tag, &format!("{}.tagged", kind))
 }

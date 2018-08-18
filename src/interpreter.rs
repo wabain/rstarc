@@ -1,3 +1,4 @@
+use std::error;
 use std::fmt;
 use std::mem;
 use std::rc::Rc;
@@ -7,10 +8,33 @@ use std::collections::HashMap;
 use base_analysis;
 use lang_constructs::{Value, LangVariable};
 use ast::{Statement, StatementKind, Expr, Conditional, Comparison, Comparator, LValue};
+use runtime_error::RuntimeError;
 
-pub fn interpret(program: &[Statement], scope_map: &base_analysis::ScopeMap) -> () {
-    Interpreter::new(scope_map).run_program(program);
+pub fn interpret(program: &[Statement], scope_map: &base_analysis::ScopeMap)
+    -> Result<(), RuntimeError>
+{
+    Interpreter::new(scope_map).run_program(program)?;
+    Ok(())
 }
+
+#[derive(Debug)]
+pub enum InterpreterError {
+    NotAFunction { value_repr: String },
+}
+
+impl error::Error for InterpreterError {}
+
+impl fmt::Display for InterpreterError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            InterpreterError::NotAFunction { value_repr } => {
+                write!(f, "Cannot call value '{}'", value_repr)
+            }
+        }
+    }
+}
+
+type InterpResult<T> = Result<T, InterpreterError>;
 
 type InterpValue<'a> = Value<InterpFunc<'a>>;
 type ScopeCell<'a> = Rc<RefCell<VariableScope<'a>>>;
@@ -81,25 +105,31 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn run_program(mut self, program: &'a [Statement]) {
-        self.dispatch_statements(program);
+    fn run_program(mut self, program: &'a [Statement]) -> InterpResult<()>
+    {
+        self.dispatch_statements(program)?;
+        Ok(())
     }
 
-    fn dispatch_statements(&mut self, statements: &'a [Statement]) -> Flow<'a> {
+    fn dispatch_statements(&mut self, statements: &'a [Statement])
+        -> InterpResult<Flow<'a>>
+    {
         for statement in statements {
-            let flow = self.exec_statement(statement);
+            let flow = self.exec_statement(statement)?;
             if let Flow::Next = flow {
                 continue;
             }
-            return flow;
+            return Ok(flow);
         }
-        Flow::Next
+        Ok(Flow::Next)
     }
 
-    fn exec_statement(&mut self, statement: &'a Statement) -> Flow<'a> {
+    fn exec_statement(&mut self, statement: &'a Statement)
+        -> InterpResult<Flow<'a>>
+    {
         match &statement.kind {
             StatementKind::Assign(lval, expr) => {
-                let value = self.eval_expr(expr);
+                let value = self.eval_expr(expr)?;
                 let var = self.lval_to_var(lval);
                 self.set_var(var, value);
             },
@@ -114,40 +144,40 @@ impl<'a> Interpreter<'a> {
                 self.set_var(var, Value::Number(value));
             },
             StatementKind::Say(expr) => {
-                let value = self.eval_expr(expr);
+                let value = self.eval_expr(expr)?;
                 println!("{}", value.user_display());
             }
-            StatementKind::Continue => return Flow::Continue,
-            StatementKind::Break => return Flow::Break,
+            StatementKind::Continue => return Ok(Flow::Continue),
+            StatementKind::Break => return Ok(Flow::Break),
             StatementKind::Return(expr) => {
-                let value = self.eval_expr(expr);
-                return Flow::Return(value);
+                let value = self.eval_expr(expr)?;
+                return Ok(Flow::Return(value));
             }
             StatementKind::Condition(cond, if_clause, else_clause) => {
-                let flow = if self.eval_cond(cond) {
-                    self.dispatch_statements(if_clause)
+                let flow = if self.eval_cond(cond)? {
+                    self.dispatch_statements(if_clause)?
                 } else {
-                    self.dispatch_statements(else_clause)
+                    self.dispatch_statements(else_clause)?
                 };
-                return flow;
+                return Ok(flow);
             },
             StatementKind::While(cond, clause) => {
-                while self.eval_cond(cond) {
-                    let flow = self.dispatch_statements(clause);
+                while self.eval_cond(cond)? {
+                    let flow = self.dispatch_statements(clause)?;
                     match flow {
                         Flow::Next | Flow::Continue => {},
                         Flow::Break => break,
-                        Flow::Return(..) => return flow,
+                        Flow::Return(..) => return Ok(flow),
                     }
                 }
             },
             StatementKind::Until(cond, clause) => {
-                while !self.eval_cond(cond) {
-                    let flow = self.dispatch_statements(clause);
+                while !self.eval_cond(cond)? {
+                    let flow = self.dispatch_statements(clause)?;
                     match flow {
                         Flow::Next | Flow::Continue => {},
                         Flow::Break => break,
-                        Flow::Return(..) => return flow,
+                        Flow::Return(..) => return Ok(flow),
                     }
                 }
             },
@@ -167,11 +197,11 @@ impl<'a> Interpreter<'a> {
             },
         }
 
-        Flow::Next
+        Ok(Flow::Next)
     }
 
-    fn eval_expr(&mut self, expr: &Expr) -> InterpValue<'a> {
-        match expr {
+    fn eval_expr(&mut self, expr: &Expr) -> InterpResult<InterpValue<'a>> {
+        let value = match expr {
             Expr::LValue(lval) => {
                 let var = self.lval_to_var(lval);
                 self.get_var(&var)
@@ -181,25 +211,30 @@ impl<'a> Interpreter<'a> {
                 value
             },
             Expr::Compare(comp) => {
-                let value = self.eval_comparison(comp);
+                let value = self.eval_comparison(comp)?;
                 Value::Boolean(value)
             },
             Expr::FuncCall(func_expr, arg_exprs) => {
-                let func_value = self.eval_expr(func_expr);
+                let func_value = self.eval_expr(func_expr)?;
 
                 let func = match func_value {
                     Value::Function(func) => func,
                     _ => {
-                        // FIXME: Error handling?
-                        return Value::Mysterious
+                        return Err(InterpreterError::NotAFunction {
+                            value_repr: format!("{}", func_value.user_display()),
+                        });
                     }
                 };
 
                 let mut fcall_scope = VariableScope::for_function(&func);
 
-                let arg_values: Vec<_> = arg_exprs.iter()
-                    .map(|a| self.eval_expr(a))
-                    .collect();
+                let arg_values = {
+                    let mut v = Vec::with_capacity(arg_exprs.len());
+                    for a in arg_exprs {
+                        v.push(self.eval_expr(a)?);
+                    }
+                    v
+                };
 
                 for (arg_var, arg_value) in func.args.iter().zip(arg_values.into_iter()) {
                     fcall_scope.vars.insert(arg_var.clone(), arg_value);
@@ -217,9 +252,11 @@ impl<'a> Interpreter<'a> {
                     let mut old_scope = mem::replace(&mut self.scope,
                                                      fcall_scope.to_cell());
 
-                    flow = self.dispatch_statements(func.statements);
+                    let res = self.dispatch_statements(func.statements);
 
                     mem::replace(&mut self.scope, old_scope);
+
+                    flow = res?;
                 };
 
                 match flow {
@@ -229,8 +266,8 @@ impl<'a> Interpreter<'a> {
                 }
             },
             Expr::Add(e1, e2) | Expr::Sub(e1, e2) | Expr::Mul(e1, e2) | Expr::Div(e1, e2) => {
-                let n1 = self.eval_expr(e1).coerce_number();
-                let n2 = self.eval_expr(e2).coerce_number();
+                let n1 = self.eval_expr(e1)?.coerce_number();
+                let n2 = self.eval_expr(e2)?.coerce_number();
 
                 let value = match expr {
                     Expr::Add(..) => n1 + n2,
@@ -242,37 +279,40 @@ impl<'a> Interpreter<'a> {
 
                 Value::Number(value)
             },
-        }
+        };
+        Ok(value)
     }
 
     // FIXME: Why is this separate from expr anyway?
     // There are parsing differences, but not anything at the AST level?
-    fn eval_cond(&mut self, cond: &Conditional) -> bool {
-        match cond {
-            Conditional::Comparison(comp) => self.eval_comparison(comp),
-            Conditional::And(a, b) => self.eval_cond(a) && self.eval_cond(b),
-            Conditional::Or(a, b) => self.eval_cond(a) || self.eval_cond(b),
-        }
+    fn eval_cond(&mut self, cond: &Conditional) -> InterpResult<bool> {
+        let compared = match cond {
+            Conditional::Comparison(comp) => self.eval_comparison(comp)?,
+            Conditional::And(a, b) => self.eval_cond(a)? && self.eval_cond(b)?,
+            Conditional::Or(a, b) => self.eval_cond(a)? || self.eval_cond(b)?,
+        };
+        Ok(compared)
     }
 
-    fn eval_comparison(&mut self, comparison: &Comparison) -> bool {
+    fn eval_comparison(&mut self, comparison: &Comparison) -> InterpResult<bool> {
         let Comparison(ref e1, comp, ref e2) = *comparison;
-        let mut v1 = self.eval_expr(e1);
-        let mut v2 = self.eval_expr(e2);
+        let mut v1 = self.eval_expr(e1)?;
+        let mut v2 = self.eval_expr(e2)?;
 
         if v1.value_type() != v2.value_type() {
             v1 = Value::Number(v1.coerce_number());
             v2 = Value::Number(v2.coerce_number());
         }
 
-        match comp {
+        let compared = match comp {
             Comparator::Is => v1 == v2,
             Comparator::IsNot => v1 != v2,
             Comparator::IsGreaterThan => v1.coerce_number() > v2.coerce_number(),
             Comparator::IsLessThan => v1.coerce_number() < v2.coerce_number(),
             Comparator::IsAsGreatAs => v1.coerce_number() >= v2.coerce_number(),
             Comparator::IsAsLittleAs => v1.coerce_number() <= v2.coerce_number(),
-        }
+        };
+        Ok(compared)
     }
 
     fn lval_to_var<'v>(&self, lval: &'v LValue) -> LangVariable<'v> {
