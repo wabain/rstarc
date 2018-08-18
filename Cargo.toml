@@ -14,3 +14,6 @@ llvm-sys = "60.1"
 regex = "1.0.2"
 tempdir = "0.3.7"
 void = "1.0.2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

@@ -6,6 +6,8 @@ extern crate regex;
 extern crate tempdir;
 extern crate void;
 
+#[cfg(unix)] extern crate libc;
+
 mod ast;
 mod ast_walker;
 mod codegen;
@@ -20,7 +22,7 @@ mod base_analysis;
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, Stdio, ExitStatus};
 use std::process;
 use std::io;
 use std::fs::File;
@@ -468,7 +470,9 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<Option<i32>, RuntimeErr
             .status()?;
 
         if !status.success() {
-            let code = status.code().unwrap_or(1);
+            let code = status.code().unwrap_or_else(|| {
+                handle_irregular_child_exit(&status)
+            });
             return Ok(Some(code));
         }
     }
@@ -502,6 +506,49 @@ fn get_runtime_lib_path() -> Result<PathBuf, RuntimeError> {
     lib_path.push("libroll.a");
 
     Ok(lib_path)
+}
+
+#[cfg(unix)]
+fn handle_irregular_child_exit(status: &ExitStatus) -> i32 {
+    use std::os::unix::process::ExitStatusExt;
+    use libc::*;
+
+    let sig = match status.signal() {
+        Some(s) => s,
+        None => return 1,
+    };
+
+    // Only match a few maybe likelier things (this is not a carefully curated
+    // list)
+    let sig_name = match sig {
+        SIGABRT => "SIGABRT",
+        SIGALRM => "SIGALRM",
+        SIGBUS => "SIGBUS",
+        SIGHUP => "SIGHUP",
+        SIGILL => "SIGILL",
+        SIGINT => "SIGINT",
+        SIGKILL => "SIGKILL",
+        SIGPIPE => "SIGPIPE",
+        SIGQUIT => "SIGQUIT",
+        SIGSEGV => "SIGSEGV",
+        SIGSTOP => "SIGSTOP",
+        SIGTERM => "SIGTERM",
+        SIGUSR1 => "SIGUSR1",
+        SIGUSR2 => "SIGUSR2",
+        SIGXCPU => "SIGXCPU",
+        SIGXFSZ => "SIGXFSZ",
+        _ => {
+            eprintln!("Program exited on signal {}", sig);
+            return 128 + sig;
+        }
+    };
+    eprintln!("Program exited on signal {} ({})", sig_name, sig);
+    128 + sig
+}
+
+#[cfg(not(unix))]
+fn handle_irregular_child_exit(status: &process::ExitStatus) -> i32 {
+    1
 }
 
 fn output_tokens(tokenizer: &Tokenizer) -> Result<(), LexicalError> {
