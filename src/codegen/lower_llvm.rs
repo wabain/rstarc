@@ -48,12 +48,12 @@ pub fn lower_ir(program: &IRProgram, opts: &CodegenOptions)
         });
     }
 
-    for (func_def, _) in &program.funcs {
+    for func_def in &program.funcs {
         let i64t = int64_type();
-        let mut arg_ts: Vec<_> = func_def.args.iter().map(|_| i64t).collect();
+        let mut arg_ts: Vec<_> = func_def.args().iter().map(|_| i64t).collect();
 
         let mut llvm_func = llh.add_function(
-            &format!("{}", func_def.initial_var),
+            &func_def.name(),
             &mut arg_ts,
             i64t,
             Some(LLVMLinkage::LLVMPrivateLinkage),
@@ -79,18 +79,14 @@ pub fn lower_ir(program: &IRProgram, opts: &CodegenOptions)
     lower_function(&mut llh,
                    program,
                    &declarations,
-                   0,
-                   &program.main,
-                   true);
+                   &program.main);
 
     // Lower other functions
-    for (func_def, func_body) in &program.funcs {
+    for func_def in &program.funcs {
         lower_function(&mut llh,
                        program,
                        &declarations,
-                       func_def.scope_id,
-                       func_body,
-                       false);
+                       func_def);
     }
 
     llh.finalize(opts)
@@ -147,12 +143,12 @@ pub fn build_shim_function(llh: &mut LLVMHandle,
                            func_hdl: &FunctionHandle)
                            -> FunctionHandle
 {
-    let arity = func_def.args.len();
+    let arity = func_def.args().len();
     let i64t = int64_type();
 
     let mut arg_ts: Vec<_> = (0..arity + 1).map(|_| i64t).collect();
     let shim_hdl = llh.add_function(
-        &format!("{}.shim", &format!("{}", func_def.initial_var)),
+        &format!("{}.shim", func_def.name()),
         &mut arg_ts,
         i64t,
         Some(LLVMLinkage::LLVMPrivateLinkage),
@@ -235,10 +231,9 @@ fn declare_builtin_functions(llh: &mut LLVMHandle) {
 fn lower_function(llh: &mut LLVMHandle,
                   program: &IRProgram,
                   declarations: &Declarations,
-                  scope_id: ScopeId,
-                  body: &[SimpleIR],
-                  is_main: bool)
+                  func_def: &IRFunc)
 {
+    let scope_id = func_def.scope_id;
     let mut vmgr = ValueTracker::new(program, declarations, scope_id);
     let llvm_func = declarations.functions.get(&scope_id)
         .expect("function by scope")
@@ -254,7 +249,7 @@ fn lower_function(llh: &mut LLVMHandle,
     }
 
     // Translate ops
-    for op in body {
+    for op in &func_def.body {
         match op {
             SimpleIR::Jump(label) => {
                 let block = vmgr.basic_block(llh, label.name());
@@ -339,7 +334,7 @@ fn lower_function(llh: &mut LLVMHandle,
                 llh.build_return(arg);
             }
             SimpleIR::ReturnDefault => {
-                let retval = if is_main {
+                let retval = if func_def.is_main() {
                     llh.const_uint(int32_type(), 0)
                 } else {
                     llh.const_uint(int64_type(), MYSTERIOUS_BITS)

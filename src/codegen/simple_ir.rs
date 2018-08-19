@@ -29,16 +29,16 @@ pub fn dump_ir(program: &[Statement], scope_map: &ScopeMap)
     }
 
     println!("main:");
-    for op in &ir.main {
-        dump_ir_op(0, op);
+    for op in &ir.main.body {
+        dump_ir_op(ir.main.scope_id, op);
     }
 
-    for (func_def, func_body) in &ir.funcs {
-        println!("");
+    for func_def in &ir.funcs {
+        println!();
 
         println!(";");
-        print!("; Function {} takes ", func_def.initial_var);
-        for (i, arg) in func_def.args.iter().enumerate() {
+        print!("; Function {} takes ", func_def.name());
+        for (i, arg) in func_def.args().iter().enumerate() {
             if i == 0 {
                 print!("{}", arg.fmt_scope_relative(func_def.scope_id));
             } else {
@@ -49,10 +49,10 @@ pub fn dump_ir(program: &[Statement], scope_map: &ScopeMap)
         println!("; Scope is {}", func_def.scope_id);
         println!(";");
 
-        let fname = format!("{}", func_def.initial_var).replace(" ", "_");
+        let fname = func_def.name().replace(" ", "_");
         println!("f{}_{}:", func_def.scope_id, fname);
 
-        for op in func_body {
+        for op in &func_def.body {
             dump_ir_op(func_def.scope_id, op);
         }
     }
@@ -327,15 +327,51 @@ impl<'prog> Into<IRValue<'prog>> for IRLValue<'prog> {
 pub struct IRProgram<'prog> {
     pub scope_map: &'prog ScopeMap<'prog>,
     pub globals: Vec<(LangVariable<'prog>, ScopeId)>,
-    pub main: Vec<SimpleIR<'prog>>,
-    pub funcs: Vec<(IRFunc<'prog>, Vec<SimpleIR<'prog>>)>,
+    pub main: IRFunc<'prog>,
+    pub funcs: Vec<IRFunc<'prog>>,
 }
 
 #[derive(Debug)]
 pub struct IRFunc<'prog> {
     pub scope_id: ScopeId,
-    pub initial_var: LangVariable<'prog>,
-    pub args: Vec<IRLValue<'prog>>,
+    pub temporary_count: usize,
+    pub func_type: IRFuncType<'prog>,
+    pub body: Vec<SimpleIR<'prog>>,
+}
+
+impl<'prog> IRFunc<'prog> {
+    pub fn name(&self) -> String {
+        match &self.func_type {
+            IRFuncType::Main => "main".to_owned(),
+            IRFuncType::SubProcedure(p) => format!("{}", p.initial_var),
+        }
+    }
+
+    pub fn args(&self) -> &[IRLValue<'prog>] {
+        match &self.func_type {
+            IRFuncType::Main => &[],
+            IRFuncType::SubProcedure(p) => &p.args,
+        }
+    }
+
+    pub fn is_main(&self) -> bool {
+        match self.func_type {
+            IRFuncType::Main => true,
+            IRFuncType::SubProcedure(_) => false,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum IRFuncType<'prog> {
+    Main,
+    SubProcedure(SubProcParams<'prog>),
+}
+
+#[derive(Debug)]
+pub struct SubProcParams<'prog> {
+    initial_var: LangVariable<'prog>,
+    args: Vec<IRLValue<'prog>>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -399,6 +435,15 @@ impl<'prog> IRBuilder<'prog> {
             temp_id: 0,
             ops: Vec::new(),
             loop_labels: Vec::new(),
+        }
+    }
+
+    fn into_func_def(self, func_type: IRFuncType<'prog>) -> IRFunc<'prog> {
+        IRFunc {
+            scope_id: self.ref_scope,
+            temporary_count: self.temp_id as usize,
+            func_type,
+            body: self.ops,
         }
     }
 
@@ -655,7 +700,7 @@ impl<'prog> IRBuilder<'prog> {
 struct AstAdapter<'prog> {
     scope_map: &'prog ScopeMap<'prog>,
     globals: Vec<(LangVariable<'prog>, ScopeId)>,
-    func_bodies: Vec<(IRFunc<'prog>, Vec<SimpleIR<'prog>>)>,
+    funcs: Vec<IRFunc<'prog>>,
 }
 
 impl<'prog> AstAdapter<'prog> {
@@ -665,7 +710,7 @@ impl<'prog> AstAdapter<'prog> {
         let mut adapter = AstAdapter {
             scope_map,
             globals: Vec::new(),
-            func_bodies: Vec::new(),
+            funcs: Vec::new(),
         };
 
         let mut main_builder = IRBuilder::new(scope_map, 0);
@@ -675,15 +720,15 @@ impl<'prog> AstAdapter<'prog> {
         adapter.visit_function_body(&mut main_builder, Pos(0, 0), &[], program);
 
         verify_ir_func(scope_map, 0, &main_builder.ops)?;
-        for (func_def, body) in &adapter.func_bodies {
-            verify_ir_func(scope_map, func_def.scope_id, body)?;
+        for func_def in &adapter.funcs {
+            verify_ir_func(scope_map, func_def.scope_id, &func_def.body)?;
         }
 
         Ok(IRProgram {
             scope_map,
             globals: adapter.globals,
-            main: main_builder.ops,
-            funcs: adapter.func_bodies,
+            main: main_builder.into_func_def(IRFuncType::Main),
+            funcs: adapter.funcs,
         })
     }
 
@@ -798,9 +843,12 @@ impl<'prog> AstAdapter<'prog> {
                 let mut func_builder = IRBuilder::new(self.scope_map, scope_id);
                 self.visit_function_body(&mut func_builder, statement.pos, &args, body);
 
-                let func_def = IRFunc { initial_var, scope_id, args };
-
-                self.func_bodies.push((func_def, func_builder.ops));
+                self.funcs.push(func_builder.into_func_def(
+                    IRFuncType::SubProcedure(SubProcParams {
+                        initial_var,
+                        args,
+                    }),
+                ));
             }
         }
     }
