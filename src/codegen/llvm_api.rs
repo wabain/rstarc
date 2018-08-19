@@ -1,8 +1,7 @@
-#![allow(unused)]
+#![allow(dead_code)]
 
 use llvm::core::*;
 use llvm::initialization::LLVM_InitializeAllCodegenComponents;
-use llvm::prelude::*;
 use llvm::target::*;
 use llvm::target_machine::*;
 use llvm::{LLVMModule, LLVMBuilder};
@@ -11,7 +10,6 @@ pub use llvm::LLVMLinkage;
 pub use llvm::prelude::{LLVMTypeRef, LLVMValueRef, LLVMBasicBlockRef};
 
 use std::collections::hash_map::{HashMap, Entry};
-use std::marker::PhantomData;
 use std::ffi::{CStr, CString};
 
 use codegen::CodegenError;
@@ -334,7 +332,7 @@ impl LLVMHandle {
             }
 
             if let Some(linkage) = linkage {
-                LLVMSetLinkage(global, LLVMLinkage::LLVMPrivateLinkage);
+                LLVMSetLinkage(global, linkage);
             }
 
             if let Some(alignment) = alignment {
@@ -540,8 +538,9 @@ impl LLVMHandle {
 
             LLVMSetTarget(self.module, self.target_triple.raw());
 
-            let data_layout = LLVMCreateTargetDataLayout(target_machine);
-            LLVMSetModuleDataLayout(self.module, data_layout);
+            let mut data_layout = LLVMTargetData::new();
+            *data_layout.raw_mut() = LLVMCreateTargetDataLayout(target_machine);
+            LLVMSetModuleDataLayout(self.module, *data_layout.raw_mut());
 
             optimise_ir(self.module, opts.opt_level);
 
