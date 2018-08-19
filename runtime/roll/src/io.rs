@@ -48,16 +48,11 @@ impl fmt::Write for FDWrite {
 }
 
 #[allow(unused)]
-#[cfg(feature = "ad-hoc-debugs")]
 macro_rules! dbg {
     ($($toks:tt)*) => {{
-        use ::core::fmt::Write;
-        let _ = writeln!($crate::io::FDWrite::stderr(), $($toks)*);
+        if cfg!(feature = "ad-hoc-debugs") {
+            use ::core::fmt::Write;
+            let _ = writeln!($crate::io::FDWrite::stderr(), $($toks)*);
+        }
     }};
-}
-
-#[allow(unused)]
-#[cfg(not(feature = "ad-hoc-debugs"))]
-macro_rules! dbg {
-    ($($toks:tt)*) => {};
 }

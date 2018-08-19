@@ -4,6 +4,8 @@ use super::VoidPtr;
 
 use libc::{mmap, MAP_PRIVATE, MAP_ANON, MAP_FAILED, PROT_READ, PROT_WRITE};
 
+use gc::visit_gc_roots;
+
 const HACK_FAKE_PAGE_SIZE: usize = 4096;
 
 static mut HEAP_POINT: *mut VoidPtr = 0 as _;
@@ -47,6 +49,11 @@ pub fn alloc(size: usize) -> *mut VoidPtr {
             HEAP_POINT = new_heap.offset(size as isize);
             HEAP_END = new_heap.offset(req_size as isize);
         }
+
+        if cfg!(feature = "ad-hoc-debugs") {
+            dump_stack_roots();
+        }
+
         new_heap
     } else {
         let alloc_start = unsafe { HEAP_POINT };
@@ -67,4 +74,14 @@ fn expand_heap(size: usize) -> Result<*mut VoidPtr, ()> {
     } else {
         Ok(area)
     }
+}
+
+fn dump_stack_roots() {
+    visit_gc_roots(|root| {
+        use super::value_repr;
+        let scalar = unsafe { *root };
+        let value = value_repr::Scalar::new(scalar).deref_rec();
+        dbg!("Root at {:0>16x} = {: >16x}: {:?}",
+             root as usize, scalar as usize, value);
+    })
 }

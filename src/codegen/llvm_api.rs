@@ -53,6 +53,10 @@ pub fn ptr_type(t: LLVMTypeRef) -> LLVMTypeRef {
     unsafe { LLVMPointerType(t, DEFAULT_ADDRESS_SPACE) }
 }
 
+pub fn array_type(t: LLVMTypeRef, len: usize) -> LLVMTypeRef {
+    unsafe { LLVMArrayType(t, len as u32) }
+}
+
 pub fn func_type(args: &mut [LLVMTypeRef], ret: LLVMTypeRef) -> LLVMTypeRef {
     let is_vararg = 0;
     unsafe {
@@ -184,6 +188,16 @@ impl LLVMHandle {
     pub fn const_null(&self, ty: LLVMTypeRef) -> LLVMValueRef {
         unsafe {
             LLVMConstPointerNull(ty)
+        }
+    }
+
+    pub fn const_array(&self,
+                       elem_ty: LLVMTypeRef,
+                       vals: &mut [LLVMValueRef])
+        -> LLVMValueRef
+    {
+        unsafe {
+            LLVMConstArray(elem_ty, vals.as_mut_ptr(), vals.len() as u32)
         }
     }
 
@@ -337,14 +351,14 @@ impl LLVMHandle {
         // Anticipate null terminator
         // XXX: Are there efficiency gains from letting LLVM do the null
         // termination?
-        let value_len = (value.as_bytes().len() + 1) as u32;
+        let value_len = value.as_bytes().len() + 1;
         let dont_null_terminate = 1;
 
         unsafe {
-            let const_str = LLVMConstString(c_value, value_len, dont_null_terminate);
+            let const_str = LLVMConstString(c_value, value_len as u32, dont_null_terminate);
 
             let global = self.add_global(
-                LLVMArrayType(LLVMInt8Type(), value_len),
+                array_type(int8_type(), value_len),
                 name,
                 Some(const_str),
                 Some(LLVMLinkage::LLVMPrivateLinkage),

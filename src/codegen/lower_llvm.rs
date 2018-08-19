@@ -112,6 +112,7 @@ fn build_global_var_refs<'a>(llh: &mut LLVMHandle,
     let vt = value_type();
     let initial_value = const_immediate(llh, MYSTERIOUS_BITS);
 
+    let mut globals_array = Vec::with_capacity(program.globals.len());
     let mut globals = HashMap::new();
 
     for (var, scope) in &program.globals {
@@ -124,7 +125,27 @@ fn build_global_var_refs<'a>(llh: &mut LLVMHandle,
         );
 
         globals.insert((var, 0), global_ref);
+        globals_array.push(global_ref);
     }
+
+    // Declare globals for the garbage collector
+    let globals_const = llh.const_array(ptr_type(vt), &mut globals_array);
+
+    llh.add_global(array_type(ptr_type(vt), globals_array.len()),
+                   "roll_globals",
+                   Some(globals_const),
+                   None,
+                   None);
+
+    let globals_count_const = llh.const_uint(
+        int32_type(),
+        globals_array.len() as u64,
+    );
+    llh.add_global(int32_type(),
+                   "roll_num_globals",
+                   Some(globals_count_const),
+                   None,
+                   None);
 
     globals
 }

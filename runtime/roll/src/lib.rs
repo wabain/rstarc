@@ -4,6 +4,7 @@ extern crate libc;
 
 #[macro_use] mod io;
 mod alloc;
+mod gc;
 mod rust_lang_items;
 mod value_repr;
 
