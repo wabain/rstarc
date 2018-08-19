@@ -271,7 +271,7 @@ fn lower_function(llh: &mut LLVMHandle,
                   func_def: &IRFunc)
 {
     let scope_id = func_def.scope_id;
-    let mut vmgr = ValueTracker::new(program, declarations, scope_id);
+    let mut vmgr = ValueTracker::new(program, declarations, func_def);
     let llvm_func = declarations.functions.get(&scope_id)
         .expect("function by scope")
         .direct_func;
@@ -284,6 +284,7 @@ fn lower_function(llh: &mut LLVMHandle,
     for var in program.scope_map.get_owned_vars_for_scope(scope_id) {
         vmgr.prepare_variable(llh, &var, scope_id);
     }
+    vmgr.prepare_temporaries(llh);
 
     // Translate ops
     for op in &func_def.body {
@@ -436,7 +437,7 @@ fn const_immediate(llh: &LLVMHandle, bits: u64) -> LLVMValueRef {
 #[derive(Debug, Clone, Copy)]
 enum LLWriteTarget {
     /// Temporary to be instantiated
-    Temp(LocalTemp),
+    #[allow(dead_code)] Temp(LocalTemp),
     /// Value ref for an alloca
     Mem(LLVMValueRef),
 }
@@ -457,10 +458,10 @@ struct ValueTracker<'a> {
     program: &'a IRProgram<'a>,
     declarations: &'a Declarations<'a>,
     func_target: &'a FunctionTarget,
-    scope_id: ScopeId,
+    func_def: &'a IRFunc<'a>,
 
-    temps: HashMap<LocalTemp, LLVMValueRef>,
-    allocas: HashMap<LangVariable<'a>, LLVMValueRef>,
+    temp_allocas: HashMap<LocalTemp, LLVMValueRef>,
+    var_allocas: HashMap<LangVariable<'a>, LLVMValueRef>,
     basic_blocks: HashMap<String, LLVMBasicBlockRef>,
     string_cache: HashMap<String, LLVMValueRef>,
 }
@@ -468,22 +469,26 @@ struct ValueTracker<'a> {
 impl<'a> ValueTracker<'a> {
     fn new(program: &'a IRProgram,
            declarations: &'a Declarations<'a>,
-           scope_id: ScopeId) -> Self
+           func_def: &'a IRFunc<'a>) -> Self
     {
-        let func_target = declarations.functions.get(&scope_id)
+        let func_target = declarations.functions.get(&func_def.scope_id)
             .expect("ValueTracker own scope func handle");
 
         ValueTracker {
             program,
             declarations,
             func_target,
-            scope_id,
+            func_def,
 
-            temps: HashMap::new(),
-            allocas: HashMap::new(),
+            temp_allocas: HashMap::new(),
+            var_allocas: HashMap::new(),
             basic_blocks: HashMap::new(),
             string_cache: HashMap::new(),
         }
+    }
+
+    fn scope_id(&self) -> ScopeId {
+        self.func_def.scope_id
     }
 
     fn basic_block(&mut self, llh: &mut LLVMHandle, name: String) -> LLVMBasicBlockRef {
@@ -513,18 +518,21 @@ impl<'a> ValueTracker<'a> {
     fn store<F>(&mut self,
                 llh: &mut LLVMHandle,
                 lval: &IRLValue<'a>,
-                fallback_name: &str,
+                reg_name: &str,
                 build: F)
         where F: FnOnce(&mut LLVMHandle, &str) -> LLVMValueRef
     {
         match self.lval_to_llvm(lval) {
             LLWriteTarget::Mem(r) => {
-                let new_temp = build(llh, fallback_name);
+                let new_temp = build(llh, reg_name);
                 llh.build_store(new_temp, r);
             }
-            LLWriteTarget::Temp(t) => {
-                let temp_ref = build(llh, &format!("{}", t));
-                self.temps.insert(t, temp_ref);
+            LLWriteTarget::Temp(_t) => {
+                // TODO: Remove this if it doesn't end up being used. It's more
+                // effort than it's worth to tear it out at the moment.
+                unimplemented!();
+                // let temp_ref = build(llh, reg_name);
+                // self.temps.insert(_t, temp_ref);
             }
         }
     }
@@ -532,10 +540,11 @@ impl<'a> ValueTracker<'a> {
     fn lval_to_llvm(&mut self, lval: &IRLValue<'a>) -> LLWriteTarget {
         match lval {
             IRLValue::Variable(v, i, _pos) => {
-                LLWriteTarget::Mem(self.get_memory_variable(v, *i))
+                LLWriteTarget::Mem(self.get_var_memory(v, *i))
             }
             IRLValue::LocalTemp(t) => {
-                LLWriteTarget::Temp(*t)
+                LLWriteTarget::Mem(self.get_temp_memory(t))
+                // LLWriteTarget::Temp(*t)
             }
         }
     }
@@ -545,13 +554,11 @@ impl<'a> ValueTracker<'a> {
     fn val_to_llvm(&mut self, llh: &mut LLVMHandle, val: &IRValue<'a>) -> LLVMValueRef {
         match val {
             IRValue::LocalTemp(temp) => {
-                *self.temps.get(temp)
-                    .unwrap_or_else(|| {
-                        panic!("Missing write to temporary {}", temp)
-                    })
+                let mem_ref = self.get_temp_memory(temp);
+                llh.build_load(mem_ref, &format!("{}.load", temp))
             }
             IRValue::Variable(var, scope_id, _pos) => {
-                let mem_ref = self.get_memory_variable(var, *scope_id);
+                let mem_ref = self.get_var_memory(var, *scope_id);
                 llh.build_load(mem_ref, &format!("{}.load", var))
             }
             IRValue::Literal(Value::Null) => {
@@ -593,12 +600,23 @@ impl<'a> ValueTracker<'a> {
         }
     }
 
+    fn prepare_temporaries(&mut self, llh: &mut LLVMHandle) {
+        for i in 0..self.func_def.temporary_count as u64 {
+            let temp = LocalTemp(i);
+            let alloca = self.build_rooted_alloca(
+                llh,
+                &format!("{}", &temp),
+            );
+            self.temp_allocas.insert(temp, alloca);
+        }
+    }
+
     fn prepare_variable(&mut self,
                         llh: &mut LLVMHandle,
                         var: &LangVariable<'a>,
                         scope_id: ScopeId)
     {
-        assert_eq!(self.scope_id, scope_id,
+        assert_eq!(self.scope_id(), scope_id,
                    "Variable initialization request for non-local variable");
 
         let var_type = self.program.scope_map
@@ -613,35 +631,51 @@ impl<'a> ValueTracker<'a> {
                 // Already addressed
             },
             Some(VariableType::Local) => {
-                let alloca = llh.build_alloca(value_type(), &format!("{}", &var));
-                self.allocas.insert(var.clone(), alloca);
-
-                let cast = llh.build_bit_cast(alloca,
-                                              ptr_type(ptr_type(int8_type())),
-                                              &format!("{}.gccast", &var));
-
-                let null_meta = llh.const_null(ptr_type(int8_type()));
-
-                llh.build_call_builtin("llvm.gcroot", &mut [cast, null_meta], "");
+                let alloca = self.build_rooted_alloca(
+                    llh,
+                    &format!("{}", &var),
+                );
+                self.var_allocas.insert(var.clone(), alloca);
             }
         }
     }
 
-    fn get_memory_variable(&mut self, var: &LangVariable<'a>, scope_id: ScopeId)
+    fn build_rooted_alloca(&self, llh: &mut LLVMHandle, name: &str)
+        -> LLVMValueRef
+    {
+        let alloca = llh.build_alloca(value_type(), name);
+        let cast = llh.build_bit_cast(alloca,
+                                      ptr_type(ptr_type(int8_type())),
+                                      &format!("{}.gccast", name));
+
+        let null_meta = llh.const_null(ptr_type(int8_type()));
+
+        llh.build_call_builtin("llvm.gcroot", &mut [cast, null_meta], "");
+
+        alloca
+    }
+
+    fn get_var_memory(&self, var: &LangVariable<'a>, scope_id: ScopeId)
         -> LLVMValueRef
     {
         if let Some(mem_ref) = self.declarations.globals.get(&(var, scope_id)) {
             return *mem_ref;
         }
 
-        assert!(scope_id == self.scope_id,
+        assert!(scope_id == self.scope_id(),
                 "non-local alloca (for var {} in scope {} from scope {})",
                 var,
                 scope_id,
-                self.scope_id);
+                self.scope_id());
 
-        *self.allocas.get(var).unwrap_or_else(|| {
-            panic!("read of {} alloca should follow write", var);
+        *self.var_allocas.get(var).unwrap_or_else(|| {
+            panic!("No memory location for variable {}", var);
+        })
+    }
+
+    fn get_temp_memory(&self, temp: &LocalTemp) -> LLVMValueRef {
+        *self.temp_allocas.get(temp).unwrap_or_else(|| {
+            panic!("No memory location for temporary {}", temp);
         })
     }
 }

@@ -237,7 +237,7 @@ impl Label {
 type LiteralValue = lang_constructs::Value<ScopeId>;
 
 #[derive(Debug, Hash, PartialEq, Eq, Copy, Clone)]
-pub struct LocalTemp(u64);
+pub struct LocalTemp(pub u64);
 
 impl fmt::Display for LocalTemp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
