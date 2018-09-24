@@ -4,16 +4,20 @@ extern crate libc;
 
 #[macro_use] mod io;
 mod alloc;
+mod gc_roots;
 mod gc;
 mod rust_lang_items;
 mod value_repr;
 
 use core::f64;
 use core::fmt::{self, Write};
+use core::ptr::NonNull;
 
 pub use libc::c_void as VoidPtr;
 
 use io::FDWrite;
+
+static mut GC: Option<gc::GcAllocator> = None;
 
 #[derive(Debug)]
 pub enum RockstarValue<'a> {
@@ -23,6 +27,19 @@ pub enum RockstarValue<'a> {
     String(&'a str),
     Number(f64),
     Function(*const VoidPtr),
+}
+
+fn alloc_new(size: usize) -> NonNull<i8> {
+    let allocator = unsafe {
+        if let Some(ref mut a) = GC {
+            a
+        } else {
+            let a = gc::GcAllocator::new();
+            GC = Some(a);
+            GC.as_mut().unwrap()
+        }
+    };
+    allocator.alloc(size)
 }
 
 impl<'a> RockstarValue<'a> {
@@ -49,7 +66,7 @@ impl<'a> fmt::Display for UserDisplay<'a> {
 
 #[no_mangle]
 pub extern fn roll_alloc(size: usize) -> *mut VoidPtr {
-    alloc::alloc(size)
+    alloc_new(size).as_ptr() as *mut _
 }
 
 #[no_mangle]
@@ -104,11 +121,11 @@ pub extern fn roll_is_not(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
 pub extern fn roll_mk_number(value: f64) -> u64 {
     let out = new_number(value);
 
-    dbg!(
-        "Requested {}, built value with representation {:?}",
-        value,
-        value_repr::Scalar::new(out as *mut VoidPtr).deref_rec()
-    );
+    // dbg!(
+    //     "Requested {}, built value with representation {:?}",
+    //     value,
+    //     value_repr::Scalar::new(out as *mut VoidPtr).deref_rec()
+    // );
 
     out
 }
@@ -185,7 +202,7 @@ pub extern fn roll_coerce_function(value: *mut VoidPtr) -> *const VoidPtr {
 
 #[inline]
 fn new_number(value: f64) -> u64 {
-    let p = alloc::alloc(16) as *mut u64;
+    let p = alloc_new(16).as_ptr() as *mut u64;
     unsafe {
         *p = value_repr::HEAP_NUMBER_TAG;
         *p.offset(1) = value.to_bits();

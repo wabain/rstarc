@@ -9,5 +9,7 @@ use io::FDWrite;
 fn panic(info: &PanicInfo) -> ! {
     let mut stderr = FDWrite::stderr();
     let _ = writeln!(stderr, "fatal internal error: {}", info);
+    stderr.flush();
+    FDWrite::stdout().flush();
     unsafe { abort() }
 }

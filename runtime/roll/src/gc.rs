@@ -1,58 +1,111 @@
-use libc::c_void;
+use core::ptr::NonNull;
 
-extern {
-    static roll_num_globals: u32;
-    static roll_globals: *mut *mut c_void;
+use value_repr;
+use alloc::{AllocEntry, FixedAllocator, GrowableAllocator};
+use gc_roots::visit_gc_roots;
 
-    static llvm_gc_root_chain: *mut StackEntry;
+pub struct GcAllocator {
+    nursery: FixedAllocator,
+    main: GrowableAllocator,
 }
 
-/// The map for a single function's stack frame.  One of these is
-/// compiled as constant data into the executable for each function.
-///
-/// Storage of metadata values is elided if the %metadata parameter to
-/// @llvm.gcroot is null.
-#[repr(C)]
-struct FrameMap {
-    /// Number of roots in stack frame
-    num_roots: i32,
-    /// Number of metadata entries. May be < num_roots.
-    num_meta: i32,
-    /// Metadata for each root (in-place array)
-    meta: *mut c_void,
-}
-
-/// A link in the dynamic shadow stack.  One of these is embedded in
-/// the stack frame of each function on the call stack.
-#[repr(C)]
-struct StackEntry {
-    /// Link to next stack entry (the caller's)
-    next: *mut StackEntry,
-    /// Pointer to constant FrameMap
-    map: *const FrameMap,
-    /// Stack roots (in-place array)
-    roots: *mut c_void,
-}
-
-pub fn visit_gc_roots<F>(visitor: F) where F: Fn(*mut *mut c_void) {
-    let global_count = unsafe { roll_num_globals } as isize;
-    let globals = unsafe { roll_globals };
-
-    for i in 0..global_count {
-        let root = unsafe { globals.offset(i) };
-        visitor(root);
-    }
-
-    let mut entry = unsafe { llvm_gc_root_chain };
-
-    while !entry.is_null() {
-        let num_roots = unsafe { (*(*entry).map).num_roots } as isize;
-        for i in 0..num_roots {
-            let root = unsafe {
-                (&mut (*entry).roots as *mut *mut c_void).offset(i)
-            };
-            visitor(root);
+impl GcAllocator {
+    pub fn new() -> Self {
+        GcAllocator {
+            nursery: FixedAllocator::new(/*1024 * 128*/ 1024 * 1024 * 2),
+            main: GrowableAllocator::empty(),
         }
-        entry = unsafe { (*entry).next };
     }
+
+    pub fn alloc(&mut self, size: usize) -> NonNull<i8> {
+        if size > self.nursery.size() {
+            return self.main.alloc_or_grow(size);
+        }
+
+        self.nursery.alloc(size).unwrap_or_else(|| {
+            self.do_full_gc();
+            self.nursery.alloc(size).expect("Allocation after GC")
+        })
+    }
+
+    fn do_full_gc(&mut self) {
+        if cfg!(feature = "ad-hoc-debugs") {
+            dbg!("Starting full GC...");
+            dump_stack_roots();
+        }
+
+        // self.nursery.visit_entries(|entry| {
+        //     if value_repr::has_gc_mark(entry.ptr.as_ptr()) {
+        //         dbg!("{}",
+        //             value_repr::Scalar::new(entry.ptr.as_ptr() as _)
+        //                 .deref_rec()
+        //                 .user_display()
+        //         );
+        //         panic!("Mark bit before sweep");
+        //     }
+        // });
+
+        visit_gc_roots(|root| {
+            value_repr::mark_gc(unsafe { *root as _ }, true);
+        });
+
+        self.main.compact();
+
+        {
+            let mut promo_count = 0;
+            let mut visit_count = 0;
+            let main = &mut self.main;
+
+            self.nursery.visit_entries(|entry| {
+                // XXX: this is a bug
+                if entry.size > 1024 {
+                    return;
+                }
+
+                dbg!("Sweep nursery pointer {:x} (size {})", entry.ptr.as_ptr() as usize, entry.size);
+
+                visit_count += 1;
+
+                if value_repr::has_gc_mark(entry.ptr.as_ptr()) {
+                    promo_count += 1;
+                    value_repr::mark_gc(entry.ptr.as_ptr(), false);
+                    forward_from_nursery(main, entry);
+                }
+            });
+
+            dbg!("Visited {} nursery values; promoted {}", visit_count, promo_count);
+        }
+
+        dump_stack_roots();
+
+        visit_gc_roots(|root| {
+            unsafe {
+                value_repr::jump_to_forward_ptr(root);
+            }
+        });
+
+        self.nursery.reset();
+    }
+}
+
+fn forward_from_nursery(main: &mut GrowableAllocator, entry: AllocEntry) {
+    let graduated = main.alloc_or_grow(entry.size);
+    unsafe {
+        entry.ptr.as_ptr().copy_to_nonoverlapping(
+            graduated.as_ptr(),
+            entry.size,
+        );
+        dbg!("Forward {:x} -> {:x}", entry.ptr.as_ptr() as usize, graduated.as_ptr() as usize);
+        value_repr::forward_heap_ptr(entry.ptr.as_ptr(), graduated.as_ptr());
+    }
+}
+
+fn dump_stack_roots() {
+    visit_gc_roots(|root| {
+        use super::value_repr;
+        let scalar = unsafe { *root };
+        let value = value_repr::Scalar::new(scalar).deref_rec();
+        dbg!("Root at {:0>16x} = {: >16x}: {:?}",
+             root as usize, scalar as usize, value);
+    })
 }

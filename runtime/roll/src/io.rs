@@ -17,6 +17,12 @@ impl FDWrite {
     pub fn stderr() -> Self {
         FDWrite { fd: STDERR_FD }
     }
+
+    pub fn flush(&mut self) {
+        unsafe {
+            libc::fsync(self.fd);
+        }
+    }
 }
 
 impl fmt::Write for FDWrite {
@@ -52,7 +58,7 @@ macro_rules! dbg {
     ($($toks:tt)*) => {{
         if cfg!(feature = "ad-hoc-debugs") {
             use ::core::fmt::Write;
-            let _ = writeln!($crate::io::FDWrite::stderr(), $($toks)*);
+            writeln!($crate::io::FDWrite::stderr(), $($toks)*).expect("dbg");
         }
     }};
 }
