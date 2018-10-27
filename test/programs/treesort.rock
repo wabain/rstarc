@@ -42,7 +42,7 @@ Insertnode takes Node, Newvalue
     Put Node into Originalroot
     Put nothing into Parentnode
     Put Nodevariableright into Direction
-    While Node is not nothing
+    While Node isn't nothing
         Put Node taking Nodeoperationread, Nodevariablevalue, Nodevalueignored into Value
         Put Nodevariableright into Direction
         If Newvalue is less than Value

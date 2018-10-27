@@ -47,7 +47,7 @@ pub enum Token {
     Is,
     Was,
     Not,
-    Aint,
+    Isnt,
     Than,
     As,
     Greater,
@@ -185,7 +185,7 @@ impl fmt::Display for Token {
             Token::Is => write!(f, "is"),
             Token::Was => write!(f, "was"),
             Token::Not => write!(f, "not"),
-            Token::Aint => write!(f, "ain't"),
+            Token::Isnt => write!(f, "isn't"),
             Token::Than => write!(f, "than"),
             Token::As => write!(f, "as"),
             Token::Greater => write!(f, "greater"),
@@ -730,7 +730,7 @@ impl<'a> TokenStream<'a> {
             "is" => Token::Is,
             "was" | "were" => Token::Was,
             "not" => Token::Not,
-            "aint" => Token::Aint,
+            "isnt" | "aint" => Token::Isnt,
 
             "as" => Token::As,
             "than" => Token::Than,
@@ -1157,7 +1157,7 @@ mod test {
         //           0123456789012345
         assert_eq!(toks(input), vec![
             (0, Token::Pronoun("It".into()), 2),
-            (3, Token::Aint, 8),
+            (3, Token::Isnt, 8),
             (9, Token::NullLiteral, 16),
             (16, Token::Newline, 16),
             (16, Token::EOF, 16),
