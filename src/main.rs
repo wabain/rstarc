@@ -1,5 +1,5 @@
 #[macro_use] extern crate clap;
-extern crate lalrpop_util;
+#[macro_use] extern crate lalrpop_util;
 #[macro_use] extern crate lazy_static;
 extern crate llvm_sys as llvm;
 extern crate regex;
@@ -14,7 +14,6 @@ mod codegen;
 mod lang_constructs;
 mod lexer;
 mod interpreter;
-mod parser;
 mod pretty_print;
 mod runtime_error;
 mod source_loc;
@@ -33,6 +32,8 @@ use runtime_error::RuntimeError;
 use lexer::{LexicalError, Tokenizer};
 
 pub const BINARY_NAME: &str = "rstarc";
+
+lalrpop_mod!(parser);
 
 fn main() {
     let action = build_action(&build_cli().get_matches());
