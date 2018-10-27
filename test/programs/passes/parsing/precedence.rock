@@ -1,0 +1,27 @@
+(
+    Precedence rules. The current ordering, per the spec, is:
+
+    1. Function Call [greedy arguments]
+    2. Logical NOT [right-associative]
+    3. Multiplication and Division [left-associative]
+    4. Addition and Subtraction [left-associative]
+    5. Comparison operators [left-associative]
+    6. and, or, and nor [left-associative]
+)
+
+Put 0 into U
+Put 0 into V
+Put 0 into W
+Put 0 into X
+Put 0 into Y
+Put 0 into Z
+
+Put X taking Y and Z times U plus V into Dummy
+Put X plus Y minus Z into Dummy
+Put X times Y over Z into Dummy
+
+If X times Y is Z plus U
+    Say nothing
+
+If U is V times X taking Y and Z is V and W is X
+    Say nothing
