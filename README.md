@@ -2,7 +2,7 @@
 
 This is a compiler for [Rockstar](https://github.com/dylanbeattie/rockstar), a dynamically typed language whose programs are song lyrics. To my knowledge, it is the only implementation which compiles to machine code instead of interpreting the source or transpiling to an interpreted / jitted language.
 
-The version of the specification it targets is linked in the `spec/` directory. As with any Rockstar implementation, there are some excentricities and deviations in behavior. Notably, this implementation (as most do) uses IEEE 754 floating-point numbers.
+The version of the specification it targets is linked in the `spec/` directory. As with any Rockstar implementation, there are some excentricities and deviations in behavior. Notably, this implementation (as most do) uses IEEE 754 floating-point numbers. Currently, the compiled code differs from both the spec in the compiler's built-in interpreter in how it handles type coercions.
 
 ## Build dependencies
 

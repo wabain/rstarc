@@ -10,20 +10,20 @@ If false is true
 Else
     Say "if with else"
 
-Put nothing into X
+Put 0 into X
 While X is not 3
     Say "While loop"
     Say X
     Build X up
 
-Put nothing into X
+Put 0 into X
 Until X is 3
     Say "Until loop"
     Say X
     Build X up
 
 (Break before loop start)
-Put nothing into X
+Put 0 into X
 Until X is 3
     Say "Early loop exit with unreachable"
     Break
