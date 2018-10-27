@@ -9,6 +9,7 @@ extern crate void;
 #[cfg(unix)] extern crate libc;
 
 mod ast;
+mod ast_print;
 mod ast_walker;
 mod codegen;
 mod lang_constructs;
@@ -118,7 +119,7 @@ fn build_cli() -> clap::App<'static, 'static> {
             .about("Internal debugging utilities.")
             .args(&[arg_source, arg_opt_level])
             .arg(clap::Arg::from_usage("-d, --debug-print <FORMAT> 'Print debug output.'")
-                .possible_values(&["tokens", "pretty", "ir", "llvm"]))
+                .possible_values(&["tokens", "pretty", "ast", "ir", "llvm"]))
         )
 }
 
@@ -217,6 +218,7 @@ enum ExecutionMode {
 enum DebugOutputFormat {
     Tokens,
     Pretty,
+    AST,
     IR,
     LLVM,
 }
@@ -268,6 +270,7 @@ fn build_action(matches: &clap::ArgMatches) -> Action {
             let debug_output = match submatches.value_of("debug-print") {
                 Some("tokens") => Some(DebugOutputFormat::Tokens),
                 Some("pretty") => Some(DebugOutputFormat::Pretty),
+                Some("ast") => Some(DebugOutputFormat::AST),
                 Some("ir") => Some(DebugOutputFormat::IR),
                 Some("llvm") => Some(DebugOutputFormat::LLVM),
                 Some(v) => unreachable!("debug-print format {:?}", v),
@@ -409,6 +412,9 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<Option<i32>, RuntimeErr
     match debug_output {
         Some(DebugOutputFormat::Pretty) => {
             pretty_print::pretty_print_program(io::stdout(), &tree)?;
+        }
+        Some(DebugOutputFormat::AST) => {
+            ast_print::ast_print_program(io::stdout(), &tree)?;
         }
         Some(DebugOutputFormat::IR) => {
             // FIXME: IR may be generated twice along this path
