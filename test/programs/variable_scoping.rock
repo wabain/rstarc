@@ -1,13 +1,13 @@
 FuncA takes X
     FuncB takes Y
-        If Z is not mysterious
+        If Z isn't mysterious
           Put Y plus Z into Z
         Else
           Put Y into Z
         (endif)
     (endfunc)
-    If X is not nothing
-        If Z is not mysterious
+    If X isn't nothing
+        If Z isn't mysterious
             Put X plus Z into Z
         Else
             Put X into Z
