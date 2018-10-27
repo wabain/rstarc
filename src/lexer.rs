@@ -123,7 +123,7 @@ impl Token {
         }
     }
 
-    pub fn literal_value<F>(&self) -> Option<lang_constructs::Value<F>> {
+    pub fn literal_value<F: fmt::Debug>(&self) -> Option<lang_constructs::Value<F>> {
         use lang_constructs::Value;
         let value = match *self {
             Token::StringLiteral(ref s) => Value::String(s.clone()),
@@ -713,11 +713,13 @@ impl<'a> TokenStream<'a> {
 
             "mysterious" if initially_lower => Token::MysteriousLiteral,
 
+            // Keep these in sync with lang_constructs::string_is_null_keyword
             "null" | "nothing" | "nowhere" |
             "nobody" | "empty" | "gone" if initially_lower => {
                 Token::NullLiteral
             }
 
+            // Keep these in sync with lang_constructs::string_to_bool
             "true" | "right" | "yes" | "ok" if initially_lower => {
                 Token::BooleanLiteral(true)
             },
