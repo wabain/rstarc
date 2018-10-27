@@ -432,16 +432,47 @@ def write_toml(source_object, fname):
 
             f.write(content[end_idx:match.start()])
 
-            multiline = (string
-                .replace('\\n', '\n')
-                .replace('\\"', '"')
-                .replace('"""', '\\"\\"\\"'))
-
-            f.write('{} = """\n{}"""'.format(key, multiline))
+            multiline = expand_toml_string(key, string)
+            f.write(f'{key} = """\n{multiline}"""')
 
             end_idx = match.end()
 
         f.write(content[end_idx:])
+
+
+def expand_toml_string(key: str, string: str) -> str:
+    """hack: rewrite string literals into multiline form
+
+    The pytoml library outputs single-line literals, but we want multiline
+    string literals for readability.
+    """
+    chars = iter(string)
+
+    multiline = []
+
+    while True:
+        next_char = next(chars, None)
+
+        if next_char is None:
+            break
+
+        if next_char != '\\':
+            multiline.append(next_char)
+            continue
+
+        escaped = next(chars, None)
+        if escaped is None:
+            raise RuntimeError(f'unexpected EOF when modifying toml key ${key}')
+
+        if escaped == 'n':
+            multiline.append('\n')
+        elif escaped == '"':
+            multiline.append('"')
+        else:
+            multiline.extend(['\\', escaped])
+
+    # Still need to escape three consecutive `"`s
+    return ''.join(multiline).replace('"""', '\\"\\"\\"')
 
 
 if __name__ == '__main__':
