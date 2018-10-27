@@ -4,11 +4,11 @@ name = "rstarc"
 version = "0.1.0"
 
 [build-dependencies]
-lalrpop = "0.15.2"
+lalrpop = "0.16.1"
 
 [dependencies]
 clap = "2.32.0"
-lalrpop-util = "0.15.2"
+lalrpop-util = "0.16.1"
 lazy_static = "1.0.2"
 llvm-sys = "60.1"
 regex = "1.0.2"
