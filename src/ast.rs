@@ -51,7 +51,7 @@ pub enum Conditional {
 #[derive(Debug)]
 pub struct Comparison(pub Expr, pub Comparator, pub Expr);
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Comparator {
     Is,
     IsNot,

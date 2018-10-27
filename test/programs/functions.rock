@@ -11,6 +11,9 @@ Func One takes X and Y
     Say Z
     Say ""
     Say "incrementing within function"
+    If Y is mysterious
+      Put 0 over 0 into Y
+
     Build X up
     Build Y up
     Build Z up

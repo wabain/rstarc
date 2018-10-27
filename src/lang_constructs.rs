@@ -1,12 +1,10 @@
 use std::fmt;
 use std::borrow::Cow;
 
-pub const ROCKSTAR_NAN: RockstarNumber = ::std::f64::NAN;
-
 // FIXME: Spec calls for DEC64
 pub type RockstarNumber = f64;
 
-// Spec calls for UTF-16 but I don't know if the difference
+// Spec calls for UTF-16 but I don't know that the difference
 // is actually visible
 pub type RockstarString = String;
 
@@ -25,7 +23,7 @@ impl<'a> fmt::Display for LangVariable<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum Type {
     String,
     Number,
@@ -36,7 +34,7 @@ pub enum Type {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Value<F> {
+pub enum Value<F: fmt::Debug> {
     String(RockstarString),
     Number(RockstarNumber),
     Boolean(bool),
@@ -45,7 +43,7 @@ pub enum Value<F> {
     Mysterious,
 }
 
-impl<F> Value<F> {
+impl<F: fmt::Debug> Value<F> {
     pub fn value_type(&self) -> Type {
         match *self {
             Value::String(_) => Type::String,
@@ -54,19 +52,6 @@ impl<F> Value<F> {
             Value::Function(_) => Type::Function,
             Value::Null => Type::Null,
             Value::Mysterious => Type::Mysterious,
-        }
-    }
-
-    pub fn coerce_number(&self) -> RockstarNumber {
-        // Don't know if this aligns with ECMAScript, but I think it's close
-        // apart from strings, which I just don't want to do the right way.
-        match *self {
-            Value::String(..) => ROCKSTAR_NAN,
-            Value::Number(n) => n,
-            Value::Boolean(b) => if b { 1.0 } else { 0.0 },
-            Value::Function(..) => ROCKSTAR_NAN,
-            Value::Null => 0.0,
-            Value::Mysterious => ROCKSTAR_NAN,
         }
     }
 
@@ -80,9 +65,109 @@ impl<F> Value<F> {
             Value::Mysterious => "mysterious",
         }.into()
     }
+
+    /// String coercion, as performed by `plus` and `times`
+    pub fn coerce_string(&self) -> Option<Cow<str>> {
+        match self {
+            Value::String(s) => Some(Cow::Borrowed(s)),
+            Value::Number(n) => Some(Cow::Owned(format!("{}", n))),
+            Value::Boolean(b) => {
+                let s = if *b { "true" } else { "false" };
+                Some(Cow::Borrowed(s))
+            }
+            Value::Function(_) => None,
+            Value::Null => Some(Cow::Borrowed("null")),
+            Value::Mysterious => Some(Cow::Borrowed("mysterious")),
+        }
+    }
+
+    pub fn coerce_binary_operands(v1: Self, v2: Self) -> Option<(Self, Self)> {
+        let t1 = v1.value_type();
+        let t2 = v2.value_type();
+
+        if t1 == t2 {
+            return Some((v1, v2));
+        }
+
+        // Reorder for convenience
+        let (v1, v2) = if t1 < t2 {
+            (v1, v2)
+        } else {
+            (v2, v1)
+        };
+
+        if let Value::Mysterious = v2 {
+            return None;
+        }
+
+        match v1 {
+            Value::String(s1) => match v2 {
+                Value::String(_) => unreachable!("type precedence"),
+                Value::Number(_) => {
+                    if let Ok(n1) = s1.parse() {
+                        Some((Value::Number(n1), v2))
+                    } else {
+                        None
+                    }
+                }
+                Value::Boolean(_) => {
+                    string_to_bool(&s1)
+                        .map(|b2| (Value::Boolean(b2), v2))
+                }
+                Value::Function(_) => None,
+                Value::Null => {
+                    if string_is_null_keyword(&s1) {
+                        Some((Value::Null, Value::Null))
+                    } else {
+                        None
+                    }
+                }
+                Value::Mysterious => unreachable!("blanket check"),
+            }
+
+            Value::Number(n1) => match v2 {
+                Value::String(_) | Value::Number(_) => {
+                    unreachable!("type precedence");
+                }
+                Value::Boolean(_) => {
+                    // NaN is truthy
+                    let to_bool = !(n1 == 0.);
+                    Some((Value::Boolean(to_bool), v2))
+                }
+                Value::Function(_) => None,
+                Value::Null => {
+                    if n1 == 0. {
+                        Some((Value::Null, Value::Null))
+                    } else {
+                        None
+                    }
+                }
+                Value::Mysterious => unreachable!("blanket check"),
+            }
+
+            Value::Boolean(b1) => match v2 {
+                Value::String(_) | Value::Number(_) | Value::Boolean(_) => {
+                    unreachable!("type precedence");
+                }
+                Value::Function(_) => None,
+                Value::Null => {
+                    if !b1 {
+                        Some((Value::Null, Value::Null))
+                    } else {
+                        None
+                    }
+                }
+                Value::Mysterious => unreachable!("blanket check"),
+            }
+
+            Value::Function(_) | Value::Null => None,
+
+            Value::Mysterious => unreachable!("blanket check"),
+        }
+    }
 }
 
-impl<F> Value<F> where F: fmt::Display {
+impl<F> Value<F> where F: fmt::Debug + fmt::Display {
     pub fn repr_format(&self) -> Cow<str> {
         match *self {
             Value::String(ref s) => return format!("\"{}\"", s).into(),
@@ -92,5 +177,21 @@ impl<F> Value<F> where F: fmt::Display {
             Value::Null => "null",
             Value::Mysterious => "mysterious",
         }.into()
+    }
+}
+
+fn string_to_bool(s: &str) -> Option<bool> {
+    match s {
+        "true" | "right" | "yes" | "ok" => Some(true),
+        "false" | "wrong" | "no" | "lies" => Some(false),
+        _ => None
+    }
+}
+
+fn string_is_null_keyword(s: &str) -> bool {
+    match s {
+        "null" | "nothing" | "nowhere" |
+        "nobody" | "empty" | "gone" => true,
+        _ => false,
     }
 }

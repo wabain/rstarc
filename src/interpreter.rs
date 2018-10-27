@@ -4,6 +4,7 @@ use std::mem;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::cmp::Ordering;
 
 use base_analysis;
 use lang_constructs::{Value, LangVariable};
@@ -20,6 +21,20 @@ pub fn interpret(program: &[Statement], scope_map: &base_analysis::ScopeMap)
 #[derive(Debug)]
 pub enum InterpreterError {
     NotAFunction { value_repr: String },
+    IllegalOperands { op: &'static str, v1: String, v2: Option<String> },
+}
+
+impl InterpreterError {
+    fn illegal_op<'a, 'b: 'a, O>(op: &'static str, v1: &InterpValue, v2: O) -> Self
+        where O: Into<Option<&'a InterpValue<'b>>>
+    {
+        let v2 = v2.into();
+        InterpreterError::IllegalOperands {
+            op,
+            v1: format!("{}", v1.user_display()),
+            v2: v2.map(|v2| format!("{}", v2.user_display())),
+        }
+    }
 }
 
 impl error::Error for InterpreterError {}
@@ -29,6 +44,13 @@ impl fmt::Display for InterpreterError {
         match self {
             InterpreterError::NotAFunction { value_repr } => {
                 write!(f, "Cannot call value '{}'", value_repr)
+            }
+            InterpreterError::IllegalOperands { op, v1, v2 } => {
+                if let Some(v2) = v2 {
+                    write!(f, "Cannot {} {} and {}", op, v1, v2)
+                } else {
+                    write!(f, "Cannot {} {}", op, v1)
+                }
             }
         }
     }
@@ -135,13 +157,25 @@ impl<'a> Interpreter<'a> {
             },
             StatementKind::Incr(lval) | StatementKind::Decr(lval) => {
                 let var = self.lval_to_var(lval);
-                let mut value = self.get_var(&var).coerce_number();
-                match statement.kind {
-                    StatementKind::Incr(_) => value += 1.0,
-                    StatementKind::Decr(_) => value -= 1.0,
-                    _ => unreachable!(),
-                }
-                self.set_var(var, Value::Number(value));
+
+                let new_var = match self.get_var(&var) {
+                    Value::Number(n) => match statement.kind {
+                        StatementKind::Incr(_) => Value::Number(n + 1.),
+                        StatementKind::Decr(_) => Value::Number(n - 1.),
+                        _ => unreachable!(),
+                    }
+                    Value::Boolean(b) => Value::Boolean(!b),
+                    v @ _ => {
+                        let op = match statement.kind {
+                            StatementKind::Incr(_) => "increment",
+                            StatementKind::Decr(_) => "decrement",
+                            _ => unreachable!(),
+                        };
+                        return Err(InterpreterError::illegal_op(op, &v, None));
+                    }
+                };
+
+                self.set_var(var, new_var);
             },
             StatementKind::Say(expr) => {
                 let value = self.eval_expr(expr)?;
@@ -266,19 +300,62 @@ impl<'a> Interpreter<'a> {
                 }
             },
             Expr::Add(e1, e2) | Expr::Sub(e1, e2) | Expr::Mul(e1, e2) | Expr::Div(e1, e2) => {
-                let n1 = self.eval_expr(e1)?.coerce_number();
-                let n2 = self.eval_expr(e2)?.coerce_number();
+                let v1 = self.eval_expr(e1)?;
+                let v2 = self.eval_expr(e2)?;
+                self.eval_binary_op(expr, v1, v2)?
+            },
+        };
+        Ok(value)
+    }
 
-                let value = match expr {
+    fn eval_binary_op(&self, expr: &Expr, v1: InterpValue, v2: InterpValue)
+        -> InterpResult<InterpValue<'a>>
+    {
+        let value = match (expr, &v1, &v2) {
+            (_, &Value::Number(n1), &Value::Number(n2)) => {
+                let out = match expr {
                     Expr::Add(..) => n1 + n2,
                     Expr::Sub(..) => n1 - n2,
                     Expr::Mul(..) => n1 * n2,
                     Expr::Div(..) => n1 / n2,
                     _ => unreachable!(),
                 };
+                Value::Number(out)
+            }
 
-                Value::Number(value)
-            },
+            (Expr::Add(..), Value::String(_), _) |
+            (Expr::Add(..), _, Value::String(_)) => {
+                match (v1.coerce_string(), v2.coerce_string()) {
+                    (Some(s1), Some(s2)) => {
+                        let size = s1.as_bytes().len() + s2.as_bytes().len();
+                        let mut combined = String::with_capacity(size);
+                        combined.push_str(&s1);
+                        combined.push_str(&s2);
+                        Value::String(combined)
+                    }
+                    _ => return Err(InterpreterError::illegal_op("add", &v1, &v2)),
+                }
+            }
+
+            (Expr::Mul(..), &Value::Number(n), Value::String(s)) |
+            (Expr::Mul(..), Value::String(s), &Value::Number(n)) => {
+                if n.is_nan() || n < 0. {
+                    return Err(InterpreterError::illegal_op("multiply", &v1, &v2));
+                }
+                let n = n.trunc() as usize;
+                Value::String(s.repeat(n))
+            }
+
+            _ => {
+                let op = match expr {
+                    Expr::Add(..) => "add",
+                    Expr::Sub(..) => "subtract",
+                    Expr::Mul(..) => "multiply",
+                    Expr::Div(..) => "divide",
+                    _ => unreachable!(),
+                };
+                return Err(InterpreterError::illegal_op(op, &v1, &v2))
+            }
         };
         Ok(value)
     }
@@ -296,22 +373,46 @@ impl<'a> Interpreter<'a> {
 
     fn eval_comparison(&mut self, comparison: &Comparison) -> InterpResult<bool> {
         let Comparison(ref e1, comp, ref e2) = *comparison;
-        let mut v1 = self.eval_expr(e1)?;
-        let mut v2 = self.eval_expr(e2)?;
+        let v1 = self.eval_expr(e1)?;
+        let v2 = self.eval_expr(e2)?;
 
-        if v1.value_type() != v2.value_type() {
-            v1 = Value::Number(v1.coerce_number());
-            v2 = Value::Number(v2.coerce_number());
+        let (v1, v2) = match Value::coerce_binary_operands(v1, v2) {
+            Some(pair) => pair,
+            None => {
+                return Ok(comp == Comparator::IsNot)
+            }
+        };
+
+        debug_assert_eq!(v1.value_type(), v2.value_type());
+
+        match comp {
+            Comparator::Is => return Ok(v1 == v2),
+            Comparator::IsNot => return Ok(v1 != v2),
+            _ => {}
         }
 
-        let compared = match comp {
-            Comparator::Is => v1 == v2,
-            Comparator::IsNot => v1 != v2,
-            Comparator::IsGreaterThan => v1.coerce_number() > v2.coerce_number(),
-            Comparator::IsLessThan => v1.coerce_number() < v2.coerce_number(),
-            Comparator::IsAsGreatAs => v1.coerce_number() >= v2.coerce_number(),
-            Comparator::IsAsLittleAs => v1.coerce_number() <= v2.coerce_number(),
+        let ordering = match (&v1, &v2) {
+            (Value::String(s1), Value::String(s2)) => s1.partial_cmp(s2),
+            (Value::Number(n1), Value::Number(n2)) => n1.partial_cmp(n2),
+            (Value::Boolean(b1), Value::Boolean(b2)) => b1.partial_cmp(b2),
+            (Value::Function(_), Value::Function(_)) => None,
+            (Value::Null, Value::Null) |
+            (Value::Mysterious, Value::Mysterious) => Some(Ordering::Equal),
+            (_, _) => unreachable!("values {:?} {:?}", v1, v2),
         };
+
+        let compared = match comp {
+            Comparator::Is | Comparator::IsNot => unreachable!(),
+            Comparator::IsGreaterThan => ordering == Some(Ordering::Greater),
+            Comparator::IsLessThan => ordering == Some(Ordering::Less),
+            Comparator::IsAsGreatAs => {
+                ordering.is_some() && ordering != Some(Ordering::Less)
+            }
+            Comparator::IsAsLittleAs => {
+                ordering.is_some() && ordering != Some(Ordering::Greater)
+            }
+        };
+
         Ok(compared)
     }
 

@@ -13,19 +13,19 @@ Say "FAILED: if with else"
 Else
 Say "if with else"
 
-Put null into X
+Put 0 into X
 While X is not 3
 Say "While loop"
 Say X
 Build X up
 
-Put null into X
+Put 0 into X
 Until X is 3
 Say "Until loop"
 Say X
 Build X up
 
-Put null into X
+Put 0 into X
 Until X is 3
 Say "Early loop exit with unreachable"
 Break
@@ -55,7 +55,7 @@ main:
   say "if with else"
   jump .if_end4
 .if_end4:
-  X := store null
+  X := store 0
   jump .loop_check5
 .loop_check5:
   t2 := is-not X, 3
@@ -66,7 +66,7 @@ main:
   X := add X, 1
   jump .loop_check5
 .loop_end7:
-  X := store null
+  X := store 0
   jump .loop_check8
 .loop_check8:
   t3 := is X, 3
@@ -77,7 +77,7 @@ main:
   X := add X, 1
   jump .loop_check8
 .loop_end10:
-  X := store null
+  X := store 0
   jump .loop_check11
 .loop_check11:
   t4 := is X, 3
@@ -103,13 +103,13 @@ stdout = """
 if, no else
 if with else
 While loop
-null
+0
 While loop
 1
 While loop
 2
 Until loop
-null
+0
 Until loop
 1
 Until loop

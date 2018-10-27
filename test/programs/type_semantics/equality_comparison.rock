@@ -1,0 +1,112 @@
+(Same-type equality)
+
+If mysterious is mysterious
+Say "  TRUE: mysterious is mysterious"
+Else
+Say "! FALSE: mysterious is mysterious"
+
+If yes is true
+Say "  TRUE: yes is true"
+Else
+Say "! FALSE: yes is true"
+
+If 10 is 10
+Say "  TRUE: 10 is 10"
+Else
+Say "! FALSE: 10 is 10"
+
+If 9.2 is 10
+Say "! TRUE: 9.2 is 10"
+Else
+Say "  FALSE: 9.2 is 10"
+
+
+(Mysterious as dominant type)
+
+If nothing is mysterious
+Say "! TRUE: nothing is mysterious"
+Else
+Say "  FALSE: nothing is mysterious"
+
+
+(Number as dominant over string)
+
+If "a" is 10
+Say "! TRUE: string(a) is 10"
+Else
+Say "  FALSE: string(a) is 10"
+
+If "10" is 10
+Say "  TRUE: string(10) is 10"
+Else
+Say "! FALSE: string(10) is 10"
+
+If "010" is 10
+Say "  TRUE: string(010) is 10"
+Else
+Say "! FALSE: string(010) is 10"
+
+
+(Boolean as dominant over string)
+
+If "yes" is true
+Say "  TRUE: string(yes) is true"
+Else
+Say "! FALSE: string(yes) is true"
+
+If "a" is true
+Say "! TRUE: string(a) is true"
+Else
+Say "  FALSE: string(a) is true"
+
+
+(Null as dominant over string)
+
+If "nothing" is nothing
+Say "  TRUE: string(nothing) is nothing"
+Else
+Say "! FALSE: string(nothing) is nothing"
+
+
+(Boolean as dominant over number)
+
+If 0 is true
+Say "! TRUE: 0 is true"
+Else
+Say "  FALSE: 0 is true"
+
+If 0 is false
+Say "  TRUE: 0 is false"
+Else
+Say "! FALSE: 0 is false"
+
+If 15 is true
+Say "  TRUE: 15 is true"
+Else
+Say "! FALSE: 15 is true"
+
+
+(Number as dominant over null)
+
+If 0 is nothing
+Say "  TRUE: 0 is nothing"
+Else
+Say "! FALSE: 0 is nothing"
+
+If 12 is nothing
+Say "! TRUE: 12 is nothing"
+Else
+Say "  FALSE: 12 is nothing"
+
+
+(Boolean as dominant over null)
+
+If nothing is true
+Say "! TRUE: nothing is true"
+Else
+Say "  FALSE: nothing is true"
+
+If nothing is false
+Say "  TRUE: nothing is false"
+Else
+Say "! FALSE: nothing is false"
