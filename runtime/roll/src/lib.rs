@@ -1,14 +1,7 @@
 #![no_std]
-#![feature(lang_items)]
-#![feature(panic_implementation)]
-
-// TODO: Added this during a false start where the runtime didn't
-// use libc. Remove if not needed.
-#[macro_use] extern crate sc;
 
 extern crate libc;
 
-#[macro_use] mod syscall;
 #[macro_use] mod io;
 mod alloc;
 mod rust_lang_items;
@@ -183,9 +176,8 @@ pub extern fn roll_coerce_function(value: *mut VoidPtr) -> *const VoidPtr {
             let mut stderr = io::FDWrite::stderr();
             writeln!(stderr, "error: Cannot call value '{}'", v.user_display());
             unsafe {
-                syscall!(EXIT, 1);
+                libc::exit(1);
             }
-            unreachable!("after exit");
         }
     }
 }

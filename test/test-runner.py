@@ -61,9 +61,10 @@ def main():
             subprocess.check_call(cmd, cwd=basedir)
 
     if args.rebuild:
-        cmd = [os.path.join(basedir, 'mkrun.py'), 'build', '--release']
-        logger.info('Invoking %s from %s', cmd, basedir)
-        subprocess.check_call(cmd, cwd=basedir)
+        cmd = ['cargo', 'build', '--release']
+        runtime_dir = os.path.join(basedir, 'runtime', 'roll')
+        logger.info('Invoking %s from %s', cmd, runtime_dir)
+        subprocess.check_call(cmd, cwd=runtime_dir)
 
     if args.sources:
         sources = args.sources

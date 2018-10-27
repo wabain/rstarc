@@ -8,15 +8,10 @@ ad-hoc-debugs = []
 
 [dependencies]
 libc = { version = "0.2", default-features = false }
-sc = "0.2.2"
 
 [lib]
 crate-type = ["staticlib"]
 name = "roll"
-
-[patch.crates-io.sc]
-branch = "macos-syscall-class"
-git = "https://github.com/wabain/syscall.rs.git"
 
 [profile.dev]
 panic = "abort"

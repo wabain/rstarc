@@ -10,9 +10,7 @@ The version of the specification it targets is linked in the `spec/` directory. 
 
 * Pipenv
 
-* Rust 1.27+ and Rust nightly (used for the runtime library)
-
-  Rust must be installed using [Rustup](https://rustup.rs/) (although motivated users can use other installation methods by reverse-engineering `./mkrun.py`.)
+* Rust 1.30.0+
 
 * LLVM 6
 
@@ -21,7 +19,7 @@ The version of the specification it targets is linked in the `spec/` directory. 
 Build the runtime library, `roll`:
 
 ```bash
-./mkrun.py build --release
+cd runtime/roll && cargo build --release
 ```
 
 Build the compiler:
