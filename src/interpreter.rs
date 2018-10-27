@@ -250,54 +250,7 @@ impl<'a> Interpreter<'a> {
             },
             Expr::FuncCall(func_expr, arg_exprs) => {
                 let func_value = self.eval_expr(func_expr)?;
-
-                let func = match func_value {
-                    Value::Function(func) => func,
-                    _ => {
-                        return Err(InterpreterError::NotAFunction {
-                            value_repr: format!("{}", func_value.user_display()),
-                        });
-                    }
-                };
-
-                let mut fcall_scope = VariableScope::for_function(&func);
-
-                let arg_values = {
-                    let mut v = Vec::with_capacity(arg_exprs.len());
-                    for a in arg_exprs {
-                        v.push(self.eval_expr(a)?);
-                    }
-                    v
-                };
-
-                for (arg_var, arg_value) in func.args.iter().zip(arg_values.into_iter()) {
-                    fcall_scope.vars.insert(arg_var.clone(), arg_value);
-                }
-
-                // Preset arguments for which values weren't provided by
-                // the caller to shadow any values in parent scopes
-                for i in arg_exprs.len()..func.args.len() {
-                    fcall_scope.vars.insert(func.args[i].clone(), Value::Mysterious);
-                }
-
-                let flow;
-
-                {
-                    let mut old_scope = mem::replace(&mut self.scope,
-                                                     fcall_scope.to_cell());
-
-                    let res = self.dispatch_statements(func.statements);
-
-                    mem::replace(&mut self.scope, old_scope);
-
-                    flow = res?;
-                };
-
-                match flow {
-                    Flow::Return(value) => value,
-                    Flow::Next => Value::Mysterious,
-                    _ => unreachable!("{:?}", flow),
-                }
+                self.exec_func_call(func_value, arg_exprs)?
             },
             Expr::Add(e1, e2) | Expr::Sub(e1, e2) | Expr::Mul(e1, e2) | Expr::Div(e1, e2) => {
                 let v1 = self.eval_expr(e1)?;
@@ -306,6 +259,57 @@ impl<'a> Interpreter<'a> {
             },
         };
         Ok(value)
+    }
+
+    fn exec_func_call(&mut self,
+                      func_value: InterpValue<'a>,
+                      arg_exprs: &[Box<Expr>])
+        -> InterpResult<InterpValue<'a>>
+    {
+        let func = match func_value {
+            Value::Function(func) => func,
+            _ => {
+                return Err(InterpreterError::NotAFunction {
+                    value_repr: format!("{}", func_value.user_display()),
+                });
+            }
+        };
+
+        let mut fcall_scope = VariableScope::for_function(&func);
+
+        let arg_values = {
+            let mut v = Vec::with_capacity(arg_exprs.len());
+            for a in arg_exprs {
+                v.push(self.eval_expr(a)?);
+            }
+            v
+        };
+
+        for (arg_var, arg_value) in func.args.iter().zip(arg_values.into_iter()) {
+            fcall_scope.vars.insert(arg_var.clone(), arg_value);
+        }
+
+        // Preset arguments for which values weren't provided by
+        // the caller to shadow any values in parent scopes
+        for i in arg_exprs.len()..func.args.len() {
+            fcall_scope.vars.insert(func.args[i].clone(), Value::Mysterious);
+        }
+
+        let flow;
+
+        {
+            let old_scope = mem::replace(&mut self.scope, fcall_scope.to_cell());
+            let res = self.dispatch_statements(func.statements);
+            mem::replace(&mut self.scope, old_scope);
+
+            flow = res?;
+        };
+
+        match flow {
+            Flow::Return(value) => Ok(value),
+            Flow::Next => Ok(Value::Mysterious),
+            _ => unreachable!("{:?}", flow),
+        }
     }
 
     fn eval_binary_op(&self, expr: &Expr, v1: InterpValue, v2: InterpValue)
