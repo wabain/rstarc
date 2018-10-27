@@ -1,0 +1,121 @@
+[tests]
+enabled = ["ast"]
+
+[ast]
+returncode = "0"
+stdout = """
+Assign(
+  U,
+  0,
+),
+Assign(
+  V,
+  0,
+),
+Assign(
+  W,
+  0,
+),
+Assign(
+  X,
+  0,
+),
+Assign(
+  Y,
+  0,
+),
+Assign(
+  Z,
+  0,
+),
+Assign(
+  Dummy,
+  Add(
+    Mul(
+      FuncCall(
+        X,
+        [
+          Y,
+          Z,
+        ],
+      ),
+      U,
+    ),
+    V,
+  ),
+),
+Assign(
+  Dummy,
+  Add(
+    X,
+    Sub(
+      Y,
+      Z,
+    ),
+  ),
+),
+Assign(
+  Dummy,
+  Mul(
+    X,
+    Div(
+      Y,
+      Z,
+    ),
+  ),
+),
+If(
+  Comparison(
+    Mul(
+      X,
+      Y,
+    ),
+    Is,
+    Add(
+      Z,
+      U,
+    ),
+  ),
+  [
+    Say(
+      null,
+    ),
+  ],
+  [
+  ],
+),
+If(
+  And(
+    Comparison(
+      U,
+      Is,
+      Comparison(
+        Mul(
+          V,
+          FuncCall(
+            X,
+            [
+              Y,
+              Z,
+            ],
+          ),
+        ),
+        Is,
+        V,
+      ),
+    ),
+    Comparison(
+      W,
+      Is,
+      X,
+    ),
+  ),
+  [
+    Say(
+      null,
+    ),
+  ],
+  [
+  ],
+),
+"""

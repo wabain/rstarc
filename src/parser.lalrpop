@@ -60,16 +60,17 @@ Block: Vec<ast::Statement> = {
 
 Expr: ast::Expr = {
     Comparison => ast::Expr::Compare(Box::new(<>)),
-    FuncCallExpr => <>,
+    AddExpr => <>,
 }
 
-FuncCallExpr: ast::Expr = {
-    <f:SimpleExpr> "Taking" <a:(MultExpr ",")*> <an:MultExpr> => {
-        let mut args: Vec<_> = a.into_iter().map(|(e, _)| Box::new(e)).collect();
-        args.push(Box::new(an));
-        ast::Expr::FuncCall(Box::new(f), args)
-    },
-    AddExpr => <>,
+PreConjunctionExpr: ast::Expr = {
+    PreConjunctionComparison => ast::Expr::Compare(Box::new(<>)),
+    PreConjunctionAddExpr => <>,
+}
+
+FuncArgSep: () = {
+    "," => (),
+    "And" => (),
 }
 
 AddExpr: ast::Expr = {
@@ -78,34 +79,58 @@ AddExpr: ast::Expr = {
     <e1:MultExpr> "Minus" <e2:AddExpr> => ast::Expr::Sub(Box::new(e1), Box::new(e2)),
 }
 
-MultExpr: ast::Expr = {
-    SimpleExpr => <>,
-    <e1:SimpleExpr> "Times" <e2:MultExpr> => ast::Expr::Mul(Box::new(e1), Box::new(e2)),
-    <e1:SimpleExpr> "Over" <e2:MultExpr> => ast::Expr::Div(Box::new(e1), Box::new(e2)),
+PreConjunctionAddExpr: ast::Expr = {
+    PreConjunctionMultExpr => <>,
+    <e1:MultExpr> "Plus" <e2:PreConjunctionAddExpr> => ast::Expr::Add(Box::new(e1), Box::new(e2)),
+    <e1:MultExpr> "Minus" <e2:PreConjunctionAddExpr> => ast::Expr::Sub(Box::new(e1), Box::new(e2)),
 }
 
-// FIXME: Precedence?
+MultExpr: ast::Expr = {
+    FuncCallExpr => <>,
+    <e1:FuncCallExpr> "Times" <e2:MultExpr> => ast::Expr::Mul(Box::new(e1), Box::new(e2)),
+    <e1:FuncCallExpr> "Over" <e2:MultExpr> => ast::Expr::Div(Box::new(e1), Box::new(e2)),
+}
+
+PreConjunctionMultExpr: ast::Expr = {
+    SimpleExpr => <>,
+    <e1:FuncCallExpr> "Times" <e2:PreConjunctionMultExpr> => ast::Expr::Mul(Box::new(e1), Box::new(e2)),
+    <e1:FuncCallExpr> "Over" <e2:PreConjunctionMultExpr> => ast::Expr::Div(Box::new(e1), Box::new(e2)),
+}
+
+FuncCallExpr: ast::Expr = {
+    <f:SimpleExpr> "Taking" <a:(SimpleExpr FuncArgSep)*> <an:SimpleExpr> => {
+        let mut args: Vec<_> = a.into_iter().map(|(e, _)| Box::new(e)).collect();
+        args.push(Box::new(an));
+        ast::Expr::FuncCall(Box::new(f), args)
+    },
+    SimpleExpr => <>,
+}
+
+// Function calls are not allowed before "and" comparisons to prevent ambiguity
 Conditional: ast::Conditional = {
     Comparison => ast::Conditional::Comparison(<>),
-    <e1:Comparison> "And" <e2:Conditional> =>
+    <e1:PreConjunctionComparison> "And" <e2:Conditional> =>
         ast::Conditional::And(Box::new(ast::Conditional::Comparison(e1)), Box::new(e2)),
     <e1:Comparison> "Or" <e2:Conditional> =>
         ast::Conditional::Or(Box::new(ast::Conditional::Comparison(e1)), Box::new(e2)),
 }
 
 Comparison: ast::Comparison = {
-    <a:FuncCallExpr> "Is" <b:Expr> =>
-        ast::Comparison(a, ast::Comparator::Is, b),
-    <a:FuncCallExpr> "Isn't" <b:Expr> =>
-        ast::Comparison(a, ast::Comparator::IsNot, b),
-    <a:FuncCallExpr> "Is" "Greater" "Than" <b:Expr> =>
-        ast::Comparison(a, ast::Comparator::IsGreaterThan, b),
-    <a:FuncCallExpr> "Is" "Less" "Than" <b:Expr> =>
-        ast::Comparison(a, ast::Comparator::IsLessThan, b),
-    <a:FuncCallExpr> "Is" "As" "Great" "As" <b:Expr> =>
-        ast::Comparison(a, ast::Comparator::IsAsGreatAs, b),
-    <a:FuncCallExpr> "Is" "As" "Little" "As" <b:Expr> =>
-        ast::Comparison(a, ast::Comparator::IsAsLittleAs, b),
+    <a:AddExpr> <cmp:Comparator> <b:Expr> => ast::Comparison(a, cmp, b),
+}
+
+PreConjunctionComparison: ast::Comparison = {
+    <a:AddExpr> <cmp:Comparator> <b:PreConjunctionExpr> =>
+        ast::Comparison(a, cmp, b),
+}
+
+Comparator: ast::Comparator = {
+    "Is" => ast::Comparator::Is,
+    "Isn't" => ast::Comparator::IsNot,
+    "Is" "Greater" "Than" => ast::Comparator::IsGreaterThan,
+    "Is" "Less" "Than" => ast::Comparator::IsLessThan,
+    "Is" "As" "Great" "As" => ast::Comparator::IsAsGreatAs,
+    "Is" "As" "Little" "As" => ast::Comparator::IsAsLittleAs,
 }
 
 SimpleExpr: ast::Expr = {
