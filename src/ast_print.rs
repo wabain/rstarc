@@ -132,6 +132,7 @@ impl AstPrint for Logical {
         match *self {
             Logical::And(ref c1, ref c2) => node!(out, indent, "And", c1, c2),
             Logical::Or(ref c1, ref c2) => node!(out, indent, "Or", c1, c2),
+            Logical::Nor(ref c1, ref c2) => node!(out, indent, "Nor", c1, c2),
         }
 
         Ok(())

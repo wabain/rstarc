@@ -7,3 +7,11 @@ say AndAssignment
 put false or "some value" into OrAssignment
 say "Assignment via or (expected: some value)"
 say OrAssignment
+
+put "yes" nor "no" into NorAssignment
+say "Assignment via nor (expected: false)"
+say NorAssignment
+
+put 0 nor "no" into NorAssignment
+say "Assignment via nor (expected: true)"
+say NorAssignment

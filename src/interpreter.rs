@@ -275,6 +275,15 @@ impl<'a> Interpreter<'a> {
                             self.eval_expr(e2)?
                         }
                     }
+                    Logical::Nor(e1, e2) => {
+                        let v1 = self.eval_expr(e1)?;
+                        if v1.coerce_boolean() {
+                            Value::Boolean(false)
+                        } else {
+                            let v2 = self.eval_expr(e2)?;
+                            Value::Boolean(!v2.coerce_boolean())
+                        }
+                    }
                 }
             }
         };

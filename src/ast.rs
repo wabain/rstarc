@@ -70,6 +70,7 @@ pub enum Comparator {
 pub enum Logical {
     And(Expr, Expr),
     Or(Expr, Expr),
+    Nor(Expr, Expr),
 }
 
 pub enum LValue {

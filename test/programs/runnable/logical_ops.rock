@@ -1,4 +1,5 @@
 (NOTE: This is generated code. Apply changes to logical_ops.py and recompile)
+
 (Test logic tables and short-circuiting)
 
 SayTrue takes ArgId
@@ -48,3 +49,24 @@ if false or SayFalse taking "  or(0,0): eval2"
     say "! or(0,0): TRUE"
 else
     say "  or(0,0): FALSE"
+
+if true nor SayTrue taking "  nor(1,1): eval2"
+    say "! nor(1,1): TRUE"
+else
+    say "  nor(1,1): FALSE"
+
+if false nor SayTrue taking "  nor(0,1): eval2"
+    say "! nor(0,1): TRUE"
+else
+    say "  nor(0,1): FALSE"
+
+if true nor SayFalse taking "  nor(1,0): eval2"
+    say "! nor(1,0): TRUE"
+else
+    say "  nor(1,0): FALSE"
+
+if false nor SayFalse taking "  nor(0,0): eval2"
+    say "  nor(0,0): TRUE"
+else
+    say "! nor(0,0): FALSE"
+
