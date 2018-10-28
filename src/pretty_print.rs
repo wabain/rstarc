@@ -58,9 +58,11 @@ impl PrettyPrint for Statement {
             }
             StatementKind::Condition(cond, statements, else_statements) => {
                 pp!(out, "If ", pp cond, "\n");
-                pp_block(out, statements)?;
+                pp_block_no_terminal(out, statements)?;
 
-                if !else_statements.is_empty() {
+                if else_statements.is_empty() {
+                    pp!(out, "\n");
+                } else {
                     pp!(out, "Else\n");
                     pp_block(out, else_statements)?;
                 }
@@ -141,7 +143,7 @@ impl PrettyPrint for Comparison {
         write!(out, " ")?;
         match comparator {
             Comparator::Is => write!(out, "is")?,
-            Comparator::IsNot => write!(out, "is not")?,
+            Comparator::IsNot => write!(out, "isn't")?,
             Comparator::IsGreaterThan => write!(out, "is greater than")?,
             Comparator::IsLessThan => write!(out, "is less than")?,
             Comparator::IsAsGreatAs => write!(out, "is as great as")?,
@@ -177,9 +179,16 @@ impl PrettyPrint for Variable {
 fn pp_block<W>(out: &mut W, statements: &[Statement]) -> io::Result<()>
     where W: io::Write
 {
+    pp_block_no_terminal(out, statements)?;
+    pp!(out, "\n");
+    Ok(())
+}
+
+fn pp_block_no_terminal<W>(out: &mut W, statements: &[Statement]) -> io::Result<()>
+    where W: io::Write
+{
     for statement in statements {
         pp!(out, pp statement);
     }
-    pp!(out, "\n");
     Ok(())
 }

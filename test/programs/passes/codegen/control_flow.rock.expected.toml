@@ -9,12 +9,11 @@ Say "if, no else"
 
 If false is true
 Say "FAILED: if with else"
-
 Else
 Say "if with else"
 
 Put 0 into X
-While X is not 3
+While X isn't 3
 Say "While loop"
 Say X
 Build X up
