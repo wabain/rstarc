@@ -6,6 +6,7 @@ fname = os.path.basename(__file__)
 binary_ops = [
     ('and', lambda x, y: x and y),
     ('or', lambda x, y: x or y),
+    ('nor', lambda x, y: (not x) and (not y)),
 ]
 
 binary_inputs = [

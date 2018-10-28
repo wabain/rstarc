@@ -652,6 +652,37 @@ impl<'prog> IRBuilder<'prog> {
 
                         self.emit_label(else_label);
                     }
+                    Logical::Nor(c1, c2) => {
+                        // pseudo-code:
+                        //  if v1:
+                        //      return false
+                        //  if v2:
+                        //      return false
+                        //  return true
+                        let nor_label = self.label("nor");
+                        let nor_false_label = self.label("nor_false");
+                        let nor_true_label = self.label("nor_true");
+                        let nor_end_label = self.label("nor_end");
+
+                        let v1 = self.emit_expr(None, c1);
+                        self.emit(SimpleIR::JumpIf(v1, nor_false_label, nor_label));
+
+                        self.emit_label(nor_label);
+                        let v2 = self.emit_expr(None, c2);
+                        self.emit(SimpleIR::JumpIf(v2, nor_false_label, nor_true_label));
+
+                        self.emit_label(nor_true_label);
+                        let lit_true = lang_constructs::Value::Boolean(true);
+                        self.emit(SimpleIR::Store(out.clone(), IRValue::Literal(lit_true)));
+                        self.emit(SimpleIR::Jump(nor_end_label));
+
+                        self.emit_label(nor_false_label);
+                        let lit_false = lang_constructs::Value::Boolean(false);
+                        self.emit(SimpleIR::Store(out.clone(), IRValue::Literal(lit_false)));
+                        self.emit(SimpleIR::Jump(nor_end_label));
+
+                        self.emit_label(nor_end_label);
+                    }
                 }
 
                 if let Some(dst) = need_final_assign {

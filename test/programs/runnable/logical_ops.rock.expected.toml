@@ -16,4 +16,10 @@ stdout = """
   or(1,0): TRUE
   or(0,0): eval2
   or(0,0): FALSE
+  nor(1,1): FALSE
+  nor(0,1): eval2
+  nor(0,1): FALSE
+  nor(1,0): FALSE
+  nor(0,0): eval2
+  nor(0,0): TRUE
 """

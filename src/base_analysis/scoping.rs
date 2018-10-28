@@ -329,7 +329,9 @@ impl<'a, 'prog: 'a> UseObserver<'a, 'prog> {
 
             Expr::Logical(logical) => {
                 match logical.as_ref() {
-                    Logical::And(e1, e2) | Logical::Or(e1, e2) => {
+                    Logical::And(e1, e2) |
+                    Logical::Or(e1, e2) |
+                    Logical::Nor(e1, e2) => {
                         self.observe_expr(e1);
                         self.observe_expr(e2);
                     }

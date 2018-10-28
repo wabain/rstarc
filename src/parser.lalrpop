@@ -66,6 +66,8 @@ Expr: ast::Expr = {
         ast::Expr::logical(ast::Logical::And(e1, e2)),
     <e1:ComparisonExpr> "Or" <e2:Expr> =>
         ast::Expr::logical(ast::Logical::Or(e1, e2)),
+    <e1:ComparisonExpr> "Nor" <e2:Expr> =>
+        ast::Expr::logical(ast::Logical::Nor(e1, e2)),
     ComparisonExpr => <>,
 }
 
@@ -213,6 +215,7 @@ extern {
         "Back" => lexer::Token::Back,
         "And" => lexer::Token::And,
         "Or" => lexer::Token::Or,
+        "Nor" => lexer::Token::Nor,
 
         EOF => lexer::Token::EOF,
     }

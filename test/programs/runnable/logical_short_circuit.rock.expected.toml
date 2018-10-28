@@ -8,4 +8,8 @@ Assignment via and (expected: some value)
 some value
 Assignment via or (expected: some value)
 some value
+Assignment via nor (expected: false)
+false
+Assignment via nor (expected: true)
+true
 """

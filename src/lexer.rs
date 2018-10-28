@@ -82,6 +82,7 @@ pub enum Token {
     Back,
     And,
     Or,
+    Nor,
 
     EOF,
 }
@@ -220,6 +221,7 @@ impl fmt::Display for Token {
             Token::Back => write!(f, "back"),
             Token::And => write!(f, "and"),
             Token::Or => write!(f, "or"),
+            Token::Nor => write!(f, "nor"),
 
             Token::EOF => write!(f, "<eof>"),
         }
@@ -780,6 +782,7 @@ impl<'a> TokenStream<'a> {
 
             "and" => Token::And,
             "or" => Token::Or,
+            "nor" => Token::Nor,
 
             _ => return None,
         };

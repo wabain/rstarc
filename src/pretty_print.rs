@@ -129,6 +129,7 @@ impl PrettyPrint for Logical {
         match *self {
             Logical::And(ref c1, ref c2) => pp!(out, pp c1, " and ", pp c2),
             Logical::Or(ref c1, ref c2) => pp!(out, pp c1, " or ", pp c2),
+            Logical::Nor(ref c1, ref c2) => pp!(out, pp c1, " or ", pp c2),
         }
 
         Ok(())
