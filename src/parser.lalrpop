@@ -16,7 +16,9 @@ TermStatement: ast::Statement = {
 Statement: ast::StatementKind = {
     "Put" <e:Expr> "Into" <v:LValue> => ast::StatementKind::Assign(v, e),
 
-    // FIXME: Spec is unclear on what literals are allowed here. All of them?
+    // The spec talks about "Literal Words" being allowed here without defining
+    // the term, but its examples show numeric literals being allowed, so I'm
+    // taking it to mean any literal
     <v:LValue> "Is" <e:Literal> => ast::StatementKind::Assign(v, e),
     <v:LValue> "Was" <e:Literal> => ast::StatementKind::Assign(v, e),
 
