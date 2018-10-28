@@ -129,6 +129,7 @@ impl PrettyPrint for Conditional {
             Conditional::Comparison(ref comp) => comp.pretty_print(out)?,
             Conditional::And(ref c1, ref c2) => pp!(out, pp c1, " and ", pp c2),
             Conditional::Or(ref c1, ref c2) => pp!(out, pp c1, " or ", pp c2),
+            Conditional::Nor(ref c1, ref c2) => pp!(out, pp c1, " nor ", pp c2),
         }
 
         Ok(())

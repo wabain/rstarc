@@ -595,6 +595,7 @@ impl<'prog> IRBuilder<'prog> {
                 self.emit_label(or_label);
                 self.emit_cond(c2, then_label, else_label);
             }
+            Conditional::Nor(..) => unimplemented!(),
         }
     }
 

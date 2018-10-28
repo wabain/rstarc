@@ -347,6 +347,7 @@ impl<'a, 'prog: 'a> UseObserver<'a, 'prog> {
                 self.observe_cond(c1);
                 self.observe_cond(c2);
             }
+            ast::Conditional::Nor(..) => unimplemented!(),
         }
     }
 

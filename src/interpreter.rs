@@ -371,6 +371,7 @@ impl<'a> Interpreter<'a> {
             Conditional::Comparison(comp) => self.eval_comparison(comp)?,
             Conditional::And(a, b) => self.eval_cond(a)? && self.eval_cond(b)?,
             Conditional::Or(a, b) => self.eval_cond(a)? || self.eval_cond(b)?,
+            Conditional::Nor(..) => unimplemented!(),
         };
         Ok(compared)
     }

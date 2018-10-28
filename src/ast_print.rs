@@ -131,6 +131,7 @@ impl AstPrint for Conditional {
             Conditional::Comparison(ref comp) => comp.ast_print(out, indent)?,
             Conditional::And(ref c1, ref c2) => node!(out, indent, "And", c1, c2),
             Conditional::Or(ref c1, ref c2) => node!(out, indent, "Or", c1, c2),
+            Conditional::Nor(..) => unimplemented!(),
         }
 
         Ok(())

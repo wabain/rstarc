@@ -46,6 +46,21 @@ pub enum Conditional {
     Comparison(Comparison),
     And(Box<Conditional>, Box<Conditional>),
     Or(Box<Conditional>, Box<Conditional>),
+    Nor(Box<Conditional>, Box<Conditional>),
+}
+
+impl Conditional {
+    pub fn and(a: Conditional, b: Conditional) -> Self {
+        Conditional::And(Box::new(a), Box::new(b))
+    }
+
+    pub fn or(a: Conditional, b: Conditional) -> Self {
+        Conditional::Or(Box::new(a), Box::new(b))
+    }
+
+    pub fn nor(a: Conditional, b: Conditional) -> Self {
+        Conditional::Nor(Box::new(a), Box::new(b))
+    }
 }
 
 #[derive(Debug)]

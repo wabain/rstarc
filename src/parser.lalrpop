@@ -112,9 +112,11 @@ FuncCallExpr: ast::Expr = {
 Conditional: ast::Conditional = {
     Comparison => ast::Conditional::Comparison(<>),
     <e1:PreConjunctionComparison> "And" <e2:Conditional> =>
-        ast::Conditional::And(Box::new(ast::Conditional::Comparison(e1)), Box::new(e2)),
+        ast::Conditional::and(ast::Conditional::Comparison(e1), e2),
     <e1:Comparison> "Or" <e2:Conditional> =>
-        ast::Conditional::Or(Box::new(ast::Conditional::Comparison(e1)), Box::new(e2)),
+        ast::Conditional::or(ast::Conditional::Comparison(e1), e2),
+    <e1:Comparison> "Nor" <e2:Conditional> =>
+        ast::Conditional::nor(ast::Conditional::Comparison(e1), e2),
 }
 
 Comparison: ast::Comparison = {
@@ -220,6 +222,7 @@ extern {
         "Back" => lexer::Token::Back,
         "And" => lexer::Token::And,
         "Or" => lexer::Token::Or,
+        "Nor" => lexer::Token::Nor,
 
         EOF => lexer::Token::EOF,
     }
