@@ -198,7 +198,8 @@ def needs_refresh(refresh, test_results):
 class TestRegistry:
     _registered = {
         'tokens': lambda src: ['internal', '--debug-print=tokens', src],
-        'pretty': lambda src: ['internal', '--debug-print=pretty', src],
+        'pretty.fromsource': lambda src: ['internal', '--debug-print=pretty', src],
+        'pretty.iterated': lambda src: ['internal', '--debug-print=pretty-iterated', src],
         'ast': lambda src: ['internal', '--debug-print=ast', src],
         'ir': lambda src: ['internal', '--debug-print=ir', src],
         'run.exec': lambda src: ['run', src],

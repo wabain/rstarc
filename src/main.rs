@@ -1,6 +1,7 @@
 #[macro_use] extern crate clap;
 #[macro_use] extern crate lalrpop_util;
 #[macro_use] extern crate lazy_static;
+extern crate bytes;
 extern crate llvm_sys as llvm;
 extern crate regex;
 extern crate tempdir;
@@ -48,21 +49,23 @@ fn main() {
     };
 
     match res {
-        Err(err) => {
-            eprintln!("{}", err);
-
-            if let Some((start, end)) = err.span() {
-                if let Some(t) = tokenizer {
-                    eprintln!("");
-                    eprint_location(&t, start, end);
-                }
-            }
-
-            process::exit(1);
-        }
+        Err(err) => report_error_and_exit(err, &tokenizer),
         Ok(Some(code)) => process::exit(code),
         Ok(None) => {}
     }
+}
+
+fn report_error_and_exit(err: RuntimeError, tokenizer: &Option<Tokenizer>) -> ! {
+    eprintln!("{}", err);
+
+    if let Some((start, end)) = err.span() {
+        if let Some(t) = tokenizer {
+            eprintln!("");
+            eprint_location(&t, start, end);
+        }
+    }
+
+    process::exit(1);
 }
 
 fn build_cli() -> clap::App<'static, 'static> {
@@ -119,7 +122,7 @@ fn build_cli() -> clap::App<'static, 'static> {
             .about("Internal debugging utilities.")
             .args(&[arg_source, arg_opt_level])
             .arg(clap::Arg::from_usage("-d, --debug-print <FORMAT> 'Print debug output.'")
-                .possible_values(&["tokens", "pretty", "ast", "ir", "llvm"]))
+                .possible_values(&["tokens", "pretty", "pretty-iterated", "ast", "ir", "llvm"]))
         )
 }
 
@@ -217,7 +220,7 @@ enum ExecutionMode {
 #[derive(Debug, Copy, Clone, PartialEq)]
 enum DebugOutputFormat {
     Tokens,
-    Pretty,
+    Pretty { iterated: bool },
     AST,
     IR,
     LLVM,
@@ -269,7 +272,8 @@ fn build_action(matches: &clap::ArgMatches) -> Action {
 
             let debug_output = match submatches.value_of("debug-print") {
                 Some("tokens") => Some(DebugOutputFormat::Tokens),
-                Some("pretty") => Some(DebugOutputFormat::Pretty),
+                Some("pretty") => Some(DebugOutputFormat::Pretty { iterated: false }),
+                Some("pretty-iterated") => Some(DebugOutputFormat::Pretty { iterated: true }),
                 Some("ast") => Some(DebugOutputFormat::AST),
                 Some("ir") => Some(DebugOutputFormat::IR),
                 Some("llvm") => Some(DebugOutputFormat::LLVM),
@@ -410,8 +414,16 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<Option<i32>, RuntimeErr
     }
 
     match debug_output {
-        Some(DebugOutputFormat::Pretty) => {
-            pretty_print::pretty_print_program(io::stdout(), &tree)?;
+        Some(DebugOutputFormat::Pretty { iterated }) => {
+            let pretty_tree;
+            let out_tree = if !iterated {
+                &tree
+            } else {
+                pretty_tree = reparse_pretty_tree_or_exit(&tree)?;
+                &pretty_tree
+            };
+
+            pretty_print::pretty_print_program(io::stdout(), out_tree)?;
         }
         Some(DebugOutputFormat::AST) => {
             ast_print::ast_print_program(io::stdout(), &tree)?;
@@ -485,6 +497,33 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<Option<i32>, RuntimeErr
     }
 
     Ok(None)
+}
+
+/// Capture the output of the pretty printer and reparse it, outputting the
+/// pretty-print of the reparsed AST. This function exits on failure to
+/// reparse so that it can display syntax errors using the right tokenizer.
+/// This is a bit hacky but this functionality is only really intended for
+/// testing the compiler anyway.
+fn reparse_pretty_tree_or_exit(tree: &[ast::Statement])
+    -> Result<Vec<ast::Statement>, RuntimeError>
+{
+    use bytes::BufMut;
+    let mut buf_stream = Vec::new().writer();
+
+    pretty_print::pretty_print_program(&mut buf_stream, tree)?;
+
+    let pretty_src = String::from_utf8(buf_stream.into_inner())
+        .expect("Non-UTF8 output from pretty printer");
+
+    let tokenizer = Tokenizer::new(pretty_src);
+
+    match parser::ProgramParser::new().parse(tokenizer.tokenize()) {
+        Ok(tree) => Ok(tree),
+        Err(e) => {
+            eprintln!("Failed to reparse pretty printed output:");
+            report_error_and_exit(e.into(), &Some(tokenizer))
+        }
+    }
 }
 
 // FIXME: For now, hardcode a recursion into the runtime release target
