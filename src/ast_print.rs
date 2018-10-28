@@ -5,7 +5,7 @@
 //! regular.
 
 use io;
-use ast::{Statement, StatementKind, Expr, Conditional, Comparison, LValue, Variable};
+use ast::{Statement, StatementKind, Expr, Logical, Comparison, LValue, Variable};
 
 macro_rules! node {
     ($out:ident, $indent:expr, $e:expr, $($toks:tt)*) => {{
@@ -119,18 +119,19 @@ impl AstPrint for Expr {
             Expr::Sub(ref e1, ref e2) => node!(out, indent, "Sub", e1, e2),
             Expr::Mul(ref e1, ref e2) => node!(out, indent, "Mul", e1, e2),
             Expr::Div(ref e1, ref e2) => node!(out, indent, "Div", e1, e2),
+
+            Expr::Logical(ref logical) => logical.ast_print(out, indent)?,
         }
 
         Ok(())
     }
 }
 
-impl AstPrint for Conditional {
+impl AstPrint for Logical {
     fn ast_print<W>(&self, out: &mut W, indent: usize) -> io::Result<()> where W: io::Write {
         match *self {
-            Conditional::Comparison(ref comp) => comp.ast_print(out, indent)?,
-            Conditional::And(ref c1, ref c2) => node!(out, indent, "And", c1, c2),
-            Conditional::Or(ref c1, ref c2) => node!(out, indent, "Or", c1, c2),
+            Logical::And(ref c1, ref c2) => node!(out, indent, "And", c1, c2),
+            Logical::Or(ref c1, ref c2) => node!(out, indent, "Or", c1, c2),
         }
 
         Ok(())

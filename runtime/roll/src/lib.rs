@@ -182,6 +182,28 @@ pub extern fn roll_coerce_function(value: *mut VoidPtr) -> *const VoidPtr {
     }
 }
 
+/// Keep in sync with src/lang_constructs.rs
+#[no_mangle]
+pub extern fn roll_coerce_boolean(value: *mut VoidPtr) -> u8 {
+    let value = match value_repr::Scalar::new(value).deref_rec() {
+        RockstarValue::String(ref s) => string_to_bool(s).unwrap_or(false),
+        RockstarValue::Number(n) => !(n == 0.),
+        RockstarValue::Boolean(b) => b,
+        RockstarValue::Function(_) => true,
+        RockstarValue::Null => false,
+        RockstarValue::Mysterious => false,
+    };
+    if value { 1 } else { 0 }
+}
+
+fn string_to_bool(s: &str) -> Option<bool> {
+    match s {
+        "true" | "right" | "yes" | "ok" => Some(true),
+        "false" | "wrong" | "no" | "lies" => Some(false),
+        _ => None
+    }
+}
+
 #[inline]
 fn new_number(value: f64) -> u64 {
     let p = alloc::alloc(16) as *mut u64;

@@ -1,0 +1,19 @@
+[tests]
+enabled = ["run"]
+
+[run]
+returncode = "0"
+stdout = """
+  and(1,1): eval2
+  and(1,1): TRUE
+  and(0,1): FALSE
+  and(1,0): eval2
+  and(1,0): FALSE
+  and(0,0): FALSE
+  or(1,1): TRUE
+  or(0,1): eval2
+  or(0,1): TRUE
+  or(1,0): TRUE
+  or(0,0): eval2
+  or(0,0): FALSE
+"""

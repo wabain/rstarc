@@ -22,9 +22,9 @@ pub enum StatementKind {
     Break,
     Return(Expr),
 
-    Condition(Conditional, Vec<Statement>, Vec<Statement>),
-    While(Conditional, Vec<Statement>),
-    Until(Conditional, Vec<Statement>),
+    Condition(Expr, Vec<Statement>, Vec<Statement>),
+    While(Expr, Vec<Statement>),
+    Until(Expr, Vec<Statement>),
     FuncDef(Variable, Vec<Variable>, Vec<Statement>),
 }
 
@@ -39,13 +39,18 @@ pub enum Expr {
     Sub(Box<Expr>, Box<Expr>),
     Mul(Box<Expr>, Box<Expr>),
     Div(Box<Expr>, Box<Expr>),
+
+    Logical(Box<Logical>),
 }
 
-#[derive(Debug)]
-pub enum Conditional {
-    Comparison(Comparison),
-    And(Box<Conditional>, Box<Conditional>),
-    Or(Box<Conditional>, Box<Conditional>),
+impl Expr {
+    pub fn compare(comparison: Comparison) -> Self {
+        Expr::Compare(Box::new(comparison))
+    }
+
+    pub fn logical(logical: Logical) -> Self {
+        Expr::Logical(Box::new(logical))
+    }
 }
 
 #[derive(Debug)]
@@ -59,6 +64,12 @@ pub enum Comparator {
     IsLessThan,
     IsAsGreatAs,
     IsAsLittleAs,
+}
+
+#[derive(Debug)]
+pub enum Logical {
+    And(Expr, Expr),
+    Or(Expr, Expr),
 }
 
 pub enum LValue {

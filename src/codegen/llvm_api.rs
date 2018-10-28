@@ -229,6 +229,13 @@ impl LLVMHandle {
         self.build_call(fn_val, &mut [arg], name)
     }
 
+    pub fn build_call_coerce_boolean(&mut self, arg: LLVMValueRef, name: &str)
+        -> LLVMValueRef
+    {
+        let fn_val = self.builtin_ptr("roll_coerce_boolean");
+        self.build_call(fn_val, &mut [arg], name)
+    }
+
     pub fn builtin_ptr(&self, name: &str) -> LLVMValueRef {
         *self.builtins.get(name).expect("Builtin lookup")
     }

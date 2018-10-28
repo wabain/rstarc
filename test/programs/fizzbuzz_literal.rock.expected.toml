@@ -168,30 +168,32 @@ main:
 .loop_start1:
   Counter := add Counter, 1
   t1 := call Modulus, [Counter, Fizz]
-  t2 := is t1, "0"
-  jumpif t2, .and5, .else4
+  dynamic_t0 := is t1, "0"
+  jumpif dynamic_t0, .and5, .and_else6
 .and5:
-  t3 := call Modulus, [Counter, Buzz]
-  t4 := is t3, "0"
-  jumpif t4, .then3, .else4
+  t2 := call Modulus, [Counter, Buzz]
+  dynamic_t0 := is t2, "0"
+  jump .and_else6
+.and_else6:
+  jumpif dynamic_t0, .then3, .else4
 .then3:
   say "FizzBuzz!"
   jump .loop_check0
 .else4:
-  t5 := call Modulus, [Counter, Fizz]
-  t6 := is t5, "0"
-  jumpif t6, .then6, .else7
-.then6:
+  t3 := call Modulus, [Counter, Fizz]
+  t4 := is t3, "0"
+  jumpif t4, .then7, .else8
+.then7:
   say "Fizz!"
   jump .loop_check0
-.else7:
-  t7 := call Modulus, [Counter, Buzz]
-  t8 := is t7, "0"
-  jumpif t8, .then8, .else9
-.then8:
+.else8:
+  t5 := call Modulus, [Counter, Buzz]
+  t6 := is t5, "0"
+  jumpif t6, .then9, .else10
+.then9:
   say "Buzz!"
   jump .loop_check0
-.else9:
+.else10:
   say Counter
   jump .loop_check0
 .loop_end2:

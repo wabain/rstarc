@@ -66,6 +66,20 @@ impl<F: fmt::Debug> Value<F> {
         }.into()
     }
 
+    /// "Truthiness" coercion
+    ///
+    /// Keep in sync with roll_coerce_boolean in the runtime
+    pub fn coerce_boolean(&self) -> bool {
+        match *self {
+            Value::String(ref s) => string_to_bool(s).unwrap_or(false),
+            Value::Number(n) => rockstar_number_to_bool(n),
+            Value::Boolean(b) => b,
+            Value::Function(_) => true,
+            Value::Null => false,
+            Value::Mysterious => false,
+        }
+    }
+
     /// String coercion, as performed by `plus` and `times`
     pub fn coerce_string(&self) -> Option<Cow<str>> {
         match self {
@@ -130,8 +144,7 @@ impl<F: fmt::Debug> Value<F> {
                     unreachable!("type precedence");
                 }
                 Value::Boolean(_) => {
-                    // NaN is truthy
-                    let to_bool = !(n1 == 0.);
+                    let to_bool = rockstar_number_to_bool(n1);
                     Some((Value::Boolean(to_bool), v2))
                 }
                 Value::Function(_) => None,
@@ -178,6 +191,11 @@ impl<F> Value<F> where F: fmt::Debug + fmt::Display {
             Value::Mysterious => "mysterious",
         }.into()
     }
+}
+
+fn rockstar_number_to_bool(n: RockstarNumber) -> bool {
+    // NaN is truthy
+    !(n == 0.)
 }
 
 fn string_to_bool(s: &str) -> Option<bool> {

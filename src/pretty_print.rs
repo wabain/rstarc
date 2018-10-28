@@ -1,5 +1,5 @@
 use io;
-use ast::{Statement, StatementKind, Expr, Conditional, Comparison, Comparator, LValue, Variable};
+use ast::{Statement, StatementKind, Expr, Logical, Comparison, Comparator, LValue, Variable};
 
 macro_rules! pp {
     ($out:ident, $($toks:tt)*) => ({
@@ -117,18 +117,18 @@ impl PrettyPrint for Expr {
             Expr::Sub(ref e1, ref e2) => pp!(out, pp e1, " minus ", pp e2),
             Expr::Mul(ref e1, ref e2) => pp!(out, pp e1, " times ", pp e2),
             Expr::Div(ref e1, ref e2) => pp!(out, pp e1, " over ", pp e2),
+            Expr::Logical(ref logical) => logical.pretty_print(out)?,
         }
 
         Ok(())
     }
 }
 
-impl PrettyPrint for Conditional {
+impl PrettyPrint for Logical {
     fn pretty_print<W>(&self, out: &mut W) -> io::Result<()> where W: io::Write {
         match *self {
-            Conditional::Comparison(ref comp) => comp.pretty_print(out)?,
-            Conditional::And(ref c1, ref c2) => pp!(out, pp c1, " and ", pp c2),
-            Conditional::Or(ref c1, ref c2) => pp!(out, pp c1, " or ", pp c2),
+            Logical::And(ref c1, ref c2) => pp!(out, pp c1, " and ", pp c2),
+            Logical::Or(ref c1, ref c2) => pp!(out, pp c1, " or ", pp c2),
         }
 
         Ok(())

@@ -1,0 +1,50 @@
+(NOTE: This is generated code. Apply changes to logical_ops.py and recompile)
+(Test logic tables and short-circuiting)
+
+SayTrue takes ArgId
+    say ArgId
+    give back true
+
+SayFalse takes ArgId
+    say ArgId
+    give back false
+
+if true and SayTrue taking "  and(1,1): eval2"
+    say "  and(1,1): TRUE"
+else
+    say "! and(1,1): FALSE"
+
+if false and SayTrue taking "  and(0,1): eval2"
+    say "! and(0,1): TRUE"
+else
+    say "  and(0,1): FALSE"
+
+if true and SayFalse taking "  and(1,0): eval2"
+    say "! and(1,0): TRUE"
+else
+    say "  and(1,0): FALSE"
+
+if false and SayFalse taking "  and(0,0): eval2"
+    say "! and(0,0): TRUE"
+else
+    say "  and(0,0): FALSE"
+
+if true or SayTrue taking "  or(1,1): eval2"
+    say "  or(1,1): TRUE"
+else
+    say "! or(1,1): FALSE"
+
+if false or SayTrue taking "  or(0,1): eval2"
+    say "  or(0,1): TRUE"
+else
+    say "! or(0,1): FALSE"
+
+if true or SayFalse taking "  or(1,0): eval2"
+    say "  or(1,0): TRUE"
+else
+    say "! or(1,0): FALSE"
+
+if false or SayFalse taking "  or(0,0): eval2"
+    say "! or(0,0): TRUE"
+else
+    say "  or(0,0): FALSE"

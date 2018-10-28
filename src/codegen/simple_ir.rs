@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 
 use base_analysis::{ScopeId, ScopeMap, VariableType};
-use ast::{self, Expr, Conditional, Statement, StatementKind, Pos};
+use ast::{self, Expr, Logical, Statement, StatementKind, Pos};
 use lang_constructs::{self, LangVariable};
 
 use base_analysis::CompileError;
@@ -29,7 +29,7 @@ pub fn dump_ir(program: &[Statement], scope_map: &ScopeMap)
     }
 
     println!("main:");
-    for op in &ir.main {
+    for op in &ir.main.ops {
         dump_ir_op(0, op);
     }
 
@@ -52,7 +52,7 @@ pub fn dump_ir(program: &[Statement], scope_map: &ScopeMap)
         let fname = format!("{}", func_def.initial_var).replace(" ", "_");
         println!("f{}_{}:", func_def.scope_id, fname);
 
-        for op in func_body {
+        for op in &func_body.ops {
             dump_ir_op(func_def.scope_id, op);
         }
     }
@@ -172,6 +172,7 @@ fn verify_ir_func<'a>(scope_map: &ScopeMap,
                 }
                 vals_seen.insert(v);
             }
+            IRLValue::LocalDynTemp(_) |
             IRLValue::Variable(..) => {
                 vals_seen.insert(v);
                 handle_value(&v.clone().into())?;
@@ -245,10 +246,26 @@ impl fmt::Display for LocalTemp {
     }
 }
 
+#[derive(Debug, Hash, PartialEq, Eq, Copy, Clone)]
+pub struct LocalDynTemp(u64);
+
+impl LocalDynTemp {
+    pub fn new(id: u64) -> Self {
+        LocalDynTemp(id)
+    }
+}
+
+impl fmt::Display for LocalDynTemp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "dynamic_t{}", self.0)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum IRValue<'prog> {
     Literal(LiteralValue),
     LocalTemp(LocalTemp),
+    LocalDynTemp(LocalDynTemp),
     Variable(LangVariable<'prog>, ScopeId, Pos),
 }
 
@@ -280,6 +297,7 @@ impl<'a> fmt::Display for IRValuePrinter<'a> {
         match self.ir_value.as_ref() {
             IRValue::Literal(lit) => write!(f, "{}", lit.repr_format()),
             IRValue::LocalTemp(t) => write!(f, "{}", t),
+            IRValue::LocalDynTemp(t) => write!(f, "{}", t),
             IRValue::Variable(v, i, _pos) => {
                 let is_local = self.ref_scope.map_or(false, |r| r == *i);
                 if is_local {
@@ -295,6 +313,7 @@ impl<'a> fmt::Display for IRValuePrinter<'a> {
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub enum IRLValue<'prog> {
     LocalTemp(LocalTemp),
+    LocalDynTemp(LocalDynTemp),
     Variable(LangVariable<'prog>, ScopeId, Pos),
 }
 
@@ -319,6 +338,7 @@ impl<'prog> Into<IRValue<'prog>> for IRLValue<'prog> {
     fn into(self) -> IRValue<'prog> {
         match self {
             IRLValue::LocalTemp(t) => IRValue::LocalTemp(t),
+            IRLValue::LocalDynTemp(t) => IRValue::LocalDynTemp(t),
             IRLValue::Variable(v, i, p) => IRValue::Variable(v, i, p),
         }
     }
@@ -327,8 +347,8 @@ impl<'prog> Into<IRValue<'prog>> for IRLValue<'prog> {
 pub struct IRProgram<'prog> {
     pub scope_map: &'prog ScopeMap<'prog>,
     pub globals: Vec<(LangVariable<'prog>, ScopeId)>,
-    pub main: Vec<SimpleIR<'prog>>,
-    pub funcs: Vec<(IRFunc<'prog>, Vec<SimpleIR<'prog>>)>,
+    pub main: IRBody<'prog>,
+    pub funcs: Vec<(IRFunc<'prog>, IRBody<'prog>)>,
 }
 
 #[derive(Debug)]
@@ -336,6 +356,11 @@ pub struct IRFunc<'prog> {
     pub scope_id: ScopeId,
     pub initial_var: LangVariable<'prog>,
     pub args: Vec<IRLValue<'prog>>,
+}
+
+pub struct IRBody<'prog> {
+    pub dyn_temp_count: u64,
+    pub ops: Vec<SimpleIR<'prog>>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -386,6 +411,7 @@ struct IRBuilder<'prog> {
     ref_scope: ScopeId,
     label_id: u64,
     temp_id: u64,
+    dyn_temp_id: u64,
     ops: Vec<SimpleIR<'prog>>,
     loop_labels: Vec<[Label; 2]>,
 }
@@ -397,8 +423,16 @@ impl<'prog> IRBuilder<'prog> {
             ref_scope,
             label_id: 0,
             temp_id: 0,
+            dyn_temp_id: 0,
             ops: Vec::new(),
             loop_labels: Vec::new(),
+        }
+    }
+
+    fn into_ir_body(self) -> IRBody<'prog> {
+        IRBody {
+            dyn_temp_count: self.dyn_temp_id,
+            ops: self.ops,
         }
     }
 
@@ -477,6 +511,12 @@ impl<'prog> IRBuilder<'prog> {
         let id = self.temp_id;
         self.temp_id += 1;
         IRLValue::LocalTemp(LocalTemp(id))
+    }
+
+    fn dyn_temp(&mut self) -> IRLValue<'prog> {
+        let id = self.dyn_temp_id;
+        self.dyn_temp_id += 1;
+        IRLValue::LocalDynTemp(LocalDynTemp(id))
     }
 
     fn label(&mut self, name_hint: &'static str) -> Label {
@@ -566,34 +606,60 @@ impl<'prog> IRBuilder<'prog> {
 
                 dst.into()
             }
-        }
-    }
 
-    fn emit_cond(&mut self,
-                 cond: &'prog ast::Conditional,
-                 then_label: Label,
-                 else_label: Label)
-    {
-        match cond {
-            Conditional::Comparison(comp) => {
-                let dst = self.emit_comparison(None, comp);
-                self.emit(SimpleIR::JumpIf(dst.into(), then_label, else_label));
-            }
-            Conditional::And(c1, c2) => {
-                let and_label = self.label("and");
+            Expr::Logical(logical) => {
+                // If dst is a static temporary, we'll need to operate on a
+                // dynamic temporary and then emit a Store
+                let need_final_assign;
+                let out;
+                match dst {
+                    Some(IRLValue::LocalDynTemp(_)) | Some(IRLValue::Variable(..)) => {
+                        need_final_assign = None;
+                        out = dst.unwrap();
+                    }
+                    Some(IRLValue::LocalTemp(_)) => {
+                        need_final_assign = dst;
+                        out = self.dyn_temp();
+                    }
+                    None => {
+                        need_final_assign = None;
+                        out = self.dyn_temp();
+                    }
+                };
 
-                self.emit_cond(c1, and_label, else_label);
+                match logical.as_ref() {
+                    Logical::And(c1, c2) => {
+                        let and_label = self.label("and");
+                        let else_label = self.label("and_else");
 
-                self.emit_label(and_label);
-                self.emit_cond(c2, then_label, else_label);
-            }
-            Conditional::Or(c1, c2) => {
-                let or_label = self.label("or");
+                        self.emit_expr(Some(out.clone()), c1);
+                        self.emit(SimpleIR::JumpIf(out.clone().into(), and_label, else_label));
 
-                self.emit_cond(c1, then_label, or_label);
+                        self.emit_label(and_label);
+                        self.emit_expr(Some(out.clone()), c2);
 
-                self.emit_label(or_label);
-                self.emit_cond(c2, then_label, else_label);
+                        self.emit_label(else_label);
+                    }
+                    Logical::Or(c1, c2) => {
+                        let or_label = self.label("or");
+                        let else_label = self.label("or_else");
+
+                        self.emit_expr(Some(out.clone()), c1);
+                        self.emit(SimpleIR::JumpIf(out.clone().into(), else_label, or_label));
+
+                        self.emit_label(or_label);
+                        self.emit_expr(Some(out.clone()), c2);
+
+                        self.emit_label(else_label);
+                    }
+                }
+
+                if let Some(dst) = need_final_assign {
+                    self.emit(SimpleIR::Store(dst.clone(), out.into()));
+                    dst.into()
+                } else {
+                    out.into()
+                }
             }
         }
     }
@@ -615,6 +681,15 @@ impl<'prog> IRBuilder<'prog> {
             a2.into(),
         ));
         dst
+    }
+
+    fn emit_branch(&mut self,
+                   cond: &'prog ast::Expr,
+                   then_label: Label,
+                   else_label: Label)
+    {
+        let dst = self.emit_expr(None, cond);
+        self.emit(SimpleIR::JumpIf(dst.into(), then_label, else_label));
     }
 
     fn emit_scope_initializers(&mut self,
@@ -655,7 +730,7 @@ impl<'prog> IRBuilder<'prog> {
 struct AstAdapter<'prog> {
     scope_map: &'prog ScopeMap<'prog>,
     globals: Vec<(LangVariable<'prog>, ScopeId)>,
-    func_bodies: Vec<(IRFunc<'prog>, Vec<SimpleIR<'prog>>)>,
+    func_bodies: Vec<(IRFunc<'prog>, IRBody<'prog>)>,
 }
 
 impl<'prog> AstAdapter<'prog> {
@@ -676,13 +751,13 @@ impl<'prog> AstAdapter<'prog> {
 
         verify_ir_func(scope_map, 0, &main_builder.ops)?;
         for (func_def, body) in &adapter.func_bodies {
-            verify_ir_func(scope_map, func_def.scope_id, body)?;
+            verify_ir_func(scope_map, func_def.scope_id, &body.ops)?;
         }
 
         Ok(IRProgram {
             scope_map,
             globals: adapter.globals,
-            main: main_builder.ops,
+            main: main_builder.into_ir_body(),
             funcs: adapter.func_bodies,
         })
     }
@@ -765,7 +840,7 @@ impl<'prog> AstAdapter<'prog> {
                     Some(ir_builder.label("if_end"))
                 };
 
-                ir_builder.emit_cond(cond, if_label, else_label);
+                ir_builder.emit_branch(cond, if_label, else_label);
 
                 ir_builder.emit_label(if_label);
                 self.visit_statements(ir_builder, if_block);
@@ -800,14 +875,14 @@ impl<'prog> AstAdapter<'prog> {
 
                 let func_def = IRFunc { initial_var, scope_id, args };
 
-                self.func_bodies.push((func_def, func_builder.ops));
+                self.func_bodies.push((func_def, func_builder.into_ir_body()));
             }
         }
     }
 
     fn handle_loop(&mut self,
                    ir_builder: &mut IRBuilder<'prog>,
-                   cond: &'prog Conditional,
+                   cond: &'prog Expr,
                    loop_while_true: bool,
                    body: &'prog [Statement])
     {
@@ -818,9 +893,9 @@ impl<'prog> AstAdapter<'prog> {
         ir_builder.emit_label(check_label);
 
         if loop_while_true {
-            ir_builder.emit_cond(cond, start_label, end_label);
+            ir_builder.emit_branch(cond, start_label, end_label);
         } else {
-            ir_builder.emit_cond(cond, end_label, start_label);
+            ir_builder.emit_branch(cond, end_label, start_label);
         }
 
         ir_builder.emit_label(start_label);
