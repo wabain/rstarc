@@ -1,0 +1,121 @@
+[tests]
+enabled = ["ast", "pretty", "ir", "run"]
+
+[ast]
+returncode = "0"
+stdout = """
+Assign(
+  X,
+  10,
+),
+Incr(
+  X,
+  3,
+),
+Say(
+  X,
+),
+Decr(
+  X,
+  3,
+),
+Say(
+  X,
+),
+Assign(
+  Y,
+  false,
+),
+Incr(
+  Y,
+  2,
+),
+Say(
+  Y,
+),
+Decr(
+  Y,
+  2,
+),
+Say(
+  Y,
+),
+Incr(
+  Y,
+  3,
+),
+Say(
+  Y,
+),
+Decr(
+  Y,
+  3,
+),
+Say(
+  Y,
+),
+"""
+
+[pretty]
+returncode = "0"
+stdout = """
+Put 10 into X
+Build X up up up
+Say X
+Knock X down down down
+Say X
+Put false into Y
+Build Y up up
+Say Y
+Knock Y down down
+Say Y
+Build Y up up up
+Say Y
+Knock Y down down down
+Say Y
+"""
+
+[ir]
+returncode = "0"
+stdout = """
+main:
+  X := store mysterious
+  Y := store mysterious
+  X := store 10
+  X := add X, 3
+  say X
+  X := add X, -3
+  say X
+  Y := store false
+  Y := add Y, 2
+  say Y
+  Y := add Y, -2
+  say Y
+  Y := add Y, 3
+  say Y
+  Y := add Y, -3
+  say Y
+  return-default
+"""
+
+["run.exec"]
+returncode = "0"
+stdout = """
+13
+10
+2
+0
+3
+0
+"""
+
+["run.interpret"]
+returncode = "0"
+stdout = """
+13
+10
+false
+false
+true
+false
+"""

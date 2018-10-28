@@ -386,8 +386,8 @@ impl<'a, 'prog: 'a> StatementVisitor<'prog> for UseObserver<'a, 'prog> {
                 self.observe_lval(lval, UseType::Write);
                 self.observe_expr(e);
             }
-            StatementKind::Incr(lval) |
-            StatementKind::Decr(lval) => {
+            StatementKind::Incr(lval, _) |
+            StatementKind::Decr(lval, _) => {
                 self.observe_lval(lval, UseType::Write);
             }
             StatementKind::Say(e) => self.observe_expr(e),

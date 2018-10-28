@@ -68,11 +68,11 @@ impl AstPrint for Statement {
             StatementKind::Assign(lval, e) => {
                 node!(out, indent, "Assign", lval, e)
             }
-            StatementKind::Incr(lval) => {
-                node!(out, indent, "Incr", lval)
+            StatementKind::Incr(lval, count) => {
+                node!(out, indent, "Incr", lval, term count)
             }
-            StatementKind::Decr(lval) => {
-                node!(out, indent, "Decr", lval)
+            StatementKind::Decr(lval, count) => {
+                node!(out, indent, "Decr", lval, term count)
             }
             StatementKind::Say(e) => {
                 node!(out, indent, "Say", e)

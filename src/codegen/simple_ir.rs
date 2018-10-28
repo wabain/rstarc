@@ -848,15 +848,15 @@ impl<'prog> AstAdapter<'prog> {
                 let ir_lval = ir_builder.resolve_ast_variable(var);
                 ir_builder.emit_expr(Some(ir_lval), expr);
             }
-            StatementKind::Incr(lval) | StatementKind::Decr(lval) => {
+            StatementKind::Incr(lval, count) | StatementKind::Decr(lval, count) => {
                 let var = resolve_ast_lval(lval);
                 let ir_lval = ir_builder.resolve_ast_variable(var);
 
                 let add_val = match &statement.kind {
                     StatementKind::Incr(..) =>
-                        IRValue::Literal(lang_constructs::Value::Number(1.0)),
+                        IRValue::Literal(lang_constructs::Value::Number(*count as f64)),
                     StatementKind::Decr(..) =>
-                        IRValue::Literal(lang_constructs::Value::Number(-1.0)),
+                        IRValue::Literal(lang_constructs::Value::Number(-(*count as f64))),
                     _ => unreachable!(),
                 };
 
