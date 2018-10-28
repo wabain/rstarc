@@ -155,20 +155,27 @@ impl<'a> Interpreter<'a> {
                 let var = self.lval_to_var(lval);
                 self.set_var(var, value);
             },
-            StatementKind::Incr(lval) | StatementKind::Decr(lval) => {
+            StatementKind::Incr(lval, count) | StatementKind::Decr(lval, count) => {
                 let var = self.lval_to_var(lval);
+                let count = *count;
 
                 let new_var = match self.get_var(&var) {
                     Value::Number(n) => match statement.kind {
-                        StatementKind::Incr(_) => Value::Number(n + 1.),
-                        StatementKind::Decr(_) => Value::Number(n - 1.),
+                        StatementKind::Incr(..) => Value::Number(n + (count as f64)),
+                        StatementKind::Decr(..) => Value::Number(n - (count as f64)),
                         _ => unreachable!(),
                     }
-                    Value::Boolean(b) => Value::Boolean(!b),
+                    Value::Boolean(b) => {
+                        if count % 2 == 1 {
+                            Value::Boolean(!b)
+                        } else {
+                            Value::Boolean(b)
+                        }
+                    }
                     v @ _ => {
                         let op = match statement.kind {
-                            StatementKind::Incr(_) => "increment",
-                            StatementKind::Decr(_) => "decrement",
+                            StatementKind::Incr(..) => "increment",
+                            StatementKind::Decr(..) => "decrement",
                             _ => unreachable!(),
                         };
                         return Err(InterpreterError::illegal_op(op, &v, None));

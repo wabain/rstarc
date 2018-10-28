@@ -14,8 +14,8 @@ pub struct Statement {
 #[derive(Debug)]
 pub enum StatementKind {
     Assign(LValue, Expr),
-    Incr(LValue),
-    Decr(LValue),
+    Incr(LValue, usize),
+    Decr(LValue, usize),
     Say(Expr),
 
     Continue,

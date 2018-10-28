@@ -38,11 +38,11 @@ impl PrettyPrint for Statement {
             StatementKind::Assign(lval, e) => {
                 pp!(out, "Put ", pp e, " into ", pp lval, "\n")
             }
-            StatementKind::Incr(lval) => {
-                pp!(out, "Build ", pp lval, " up\n")
+            StatementKind::Incr(lval, count) => {
+                pp!(out, "Build ", pp lval, " up".repeat(*count), "\n")
             }
-            StatementKind::Decr(lval) => {
-                pp!(out, "Knock ", pp lval, " down\n")
+            StatementKind::Decr(lval, count) => {
+                pp!(out, "Knock ", pp lval, " down".repeat(*count), "\n")
             }
             StatementKind::Say(e) => {
                 pp!(out, "Say ", pp e, "\n")

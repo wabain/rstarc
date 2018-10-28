@@ -22,8 +22,8 @@ Statement: ast::StatementKind = {
     <v:LValue> "Is" <e:Literal> => ast::StatementKind::Assign(v, e),
     <v:LValue> "Was" <e:Literal> => ast::StatementKind::Assign(v, e),
 
-    "Build" <v:LValue> "Up" => ast::StatementKind::Incr(v),
-    "Knock" <v:LValue> "Down" => ast::StatementKind::Decr(v),
+    "Build" <v:LValue> <count:IncrCount> => ast::StatementKind::Incr(v, count),
+    "Knock" <v:LValue> <count:DecrCount> => ast::StatementKind::Decr(v, count),
     "Say" <e:Expr> => ast::StatementKind::Say(e),
 
     "Continue" => ast::StatementKind::Continue,
@@ -39,6 +39,18 @@ Statement: ast::StatementKind = {
     "Until" <c:Expr> "\n" <b:Block> => ast::StatementKind::Until(c, b),
     <v:Variable> "Takes" <a:FuncDecArgs> "\n" <b:Block> =>
         ast::StatementKind::FuncDef(v, a, b),
+}
+
+IncrCount: usize = {
+    "Up" => 1,
+    "Up" "," <c:IncrCount> => c + 1,
+    "Up" <c:IncrCount> => c + 1,
+}
+
+DecrCount: usize = {
+    "Down" => 1,
+    "Down" "," <c:DecrCount> => c + 1,
+    "Down" <c:DecrCount> => c + 1,
 }
 
 FuncDecArgs: Vec<ast::Variable> = {
