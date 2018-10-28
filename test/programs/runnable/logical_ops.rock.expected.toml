@@ -22,4 +22,6 @@ stdout = """
   nor(1,0): FALSE
   nor(0,0): eval2
   nor(0,0): TRUE
+  not(1): FALSE
+  not(0): TRUE
 """

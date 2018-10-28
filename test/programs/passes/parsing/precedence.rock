@@ -16,7 +16,7 @@ Put 0 into X
 Put 0 into Y
 Put 0 into Z
 
-Put X taking Y and Z times U plus V into Dummy
+Put not X taking Y and Z times U plus V into Dummy
 Put X plus Y minus Z into Dummy
 Put X times Y over Z into Dummy
 

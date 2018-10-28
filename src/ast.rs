@@ -68,6 +68,7 @@ pub enum Comparator {
 
 #[derive(Debug)]
 pub enum Logical {
+    Not(Expr),
     And(Expr, Expr),
     Or(Expr, Expr),
     Nor(Expr, Expr),

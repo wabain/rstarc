@@ -105,15 +105,25 @@ PreConjunctionAddExpr: ast::Expr = {
 }
 
 MultExpr: ast::Expr = {
-    FuncCallExpr => <>,
-    <e1:FuncCallExpr> "Times" <e2:MultExpr> => ast::Expr::Mul(Box::new(e1), Box::new(e2)),
-    <e1:FuncCallExpr> "Over" <e2:MultExpr> => ast::Expr::Div(Box::new(e1), Box::new(e2)),
+    NotExpr => <>,
+    <e1:NotExpr> "Times" <e2:MultExpr> => ast::Expr::Mul(Box::new(e1), Box::new(e2)),
+    <e1:NotExpr> "Over" <e2:MultExpr> => ast::Expr::Div(Box::new(e1), Box::new(e2)),
 }
 
 PreConjunctionMultExpr: ast::Expr = {
+    PreConjunctionNotExpr => <>,
+    <e1:NotExpr> "Times" <e2:PreConjunctionMultExpr> => ast::Expr::Mul(Box::new(e1), Box::new(e2)),
+    <e1:NotExpr> "Over" <e2:PreConjunctionMultExpr> => ast::Expr::Div(Box::new(e1), Box::new(e2)),
+}
+
+NotExpr: ast::Expr = {
+    "Not" <e:FuncCallExpr> => ast::Expr::logical(ast::Logical::Not(e)),
+    FuncCallExpr => <>,
+}
+
+PreConjunctionNotExpr: ast::Expr = {
+    "Not" <e:SimpleExpr> => ast::Expr::logical(ast::Logical::Not(e)),
     SimpleExpr => <>,
-    <e1:FuncCallExpr> "Times" <e2:PreConjunctionMultExpr> => ast::Expr::Mul(Box::new(e1), Box::new(e2)),
-    <e1:FuncCallExpr> "Over" <e2:PreConjunctionMultExpr> => ast::Expr::Div(Box::new(e1), Box::new(e2)),
 }
 
 FuncCallExpr: ast::Expr = {
