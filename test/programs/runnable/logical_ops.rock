@@ -70,3 +70,13 @@ if false nor SayFalse taking "  nor(0,0): eval2"
 else
     say "! nor(0,0): FALSE"
 
+if not true
+    say "! not(1): TRUE"
+else
+    say "  not(1): FALSE"
+
+if not false
+    say "  not(0): TRUE"
+else
+    say "! not(0): FALSE"
+

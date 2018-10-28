@@ -127,6 +127,7 @@ impl PrettyPrint for Expr {
 impl PrettyPrint for Logical {
     fn pretty_print<W>(&self, out: &mut W) -> io::Result<()> where W: io::Write {
         match *self {
+            Logical::Not(ref cond) => pp!(out, "not ", pp cond),
             Logical::And(ref c1, ref c2) => pp!(out, pp c1, " and ", pp c2),
             Logical::Or(ref c1, ref c2) => pp!(out, pp c1, " or ", pp c2),
             Logical::Nor(ref c1, ref c2) => pp!(out, pp c1, " or ", pp c2),

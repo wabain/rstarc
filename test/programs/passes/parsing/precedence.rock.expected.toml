@@ -32,12 +32,14 @@ Assign(
   Dummy,
   Add(
     Mul(
-      FuncCall(
-        X,
-        [
-          Y,
-          Z,
-        ],
+      Not(
+        FuncCall(
+          X,
+          [
+            Y,
+            Z,
+          ],
+        ),
       ),
       U,
     ),

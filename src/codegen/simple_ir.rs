@@ -4,9 +4,12 @@ use std::collections::HashSet;
 
 use base_analysis::{ScopeId, ScopeMap, VariableType};
 use ast::{self, Expr, Logical, Statement, StatementKind, Pos};
-use lang_constructs::{self, LangVariable};
+use lang_constructs::{self, LangVariable, Value as LangValue};
 
 use base_analysis::CompileError;
+
+const IR_TRUE: IRValue = IRValue::Literal(LangValue::Boolean(true));
+const IR_FALSE: IRValue = IRValue::Literal(LangValue::Boolean(false));
 
 pub fn build_ir<'prog>(program: &'prog [Statement],
                        scope_map: &'prog ScopeMap<'prog>)
@@ -628,6 +631,33 @@ impl<'prog> IRBuilder<'prog> {
                 };
 
                 match logical.as_ref() {
+                    Logical::Not(c) => {
+                        // TODO: It seems like bit-level manipulation would be
+                        // a better way to model this (and nor) than branching,
+                        // although it *looks* like LLVM does a pretty good job
+                        // optimizing the branches out.
+                        //
+                        // For that I'd need to either lift boolean coercion
+                        // into the IR or push this down to the LLVM lowering
+                        // phase.
+
+                        let not_false_label = self.label("not_false");
+                        let not_true_label = self.label("not_true");
+                        let not_end_label = self.label("not_end");
+
+                        let v = self.emit_expr(None, c);
+                        self.emit(SimpleIR::JumpIf(v, not_false_label, not_true_label));
+
+                        self.emit_label(not_true_label);
+                        self.emit(SimpleIR::Store(out.clone(), IR_TRUE));
+                        self.emit(SimpleIR::Jump(not_end_label));
+
+                        self.emit_label(not_false_label);
+                        self.emit(SimpleIR::Store(out.clone(), IR_FALSE));
+                        self.emit(SimpleIR::Jump(not_end_label));
+
+                        self.emit_label(not_end_label);
+                    }
                     Logical::And(c1, c2) => {
                         let and_label = self.label("and");
                         let else_label = self.label("and_else");
@@ -672,13 +702,11 @@ impl<'prog> IRBuilder<'prog> {
                         self.emit(SimpleIR::JumpIf(v2, nor_false_label, nor_true_label));
 
                         self.emit_label(nor_true_label);
-                        let lit_true = lang_constructs::Value::Boolean(true);
-                        self.emit(SimpleIR::Store(out.clone(), IRValue::Literal(lit_true)));
+                        self.emit(SimpleIR::Store(out.clone(), IR_TRUE));
                         self.emit(SimpleIR::Jump(nor_end_label));
 
                         self.emit_label(nor_false_label);
-                        let lit_false = lang_constructs::Value::Boolean(false);
-                        self.emit(SimpleIR::Store(out.clone(), IRValue::Literal(lit_false)));
+                        self.emit(SimpleIR::Store(out.clone(), IR_FALSE));
                         self.emit(SimpleIR::Jump(nor_end_label));
 
                         self.emit_label(nor_end_label);

@@ -259,6 +259,11 @@ impl<'a> Interpreter<'a> {
             },
             Expr::Logical(logical) => {
                 match logical.as_ref() {
+                    Logical::Not(e) => {
+                        let v = self.eval_expr(e)?;
+                        let value = !v.coerce_boolean();
+                        Value::Boolean(value)
+                    }
                     Logical::And(e1, e2) => {
                         let v1 = self.eval_expr(e1)?;
                         if v1.coerce_boolean() {
