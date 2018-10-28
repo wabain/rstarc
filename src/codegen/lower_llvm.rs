@@ -5,8 +5,8 @@ use ast::Comparator;
 use base_analysis::{ScopeId, VariableType};
 
 use codegen::CodegenError;
-use codegen::simple_ir::{IRProgram, SimpleIR, IRFunc, IRValue, IRLValue, BinOp,
-                         LocalTemp};
+use codegen::simple_ir::{IRProgram, SimpleIR, IRFunc, IRBody, IRValue,
+                         IRLValue, BinOp, LocalTemp, LocalDynTemp};
 use codegen::llvm_api::*;
 
 // TODO: Find a way to share these with the runtime
@@ -202,6 +202,7 @@ fn build_shim_branch(llh: &mut LLVMHandle,
 }
 
 fn declare_builtin_functions(llh: &mut LLVMHandle) {
+    let i8t = int8_type();
     let f64t = float64_type();
     let i64t = int64_type();
     let void = void_type();
@@ -210,6 +211,7 @@ fn declare_builtin_functions(llh: &mut LLVMHandle) {
     llh.declare_builtin_function("roll_alloc", &mut [i64t], ptr_type(i64t));
     llh.declare_builtin_function("roll_mk_number", &mut [f64t], i64t);
     llh.declare_builtin_function("roll_coerce_function", &mut [i64t], i64t);
+    llh.declare_builtin_function("roll_coerce_boolean", &mut [i64t], i8t);
 
     // Binary operations
     let bin_ops = &[
@@ -236,7 +238,7 @@ fn lower_function(llh: &mut LLVMHandle,
                   program: &IRProgram,
                   declarations: &Declarations,
                   scope_id: ScopeId,
-                  body: &[SimpleIR],
+                  body: &IRBody,
                   is_main: bool)
 {
     let mut vmgr = ValueTracker::new(program, declarations, scope_id);
@@ -252,9 +254,10 @@ fn lower_function(llh: &mut LLVMHandle,
     for var in program.scope_map.get_owned_vars_for_scope(scope_id) {
         vmgr.prepare_variable(llh, &var, scope_id);
     }
+    vmgr.prepare_dyn_temporaries(llh, body.dyn_temp_count);
 
     // Translate ops
-    for op in body {
+    for op in &body.ops {
         match op {
             SimpleIR::Jump(label) => {
                 let block = vmgr.basic_block(llh, label.name());
@@ -263,16 +266,7 @@ fn lower_function(llh: &mut LLVMHandle,
             SimpleIR::JumpIf(cond, if_label, else_label) => {
                 let cond_ref = vmgr.val_to_llvm(llh, cond);
 
-                // XXX: Assume that the value is a bool. I think the
-                // parser forces this to be true at the moment. Probably
-                // better to make this stuff conditional and let LLVM
-                // prove it though.
-                let tag_bytes = llh.const_uint(int64_type(), 3);
-                let coerced_cond_ref = llh.build_lshr(
-                    cond_ref,
-                    tag_bytes,
-                    "coerce_bool",
-                );
+                let coerced_cond_ref = llh.build_call_coerce_boolean(cond_ref, "coerce_bool");
                 let truncd_cond_ref = llh.build_trunc(coerced_cond_ref, int1_type(), "trunc_bool");
 
                 let if_bb = vmgr.basic_block(llh, if_label.name());
@@ -402,15 +396,27 @@ impl LLWriteTarget {
     }
 }
 
+/// Handles translation of values for LLVM in a single scope
 struct ValueTracker<'a> {
     program: &'a IRProgram<'a>,
     declarations: &'a Declarations<'a>,
     func_target: &'a FunctionTarget,
     scope_id: ScopeId,
 
-    temps: HashMap<LocalTemp, LLVMValueRef>,
+    /// Temporary values in trivial SSA form
+    static_temps: HashMap<LocalTemp, LLVMValueRef>,
+    /// Allocas for local variables
     allocas: HashMap<LangVariable<'a>, LLVMValueRef>,
+    /// Allocas for local dynamic temporaries
+    temp_allocas: HashMap<LocalDynTemp, LLVMValueRef>,
+    /// A list of basic blocks defined in scope, identified by the name
+    /// of an IR label
+    /// TODO: Make this key on IR labels directly, and also not require
+    /// ownership of a string?!
     basic_blocks: HashMap<String, LLVMBasicBlockRef>,
+    /// Cache of strings used in scope
+    /// FIXME: This should be program-wide, and should probably be done
+    /// in an interning pass when converting to IR
     string_cache: HashMap<String, LLVMValueRef>,
 }
 
@@ -428,8 +434,9 @@ impl<'a> ValueTracker<'a> {
             func_target,
             scope_id,
 
-            temps: HashMap::new(),
+            static_temps: HashMap::new(),
             allocas: HashMap::new(),
+            temp_allocas: HashMap::new(),
             basic_blocks: HashMap::new(),
             string_cache: HashMap::new(),
         }
@@ -473,7 +480,7 @@ impl<'a> ValueTracker<'a> {
             }
             LLWriteTarget::Temp(t) => {
                 let temp_ref = build(llh, &format!("{}", t));
-                self.temps.insert(t, temp_ref);
+                self.static_temps.insert(t, temp_ref);
             }
         }
     }
@@ -486,6 +493,9 @@ impl<'a> ValueTracker<'a> {
             IRLValue::LocalTemp(t) => {
                 LLWriteTarget::Temp(*t)
             }
+            IRLValue::LocalDynTemp(t) => {
+                LLWriteTarget::Mem(self.get_temp_memory_variable(*t))
+            }
         }
     }
 
@@ -494,10 +504,14 @@ impl<'a> ValueTracker<'a> {
     fn val_to_llvm(&mut self, llh: &mut LLVMHandle, val: &IRValue<'a>) -> LLVMValueRef {
         match val {
             IRValue::LocalTemp(temp) => {
-                *self.temps.get(temp)
+                *self.static_temps.get(temp)
                     .unwrap_or_else(|| {
                         panic!("Missing write to temporary {}", temp)
                     })
+            }
+            IRValue::LocalDynTemp(temp) => {
+                let mem_ref = self.get_temp_memory_variable(*temp);
+                llh.build_load(mem_ref, &format!("{}.load", temp))
             }
             IRValue::Variable(var, scope_id, _pos) => {
                 let mem_ref = self.get_memory_variable(var, *scope_id);
@@ -568,6 +582,15 @@ impl<'a> ValueTracker<'a> {
         }
     }
 
+    fn prepare_dyn_temporaries(&mut self, llh: &mut LLVMHandle, count: u64) {
+        let value_t = int64_type();
+
+        (0..count).into_iter()
+            .map(|i| LocalDynTemp::new(i))
+            .map(|tmp| (tmp, llh.build_alloca(value_t, &format!("{}", tmp))))
+            .for_each(|(k, v)| { self.temp_allocas.insert(k, v); });
+    }
+
     fn get_memory_variable(&mut self, var: &LangVariable<'a>, scope_id: ScopeId)
         -> LLVMValueRef
     {
@@ -583,6 +606,12 @@ impl<'a> ValueTracker<'a> {
 
         *self.allocas.get(var).unwrap_or_else(|| {
             panic!("read of {} alloca should follow write", var);
+        })
+    }
+
+    fn get_temp_memory_variable(&mut self, temp: LocalDynTemp) -> LLVMValueRef {
+        *self.temp_allocas.get(&temp).unwrap_or_else(|| {
+            panic!("read of {} alloca should follow write", temp);
         })
     }
 }

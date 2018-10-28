@@ -8,7 +8,7 @@ use std::cmp::Ordering;
 
 use base_analysis;
 use lang_constructs::{Value, LangVariable};
-use ast::{Statement, StatementKind, Expr, Conditional, Comparison, Comparator, LValue};
+use ast::{Statement, StatementKind, Expr, Logical, Comparison, Comparator, LValue};
 use runtime_error::RuntimeError;
 
 pub fn interpret(program: &[Statement], scope_map: &base_analysis::ScopeMap)
@@ -257,6 +257,26 @@ impl<'a> Interpreter<'a> {
                 let v2 = self.eval_expr(e2)?;
                 self.eval_binary_op(expr, v1, v2)?
             },
+            Expr::Logical(logical) => {
+                match logical.as_ref() {
+                    Logical::And(e1, e2) => {
+                        let v1 = self.eval_expr(e1)?;
+                        if v1.coerce_boolean() {
+                            self.eval_expr(e2)?
+                        } else {
+                            v1
+                        }
+                    }
+                    Logical::Or(e1, e2) => {
+                        let v1 = self.eval_expr(e1)?;
+                        if v1.coerce_boolean() {
+                            v1
+                        } else {
+                            self.eval_expr(e2)?
+                        }
+                    }
+                }
+            }
         };
         Ok(value)
     }
@@ -364,15 +384,9 @@ impl<'a> Interpreter<'a> {
         Ok(value)
     }
 
-    // FIXME: Why is this separate from expr anyway?
-    // There are parsing differences, but not anything at the AST level?
-    fn eval_cond(&mut self, cond: &Conditional) -> InterpResult<bool> {
-        let compared = match cond {
-            Conditional::Comparison(comp) => self.eval_comparison(comp)?,
-            Conditional::And(a, b) => self.eval_cond(a)? && self.eval_cond(b)?,
-            Conditional::Or(a, b) => self.eval_cond(a)? || self.eval_cond(b)?,
-        };
-        Ok(compared)
+    fn eval_cond(&mut self, cond: &Expr) -> InterpResult<bool> {
+        let val = self.eval_expr(cond)?;
+        Ok(val.coerce_boolean())
     }
 
     fn eval_comparison(&mut self, comparison: &Comparison) -> InterpResult<bool> {

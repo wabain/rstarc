@@ -1,0 +1,9 @@
+(Test value assignment via logical short-circuit)
+
+put "some value" and false into AndAssignment
+say "Assignment via and (expected: some value)"
+say AndAssignment
+
+put false or "some value" into OrAssignment
+say "Assignment via or (expected: some value)"
+say OrAssignment

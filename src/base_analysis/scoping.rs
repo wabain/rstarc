@@ -302,12 +302,16 @@ impl<'a, 'prog: 'a> UseObserver<'a, 'prog> {
     }
 
     fn observe_expr(&mut self, expr: &'prog ast::Expr) {
-        use ast::Expr;
+        use ast::{Expr, Logical};
 
         match expr {
             Expr::LValue(lval) => self.observe_lval(lval, UseType::Read),
             Expr::Literal(_) => {},
-            Expr::Compare(comp) => self.observe_comp(comp),
+            Expr::Compare(comp) => {
+                let ast::Comparison(e1, _, e2) = comp.as_ref();
+                self.observe_expr(e1);
+                self.observe_expr(e2);
+            },
             Expr::FuncCall(fn_name, args) => {
                 self.observe_expr(fn_name);
                 for a in args {
@@ -323,6 +327,14 @@ impl<'a, 'prog: 'a> UseObserver<'a, 'prog> {
                 self.observe_expr(e2);
             }
 
+            Expr::Logical(logical) => {
+                match logical.as_ref() {
+                    Logical::And(e1, e2) | Logical::Or(e1, e2) => {
+                        self.observe_expr(e1);
+                        self.observe_expr(e2);
+                    }
+                }
+            }
         }
     }
 
@@ -330,23 +342,6 @@ impl<'a, 'prog: 'a> UseObserver<'a, 'prog> {
         match lval {
             ast::LValue::Variable(var) => self.observe_var(var, use_type),
             ast::LValue::Pronoun(_) => unimplemented!(),
-        }
-    }
-
-    fn observe_comp(&mut self, comp: &'prog ast::Comparison) {
-        let ast::Comparison(e1, _, e2) = comp;
-        self.observe_expr(e1);
-        self.observe_expr(e2);
-    }
-
-    fn observe_cond(&mut self, cond: &'prog ast::Conditional) {
-        match cond {
-            ast::Conditional::Comparison(comp) => self.observe_comp(comp),
-            ast::Conditional::And(c1, c2) |
-            ast::Conditional::Or(c1, c2) => {
-                self.observe_cond(c1);
-                self.observe_cond(c2);
-            }
         }
     }
 
@@ -398,7 +393,7 @@ impl<'a, 'prog: 'a> StatementVisitor<'prog> for UseObserver<'a, 'prog> {
 
             StatementKind::Condition(cond, _, _) |
             StatementKind::While(cond, _) |
-            StatementKind::Until(cond, _) => self.observe_cond(cond),
+            StatementKind::Until(cond, _) => self.observe_expr(cond),
 
             StatementKind::FuncDef(fname, _, _) => {
                 self.observe_var(fname, UseType::Write);

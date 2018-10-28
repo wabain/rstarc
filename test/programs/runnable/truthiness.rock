@@ -1,0 +1,71 @@
+(Test "truthiness" coercion)
+
+(Boolean)
+
+if true
+    say "  TRUE: true"
+else
+    say "! FALSE: true"
+
+if false
+    say "! TRUE: false"
+else
+    say "  FALSE: false"
+
+(String)
+
+if "yes"
+    say "  TRUE: string(yes)"
+else
+    say "! FALSE: string(yes)"
+
+if "no"
+    say "! TRUE: string(no)"
+else
+    say "  FALSE: string(no)"
+
+if "bleh"
+    say "! TRUE: string(bleh)"
+else
+    say "  FALSE: string(bleh)"
+
+(Number)
+
+if 15
+    say "  TRUE: 15"
+else
+    say "! FALSE: 15"
+
+if 0 over 0
+    say "  TRUE: NaN"
+else
+    say "! FALSE: NaN"
+
+if 0
+    say "! TRUE: 0"
+else
+    say "  FALSE: 0"
+
+(Function)
+
+X takes Something
+    give back Something
+
+if X
+    say "  TRUE: func"
+else
+    say "! FALSE: func"
+
+(Null)
+
+if null
+    say "! TRUE: null"
+else
+    say "  FALSE: null"
+
+(Mysterious)
+
+if null
+    say "! TRUE: mysterious"
+else
+    say "  FALSE: mysterious"

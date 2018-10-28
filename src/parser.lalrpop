@@ -30,13 +30,13 @@ Statement: ast::StatementKind = {
     "Break" => ast::StatementKind::Break,
     "Give" "Back" <e:Expr> => ast::StatementKind::Return(e),
 
-    "If" <c:Conditional> "\n" <b:Block> <els:("Else" "\n" Block)?> => {
+    "If" <c:Expr> "\n" <b:Block> <els:("Else" "\n" Block)?> => {
         let else_block = els.map_or_else(|| Vec::new(), |(_, _, b2)| b2);
         ast::StatementKind::Condition(c, b, else_block)
     },
 
-    "While" <c:Conditional> "\n" <b:Block> => ast::StatementKind::While(c, b),
-    "Until" <c:Conditional> "\n" <b:Block> => ast::StatementKind::Until(c, b),
+    "While" <c:Expr> "\n" <b:Block> => ast::StatementKind::While(c, b),
+    "Until" <c:Expr> "\n" <b:Block> => ast::StatementKind::Until(c, b),
     <v:Variable> "Takes" <a:FuncDecArgs> "\n" <b:Block> =>
         ast::StatementKind::FuncDef(v, a, b),
 }
@@ -60,19 +60,34 @@ Block: Vec<ast::Statement> = {
     <b:TermStatement*> => b
 }
 
+// Function calls are not allowed before "and" comparisons to prevent ambiguity
 Expr: ast::Expr = {
-    Comparison => ast::Expr::Compare(Box::new(<>)),
+    <e1:PreConjunctionComparisonExpr> "And" <e2:Expr> =>
+        ast::Expr::logical(ast::Logical::And(e1, e2)),
+    <e1:ComparisonExpr> "Or" <e2:Expr> =>
+        ast::Expr::logical(ast::Logical::Or(e1, e2)),
+    ComparisonExpr => <>,
+}
+
+ComparisonExpr: ast::Expr = {
+    <a:AddExpr> <cmp:Comparator> <b:ComparisonExpr> =>
+        ast::Expr::compare(ast::Comparison(a, cmp, b)),
     AddExpr => <>,
 }
 
-PreConjunctionExpr: ast::Expr = {
-    PreConjunctionComparison => ast::Expr::Compare(Box::new(<>)),
+PreConjunctionComparisonExpr: ast::Expr = {
+    <a:AddExpr> <cmp:Comparator> <b:PreConjunctionComparisonExpr> =>
+        ast::Expr::compare(ast::Comparison(a, cmp, b)),
     PreConjunctionAddExpr => <>,
 }
 
-FuncArgSep: () = {
-    "," => (),
-    "And" => (),
+Comparator: ast::Comparator = {
+    "Is" => ast::Comparator::Is,
+    "Isn't" => ast::Comparator::IsNot,
+    "Is" "Greater" "Than" => ast::Comparator::IsGreaterThan,
+    "Is" "Less" "Than" => ast::Comparator::IsLessThan,
+    "Is" "As" "Great" "As" => ast::Comparator::IsAsGreatAs,
+    "Is" "As" "Little" "As" => ast::Comparator::IsAsLittleAs,
 }
 
 AddExpr: ast::Expr = {
@@ -108,31 +123,9 @@ FuncCallExpr: ast::Expr = {
     SimpleExpr => <>,
 }
 
-// Function calls are not allowed before "and" comparisons to prevent ambiguity
-Conditional: ast::Conditional = {
-    Comparison => ast::Conditional::Comparison(<>),
-    <e1:PreConjunctionComparison> "And" <e2:Conditional> =>
-        ast::Conditional::And(Box::new(ast::Conditional::Comparison(e1)), Box::new(e2)),
-    <e1:Comparison> "Or" <e2:Conditional> =>
-        ast::Conditional::Or(Box::new(ast::Conditional::Comparison(e1)), Box::new(e2)),
-}
-
-Comparison: ast::Comparison = {
-    <a:AddExpr> <cmp:Comparator> <b:Expr> => ast::Comparison(a, cmp, b),
-}
-
-PreConjunctionComparison: ast::Comparison = {
-    <a:AddExpr> <cmp:Comparator> <b:PreConjunctionExpr> =>
-        ast::Comparison(a, cmp, b),
-}
-
-Comparator: ast::Comparator = {
-    "Is" => ast::Comparator::Is,
-    "Isn't" => ast::Comparator::IsNot,
-    "Is" "Greater" "Than" => ast::Comparator::IsGreaterThan,
-    "Is" "Less" "Than" => ast::Comparator::IsLessThan,
-    "Is" "As" "Great" "As" => ast::Comparator::IsAsGreatAs,
-    "Is" "As" "Little" "As" => ast::Comparator::IsAsLittleAs,
+FuncArgSep: () = {
+    "," => (),
+    "And" => (),
 }
 
 SimpleExpr: ast::Expr = {

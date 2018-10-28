@@ -1,0 +1,11 @@
+[tests]
+enabled = ["run"]
+
+[run]
+returncode = "0"
+stdout = """
+Assignment via and (expected: some value)
+some value
+Assignment via or (expected: some value)
+some value
+"""

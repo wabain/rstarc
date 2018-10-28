@@ -1,0 +1,18 @@
+[tests]
+enabled = ["run"]
+
+[run]
+returncode = "0"
+stdout = """
+  TRUE: true
+  FALSE: false
+  TRUE: string(yes)
+  FALSE: string(no)
+  FALSE: string(bleh)
+  TRUE: 15
+  TRUE: NaN
+  FALSE: 0
+  TRUE: func
+  FALSE: null
+  FALSE: mysterious
+"""
