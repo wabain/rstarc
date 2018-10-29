@@ -96,19 +96,24 @@ impl<F: fmt::Debug> Value<F> {
     }
 
     pub fn coerce_binary_operands(v1: Self, v2: Self) -> Option<(Self, Self)> {
+        // Reorder for convenience
+        if v1.value_type() > v2.value_type() {
+            Value::coerce_type_ordered_binary_operands(v2, v1)
+                .map(|(v2, v1)| (v1, v2))
+        } else {
+            Value::coerce_type_ordered_binary_operands(v1, v2)
+        }
+    }
+
+    fn coerce_type_ordered_binary_operands(v1: Self, v2: Self)
+        -> Option<(Self, Self)>
+    {
         let t1 = v1.value_type();
         let t2 = v2.value_type();
 
         if t1 == t2 {
             return Some((v1, v2));
         }
-
-        // Reorder for convenience
-        let (v1, v2) = if t1 < t2 {
-            (v1, v2)
-        } else {
-            (v2, v1)
-        };
 
         if let Value::Mysterious = v2 {
             return None;
