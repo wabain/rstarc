@@ -4,7 +4,8 @@ use std::fmt;
 
 use regex::{RegexBuilder, Regex};
 
-use lang_constructs::{self, RockstarNumber, RockstarString};
+use rstarc_types::{Value, RockstarNumber};
+use lang_constructs::{RockstarValue, RockstarString};
 use source_loc::{SourceLocator, IntraLineSpan};
 
 #[derive(Debug, PartialEq)]
@@ -124,8 +125,7 @@ impl Token {
         }
     }
 
-    pub fn literal_value<F: fmt::Debug>(&self) -> Option<lang_constructs::Value<F>> {
-        use lang_constructs::Value;
+    pub fn literal_value<F: fmt::Debug>(&self) -> Option<RockstarValue<F>> {
         let value = match *self {
             Token::StringLiteral(ref s) => Value::String(s.clone()),
             Token::BooleanLiteral(b) => Value::Boolean(b),

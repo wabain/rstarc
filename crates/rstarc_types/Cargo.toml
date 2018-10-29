@@ -1,0 +1,9 @@
+[package]
+name = "rstarc_types"
+version = "0.1.0"
+authors = ["William Bain <bain.william.a@gmail.com>"]
+
+[features]
+std = []
+
+[dependencies]

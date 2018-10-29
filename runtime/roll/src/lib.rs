@@ -1,6 +1,7 @@
 #![no_std]
 
 extern crate libc;
+extern crate rstarc_types;
 
 #[macro_use] mod io;
 mod alloc;
@@ -8,43 +9,14 @@ mod rust_lang_items;
 mod value_repr;
 
 use core::f64;
-use core::fmt::{self, Write};
+use core::fmt::Write;
 
-pub use libc::c_void as VoidPtr;
+use rstarc_types::Value;
+pub(crate) use libc::c_void as VoidPtr;
 
 use io::FDWrite;
 
-#[derive(Debug)]
-pub enum RockstarValue<'a> {
-    Null,
-    Mysterious,
-    Boolean(bool),
-    String(&'a str),
-    Number(f64),
-    Function(*const VoidPtr),
-}
-
-impl<'a> RockstarValue<'a> {
-    pub fn user_display(&self) -> UserDisplay {
-        UserDisplay(&self)
-    }
-}
-
-pub struct UserDisplay<'a>(&'a RockstarValue<'a>);
-
-impl<'a> fmt::Display for UserDisplay<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.0 {
-            RockstarValue::String(v) => write!(f, "{}", v),
-            RockstarValue::Number(v) => write!(f, "{}", v),
-            RockstarValue::Null => write!(f, "null"),
-            RockstarValue::Mysterious => write!(f, "mysterious"),
-            RockstarValue::Boolean(true) => write!(f, "true"),
-            RockstarValue::Boolean(false) => write!(f, "false"),
-            RockstarValue::Function(_) => write!(f, "function"),
-        }
-    }
-}
+type RockstarValue<'a> = rstarc_types::Value<&'a str, *const VoidPtr>;
 
 #[no_mangle]
 pub extern fn roll_alloc(size: usize) -> *mut VoidPtr {
@@ -61,7 +33,7 @@ pub extern fn roll_say(ptr: *mut VoidPtr) {
 
 #[no_mangle]
 pub extern fn roll_is(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
-    use self::RockstarValue::*;
+    use Value::*;
 
     let v1 = value_repr::Scalar::new(p1).deref_rec();
     let v2 = value_repr::Scalar::new(p2).deref_rec();
@@ -81,7 +53,7 @@ pub extern fn roll_is(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
 
 #[no_mangle]
 pub extern fn roll_is_not(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
-    use self::RockstarValue::*;
+    use Value::*;
 
     let v1 = value_repr::Scalar::new(p1).deref_rec();
     let v2 = value_repr::Scalar::new(p2).deref_rec();
@@ -171,7 +143,7 @@ pub extern fn roll_le(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
 #[no_mangle]
 pub extern fn roll_coerce_function(value: *mut VoidPtr) -> *const VoidPtr {
     match value_repr::Scalar::new(value).deref_rec() {
-        RockstarValue::Function(p) => p,
+        Value::Function(p) => p,
         v => {
             let mut stderr = io::FDWrite::stderr();
             writeln!(stderr, "error: Cannot call value '{}'", v.user_display());
@@ -182,26 +154,10 @@ pub extern fn roll_coerce_function(value: *mut VoidPtr) -> *const VoidPtr {
     }
 }
 
-/// Keep in sync with src/lang_constructs.rs
 #[no_mangle]
 pub extern fn roll_coerce_boolean(value: *mut VoidPtr) -> u8 {
-    let value = match value_repr::Scalar::new(value).deref_rec() {
-        RockstarValue::String(ref s) => string_to_bool(s).unwrap_or(false),
-        RockstarValue::Number(n) => !(n == 0.),
-        RockstarValue::Boolean(b) => b,
-        RockstarValue::Function(_) => true,
-        RockstarValue::Null => false,
-        RockstarValue::Mysterious => false,
-    };
-    if value { 1 } else { 0 }
-}
-
-fn string_to_bool(s: &str) -> Option<bool> {
-    match s {
-        "true" | "right" | "yes" | "ok" => Some(true),
-        "false" | "wrong" | "no" | "lies" => Some(false),
-        _ => None
-    }
+    let value = value_repr::Scalar::new(value).deref_rec();
+    if value.coerce_boolean() { 1 } else { 0 }
 }
 
 #[inline]
@@ -218,11 +174,11 @@ fn new_number(value: f64) -> u64 {
 #[inline]
 fn coerce_number(v: &RockstarValue) -> f64 {
     match *v {
-        RockstarValue::String(..) => f64::NAN,
-        RockstarValue::Number(n) => n,
-        RockstarValue::Boolean(b) => if b { 1.0 } else { 0.0 },
-        RockstarValue::Null => 0.0,
-        RockstarValue::Mysterious |
-        RockstarValue::Function(_) => f64::NAN,
+        Value::String(..) => f64::NAN,
+        Value::Number(n) => n,
+        Value::Boolean(b) => if b { 1.0 } else { 0.0 },
+        Value::Null => 0.0,
+        Value::Mysterious |
+        Value::Function(_) => f64::NAN,
     }
 }

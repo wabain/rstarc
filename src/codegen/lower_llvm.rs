@@ -1,6 +1,7 @@
 use std::collections::hash_map::{HashMap, Entry};
 
-use lang_constructs::{LangVariable, Value};
+use rstarc_types::Value;
+use lang_constructs::LangVariable;
 use ast::Comparator;
 use base_analysis::{ScopeId, VariableType};
 

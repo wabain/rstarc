@@ -8,6 +8,7 @@ ad-hoc-debugs = []
 
 [dependencies]
 libc = { version = "0.2", default-features = false }
+rstarc_types = { path = "../../crates/rstarc_types" }
 
 [lib]
 crate-type = ["staticlib"]
