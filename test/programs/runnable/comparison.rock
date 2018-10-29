@@ -1,0 +1,1484 @@
+put 0 over 0 into NaN
+
+( STRINGS )
+( Test "a", "a": no conversion needed )
+put "a" is less than "a" into Result
+if Result
+    say "! TRUE: string(a) < string(a)"
+
+put "a" is as little as "a" into Result
+if not Result
+    say "! FALSE: string(a) <= string(a)"
+
+put "a" is greater than "a" into Result
+if Result
+    say "! TRUE: string(a) > string(a)"
+
+put "a" is as great as "a" into Result
+if not Result
+    say "! FALSE: string(a) >= string(a)"
+
+put "a" is "a" into Result
+if not Result
+    say "! FALSE: string(a) is string(a)"
+
+put "a" isnt "a" into Result
+if Result
+    say "! TRUE: string(a) isnt string(a)"
+
+( Test "", "a": no conversion needed )
+put "" is less than "a" into Result
+if not Result
+    say "! FALSE: string() < string(a)"
+
+put "" is as little as "a" into Result
+if not Result
+    say "! FALSE: string() <= string(a)"
+
+put "" is greater than "a" into Result
+if Result
+    say "! TRUE: string() > string(a)"
+
+put "" is as great as "a" into Result
+if Result
+    say "! TRUE: string() >= string(a)"
+
+put "" is "a" into Result
+if Result
+    say "! TRUE: string() is string(a)"
+
+put "" isnt "a" into Result
+if not Result
+    say "! FALSE: string() isnt string(a)"
+
+put "a" is less than "" into Result
+if Result
+    say "! TRUE: string(a) < string()"
+
+put "a" is as little as "" into Result
+if Result
+    say "! TRUE: string(a) <= string()"
+
+put "a" is greater than "" into Result
+if not Result
+    say "! FALSE: string(a) > string()"
+
+put "a" is as great as "" into Result
+if not Result
+    say "! FALSE: string(a) >= string()"
+
+put "a" is "" into Result
+if Result
+    say "! TRUE: string(a) is string()"
+
+put "a" isnt "" into Result
+if not Result
+    say "! FALSE: string(a) isnt string()"
+
+( Test "a", "ab": no conversion needed )
+put "a" is less than "ab" into Result
+if not Result
+    say "! FALSE: string(a) < string(ab)"
+
+put "a" is as little as "ab" into Result
+if not Result
+    say "! FALSE: string(a) <= string(ab)"
+
+put "a" is greater than "ab" into Result
+if Result
+    say "! TRUE: string(a) > string(ab)"
+
+put "a" is as great as "ab" into Result
+if Result
+    say "! TRUE: string(a) >= string(ab)"
+
+put "a" is "ab" into Result
+if Result
+    say "! TRUE: string(a) is string(ab)"
+
+put "a" isnt "ab" into Result
+if not Result
+    say "! FALSE: string(a) isnt string(ab)"
+
+put "ab" is less than "a" into Result
+if Result
+    say "! TRUE: string(ab) < string(a)"
+
+put "ab" is as little as "a" into Result
+if Result
+    say "! TRUE: string(ab) <= string(a)"
+
+put "ab" is greater than "a" into Result
+if not Result
+    say "! FALSE: string(ab) > string(a)"
+
+put "ab" is as great as "a" into Result
+if not Result
+    say "! FALSE: string(ab) >= string(a)"
+
+put "ab" is "a" into Result
+if Result
+    say "! TRUE: string(ab) is string(a)"
+
+put "ab" isnt "a" into Result
+if not Result
+    say "! FALSE: string(ab) isnt string(a)"
+
+( Test "a", "b": no conversion needed )
+put "a" is less than "b" into Result
+if not Result
+    say "! FALSE: string(a) < string(b)"
+
+put "a" is as little as "b" into Result
+if not Result
+    say "! FALSE: string(a) <= string(b)"
+
+put "a" is greater than "b" into Result
+if Result
+    say "! TRUE: string(a) > string(b)"
+
+put "a" is as great as "b" into Result
+if Result
+    say "! TRUE: string(a) >= string(b)"
+
+put "a" is "b" into Result
+if Result
+    say "! TRUE: string(a) is string(b)"
+
+put "a" isnt "b" into Result
+if not Result
+    say "! FALSE: string(a) isnt string(b)"
+
+put "b" is less than "a" into Result
+if Result
+    say "! TRUE: string(b) < string(a)"
+
+put "b" is as little as "a" into Result
+if Result
+    say "! TRUE: string(b) <= string(a)"
+
+put "b" is greater than "a" into Result
+if not Result
+    say "! FALSE: string(b) > string(a)"
+
+put "b" is as great as "a" into Result
+if not Result
+    say "! FALSE: string(b) >= string(a)"
+
+put "b" is "a" into Result
+if Result
+    say "! TRUE: string(b) is string(a)"
+
+put "b" isnt "a" into Result
+if not Result
+    say "! FALSE: string(b) isnt string(a)"
+
+( STRING COERCIONS )
+( Test 0, "0": convert to 0, 0.0 )
+put 0 is less than "0" into Result
+if Result
+    say "! TRUE: 0 < string(0)"
+
+put 0 is as little as "0" into Result
+if not Result
+    say "! FALSE: 0 <= string(0)"
+
+put 0 is greater than "0" into Result
+if Result
+    say "! TRUE: 0 > string(0)"
+
+put 0 is as great as "0" into Result
+if not Result
+    say "! FALSE: 0 >= string(0)"
+
+put 0 is "0" into Result
+if not Result
+    say "! FALSE: 0 is string(0)"
+
+put 0 isnt "0" into Result
+if Result
+    say "! TRUE: 0 isnt string(0)"
+
+put "0" is less than 0 into Result
+if Result
+    say "! TRUE: string(0) < 0"
+
+put "0" is as little as 0 into Result
+if not Result
+    say "! FALSE: string(0) <= 0"
+
+put "0" is greater than 0 into Result
+if Result
+    say "! TRUE: string(0) > 0"
+
+put "0" is as great as 0 into Result
+if not Result
+    say "! FALSE: string(0) >= 0"
+
+put "0" is 0 into Result
+if not Result
+    say "! FALSE: string(0) is 0"
+
+put "0" isnt 0 into Result
+if Result
+    say "! TRUE: string(0) isnt 0"
+
+( Test 15, "0": convert to 15, 0.0 )
+put 15 is less than "0" into Result
+if Result
+    say "! TRUE: 15 < string(0)"
+
+put 15 is as little as "0" into Result
+if Result
+    say "! TRUE: 15 <= string(0)"
+
+put 15 is greater than "0" into Result
+if not Result
+    say "! FALSE: 15 > string(0)"
+
+put 15 is as great as "0" into Result
+if not Result
+    say "! FALSE: 15 >= string(0)"
+
+put 15 is "0" into Result
+if Result
+    say "! TRUE: 15 is string(0)"
+
+put 15 isnt "0" into Result
+if not Result
+    say "! FALSE: 15 isnt string(0)"
+
+put "0" is less than 15 into Result
+if not Result
+    say "! FALSE: string(0) < 15"
+
+put "0" is as little as 15 into Result
+if not Result
+    say "! FALSE: string(0) <= 15"
+
+put "0" is greater than 15 into Result
+if Result
+    say "! TRUE: string(0) > 15"
+
+put "0" is as great as 15 into Result
+if Result
+    say "! TRUE: string(0) >= 15"
+
+put "0" is 15 into Result
+if Result
+    say "! TRUE: string(0) is 15"
+
+put "0" isnt 15 into Result
+if not Result
+    say "! FALSE: string(0) isnt 15"
+
+( Test 0, ".0": convert to 0, 0.0 )
+put 0 is less than ".0" into Result
+if Result
+    say "! TRUE: 0 < string(.0)"
+
+put 0 is as little as ".0" into Result
+if not Result
+    say "! FALSE: 0 <= string(.0)"
+
+put 0 is greater than ".0" into Result
+if Result
+    say "! TRUE: 0 > string(.0)"
+
+put 0 is as great as ".0" into Result
+if not Result
+    say "! FALSE: 0 >= string(.0)"
+
+put 0 is ".0" into Result
+if not Result
+    say "! FALSE: 0 is string(.0)"
+
+put 0 isnt ".0" into Result
+if Result
+    say "! TRUE: 0 isnt string(.0)"
+
+put ".0" is less than 0 into Result
+if Result
+    say "! TRUE: string(.0) < 0"
+
+put ".0" is as little as 0 into Result
+if not Result
+    say "! FALSE: string(.0) <= 0"
+
+put ".0" is greater than 0 into Result
+if Result
+    say "! TRUE: string(.0) > 0"
+
+put ".0" is as great as 0 into Result
+if not Result
+    say "! FALSE: string(.0) >= 0"
+
+put ".0" is 0 into Result
+if not Result
+    say "! FALSE: string(.0) is 0"
+
+put ".0" isnt 0 into Result
+if Result
+    say "! TRUE: string(.0) isnt 0"
+
+( Test NaN, "0": convert to NaN, 0.0 )
+put NaN is less than "0" into Result
+if Result
+    say "! TRUE: NaN < string(0)"
+
+put NaN is as little as "0" into Result
+if Result
+    say "! TRUE: NaN <= string(0)"
+
+put NaN is greater than "0" into Result
+if Result
+    say "! TRUE: NaN > string(0)"
+
+put NaN is as great as "0" into Result
+if Result
+    say "! TRUE: NaN >= string(0)"
+
+put NaN is "0" into Result
+if Result
+    say "! TRUE: NaN is string(0)"
+
+put NaN isnt "0" into Result
+if not Result
+    say "! FALSE: NaN isnt string(0)"
+
+put "0" is less than NaN into Result
+if Result
+    say "! TRUE: string(0) < NaN"
+
+put "0" is as little as NaN into Result
+if Result
+    say "! TRUE: string(0) <= NaN"
+
+put "0" is greater than NaN into Result
+if Result
+    say "! TRUE: string(0) > NaN"
+
+put "0" is as great as NaN into Result
+if Result
+    say "! TRUE: string(0) >= NaN"
+
+put "0" is NaN into Result
+if Result
+    say "! TRUE: string(0) is NaN"
+
+put "0" isnt NaN into Result
+if not Result
+    say "! FALSE: string(0) isnt NaN"
+
+( Test 0, "other": no applicable conversion )
+put 0 is less than "other" into Result
+if Result
+    say "! TRUE: 0 < string(other)"
+
+put 0 is as little as "other" into Result
+if Result
+    say "! TRUE: 0 <= string(other)"
+
+put 0 is greater than "other" into Result
+if Result
+    say "! TRUE: 0 > string(other)"
+
+put 0 is as great as "other" into Result
+if Result
+    say "! TRUE: 0 >= string(other)"
+
+put 0 is "other" into Result
+if Result
+    say "! TRUE: 0 is string(other)"
+
+put 0 isnt "other" into Result
+if not Result
+    say "! FALSE: 0 isnt string(other)"
+
+put "other" is less than 0 into Result
+if Result
+    say "! TRUE: string(other) < 0"
+
+put "other" is as little as 0 into Result
+if Result
+    say "! TRUE: string(other) <= 0"
+
+put "other" is greater than 0 into Result
+if Result
+    say "! TRUE: string(other) > 0"
+
+put "other" is as great as 0 into Result
+if Result
+    say "! TRUE: string(other) >= 0"
+
+put "other" is 0 into Result
+if Result
+    say "! TRUE: string(other) is 0"
+
+put "other" isnt 0 into Result
+if not Result
+    say "! FALSE: string(other) isnt 0"
+
+( Test true, "yes": convert to true, true )
+put true is less than "yes" into Result
+if Result
+    say "! TRUE: true < string(yes)"
+
+put true is as little as "yes" into Result
+if not Result
+    say "! FALSE: true <= string(yes)"
+
+put true is greater than "yes" into Result
+if Result
+    say "! TRUE: true > string(yes)"
+
+put true is as great as "yes" into Result
+if not Result
+    say "! FALSE: true >= string(yes)"
+
+put true is "yes" into Result
+if not Result
+    say "! FALSE: true is string(yes)"
+
+put true isnt "yes" into Result
+if Result
+    say "! TRUE: true isnt string(yes)"
+
+put "yes" is less than true into Result
+if Result
+    say "! TRUE: string(yes) < true"
+
+put "yes" is as little as true into Result
+if not Result
+    say "! FALSE: string(yes) <= true"
+
+put "yes" is greater than true into Result
+if Result
+    say "! TRUE: string(yes) > true"
+
+put "yes" is as great as true into Result
+if not Result
+    say "! FALSE: string(yes) >= true"
+
+put "yes" is true into Result
+if not Result
+    say "! FALSE: string(yes) is true"
+
+put "yes" isnt true into Result
+if Result
+    say "! TRUE: string(yes) isnt true"
+
+( Test false, "no": convert to false, false )
+put false is less than "no" into Result
+if Result
+    say "! TRUE: false < string(no)"
+
+put false is as little as "no" into Result
+if not Result
+    say "! FALSE: false <= string(no)"
+
+put false is greater than "no" into Result
+if Result
+    say "! TRUE: false > string(no)"
+
+put false is as great as "no" into Result
+if not Result
+    say "! FALSE: false >= string(no)"
+
+put false is "no" into Result
+if not Result
+    say "! FALSE: false is string(no)"
+
+put false isnt "no" into Result
+if Result
+    say "! TRUE: false isnt string(no)"
+
+put "no" is less than false into Result
+if Result
+    say "! TRUE: string(no) < false"
+
+put "no" is as little as false into Result
+if not Result
+    say "! FALSE: string(no) <= false"
+
+put "no" is greater than false into Result
+if Result
+    say "! TRUE: string(no) > false"
+
+put "no" is as great as false into Result
+if not Result
+    say "! FALSE: string(no) >= false"
+
+put "no" is false into Result
+if not Result
+    say "! FALSE: string(no) is false"
+
+put "no" isnt false into Result
+if Result
+    say "! TRUE: string(no) isnt false"
+
+( Test true, "no": convert to true, false )
+put true is less than "no" into Result
+if Result
+    say "! TRUE: true < string(no)"
+
+put true is as little as "no" into Result
+if Result
+    say "! TRUE: true <= string(no)"
+
+put true is greater than "no" into Result
+if not Result
+    say "! FALSE: true > string(no)"
+
+put true is as great as "no" into Result
+if not Result
+    say "! FALSE: true >= string(no)"
+
+put true is "no" into Result
+if Result
+    say "! TRUE: true is string(no)"
+
+put true isnt "no" into Result
+if not Result
+    say "! FALSE: true isnt string(no)"
+
+put "no" is less than true into Result
+if not Result
+    say "! FALSE: string(no) < true"
+
+put "no" is as little as true into Result
+if not Result
+    say "! FALSE: string(no) <= true"
+
+put "no" is greater than true into Result
+if Result
+    say "! TRUE: string(no) > true"
+
+put "no" is as great as true into Result
+if Result
+    say "! TRUE: string(no) >= true"
+
+put "no" is true into Result
+if Result
+    say "! TRUE: string(no) is true"
+
+put "no" isnt true into Result
+if not Result
+    say "! FALSE: string(no) isnt true"
+
+( Test true, "other": no applicable conversion )
+put true is less than "other" into Result
+if Result
+    say "! TRUE: true < string(other)"
+
+put true is as little as "other" into Result
+if Result
+    say "! TRUE: true <= string(other)"
+
+put true is greater than "other" into Result
+if Result
+    say "! TRUE: true > string(other)"
+
+put true is as great as "other" into Result
+if Result
+    say "! TRUE: true >= string(other)"
+
+put true is "other" into Result
+if Result
+    say "! TRUE: true is string(other)"
+
+put true isnt "other" into Result
+if not Result
+    say "! FALSE: true isnt string(other)"
+
+put "other" is less than true into Result
+if Result
+    say "! TRUE: string(other) < true"
+
+put "other" is as little as true into Result
+if Result
+    say "! TRUE: string(other) <= true"
+
+put "other" is greater than true into Result
+if Result
+    say "! TRUE: string(other) > true"
+
+put "other" is as great as true into Result
+if Result
+    say "! TRUE: string(other) >= true"
+
+put "other" is true into Result
+if Result
+    say "! TRUE: string(other) is true"
+
+put "other" isnt true into Result
+if not Result
+    say "! FALSE: string(other) isnt true"
+
+( Test null, "null": convert to null, null )
+put null is less than "null" into Result
+if Result
+    say "! TRUE: null < string(null)"
+
+put null is as little as "null" into Result
+if not Result
+    say "! FALSE: null <= string(null)"
+
+put null is greater than "null" into Result
+if Result
+    say "! TRUE: null > string(null)"
+
+put null is as great as "null" into Result
+if not Result
+    say "! FALSE: null >= string(null)"
+
+put null is "null" into Result
+if not Result
+    say "! FALSE: null is string(null)"
+
+put null isnt "null" into Result
+if Result
+    say "! TRUE: null isnt string(null)"
+
+put "null" is less than null into Result
+if Result
+    say "! TRUE: string(null) < null"
+
+put "null" is as little as null into Result
+if not Result
+    say "! FALSE: string(null) <= null"
+
+put "null" is greater than null into Result
+if Result
+    say "! TRUE: string(null) > null"
+
+put "null" is as great as null into Result
+if not Result
+    say "! FALSE: string(null) >= null"
+
+put "null" is null into Result
+if not Result
+    say "! FALSE: string(null) is null"
+
+put "null" isnt null into Result
+if Result
+    say "! TRUE: string(null) isnt null"
+
+( Test null, "other": no applicable conversion )
+put null is less than "other" into Result
+if Result
+    say "! TRUE: null < string(other)"
+
+put null is as little as "other" into Result
+if Result
+    say "! TRUE: null <= string(other)"
+
+put null is greater than "other" into Result
+if Result
+    say "! TRUE: null > string(other)"
+
+put null is as great as "other" into Result
+if Result
+    say "! TRUE: null >= string(other)"
+
+put null is "other" into Result
+if Result
+    say "! TRUE: null is string(other)"
+
+put null isnt "other" into Result
+if not Result
+    say "! FALSE: null isnt string(other)"
+
+put "other" is less than null into Result
+if Result
+    say "! TRUE: string(other) < null"
+
+put "other" is as little as null into Result
+if Result
+    say "! TRUE: string(other) <= null"
+
+put "other" is greater than null into Result
+if Result
+    say "! TRUE: string(other) > null"
+
+put "other" is as great as null into Result
+if Result
+    say "! TRUE: string(other) >= null"
+
+put "other" is null into Result
+if Result
+    say "! TRUE: string(other) is null"
+
+put "other" isnt null into Result
+if not Result
+    say "! FALSE: string(other) isnt null"
+
+( Test mysterious, "mysterious": no applicable conversion )
+put mysterious is less than "mysterious" into Result
+if Result
+    say "! TRUE: mysterious < string(mysterious)"
+
+put mysterious is as little as "mysterious" into Result
+if Result
+    say "! TRUE: mysterious <= string(mysterious)"
+
+put mysterious is greater than "mysterious" into Result
+if Result
+    say "! TRUE: mysterious > string(mysterious)"
+
+put mysterious is as great as "mysterious" into Result
+if Result
+    say "! TRUE: mysterious >= string(mysterious)"
+
+put mysterious is "mysterious" into Result
+if Result
+    say "! TRUE: mysterious is string(mysterious)"
+
+put mysterious isnt "mysterious" into Result
+if not Result
+    say "! FALSE: mysterious isnt string(mysterious)"
+
+put "mysterious" is less than mysterious into Result
+if Result
+    say "! TRUE: string(mysterious) < mysterious"
+
+put "mysterious" is as little as mysterious into Result
+if Result
+    say "! TRUE: string(mysterious) <= mysterious"
+
+put "mysterious" is greater than mysterious into Result
+if Result
+    say "! TRUE: string(mysterious) > mysterious"
+
+put "mysterious" is as great as mysterious into Result
+if Result
+    say "! TRUE: string(mysterious) >= mysterious"
+
+put "mysterious" is mysterious into Result
+if Result
+    say "! TRUE: string(mysterious) is mysterious"
+
+put "mysterious" isnt mysterious into Result
+if not Result
+    say "! FALSE: string(mysterious) isnt mysterious"
+
+( NUMBERS )
+( Test 0, 0: no conversion needed )
+put 0 is less than 0 into Result
+if Result
+    say "! TRUE: 0 < 0"
+
+put 0 is as little as 0 into Result
+if not Result
+    say "! FALSE: 0 <= 0"
+
+put 0 is greater than 0 into Result
+if Result
+    say "! TRUE: 0 > 0"
+
+put 0 is as great as 0 into Result
+if not Result
+    say "! FALSE: 0 >= 0"
+
+put 0 is 0 into Result
+if not Result
+    say "! FALSE: 0 is 0"
+
+put 0 isnt 0 into Result
+if Result
+    say "! TRUE: 0 isnt 0"
+
+( Test 0, 15: no conversion needed )
+put 0 is less than 15 into Result
+if not Result
+    say "! FALSE: 0 < 15"
+
+put 0 is as little as 15 into Result
+if not Result
+    say "! FALSE: 0 <= 15"
+
+put 0 is greater than 15 into Result
+if Result
+    say "! TRUE: 0 > 15"
+
+put 0 is as great as 15 into Result
+if Result
+    say "! TRUE: 0 >= 15"
+
+put 0 is 15 into Result
+if Result
+    say "! TRUE: 0 is 15"
+
+put 0 isnt 15 into Result
+if not Result
+    say "! FALSE: 0 isnt 15"
+
+put 15 is less than 0 into Result
+if Result
+    say "! TRUE: 15 < 0"
+
+put 15 is as little as 0 into Result
+if Result
+    say "! TRUE: 15 <= 0"
+
+put 15 is greater than 0 into Result
+if not Result
+    say "! FALSE: 15 > 0"
+
+put 15 is as great as 0 into Result
+if not Result
+    say "! FALSE: 15 >= 0"
+
+put 15 is 0 into Result
+if Result
+    say "! TRUE: 15 is 0"
+
+put 15 isnt 0 into Result
+if not Result
+    say "! FALSE: 15 isnt 0"
+
+( Test 0, NaN: no conversion needed )
+put 0 is less than NaN into Result
+if Result
+    say "! TRUE: 0 < NaN"
+
+put 0 is as little as NaN into Result
+if Result
+    say "! TRUE: 0 <= NaN"
+
+put 0 is greater than NaN into Result
+if Result
+    say "! TRUE: 0 > NaN"
+
+put 0 is as great as NaN into Result
+if Result
+    say "! TRUE: 0 >= NaN"
+
+put 0 is NaN into Result
+if Result
+    say "! TRUE: 0 is NaN"
+
+put 0 isnt NaN into Result
+if not Result
+    say "! FALSE: 0 isnt NaN"
+
+put NaN is less than 0 into Result
+if Result
+    say "! TRUE: NaN < 0"
+
+put NaN is as little as 0 into Result
+if Result
+    say "! TRUE: NaN <= 0"
+
+put NaN is greater than 0 into Result
+if Result
+    say "! TRUE: NaN > 0"
+
+put NaN is as great as 0 into Result
+if Result
+    say "! TRUE: NaN >= 0"
+
+put NaN is 0 into Result
+if Result
+    say "! TRUE: NaN is 0"
+
+put NaN isnt 0 into Result
+if not Result
+    say "! FALSE: NaN isnt 0"
+
+( NUMBER COERCIONS )
+( Test 0, false: convert to false, false )
+put 0 is less than false into Result
+if Result
+    say "! TRUE: 0 < false"
+
+put 0 is as little as false into Result
+if not Result
+    say "! FALSE: 0 <= false"
+
+put 0 is greater than false into Result
+if Result
+    say "! TRUE: 0 > false"
+
+put 0 is as great as false into Result
+if not Result
+    say "! FALSE: 0 >= false"
+
+put 0 is false into Result
+if not Result
+    say "! FALSE: 0 is false"
+
+put 0 isnt false into Result
+if Result
+    say "! TRUE: 0 isnt false"
+
+put false is less than 0 into Result
+if Result
+    say "! TRUE: false < 0"
+
+put false is as little as 0 into Result
+if not Result
+    say "! FALSE: false <= 0"
+
+put false is greater than 0 into Result
+if Result
+    say "! TRUE: false > 0"
+
+put false is as great as 0 into Result
+if not Result
+    say "! FALSE: false >= 0"
+
+put false is 0 into Result
+if not Result
+    say "! FALSE: false is 0"
+
+put false isnt 0 into Result
+if Result
+    say "! TRUE: false isnt 0"
+
+( Test 15, false: convert to true, false )
+put 15 is less than false into Result
+if Result
+    say "! TRUE: 15 < false"
+
+put 15 is as little as false into Result
+if Result
+    say "! TRUE: 15 <= false"
+
+put 15 is greater than false into Result
+if not Result
+    say "! FALSE: 15 > false"
+
+put 15 is as great as false into Result
+if not Result
+    say "! FALSE: 15 >= false"
+
+put 15 is false into Result
+if Result
+    say "! TRUE: 15 is false"
+
+put 15 isnt false into Result
+if not Result
+    say "! FALSE: 15 isnt false"
+
+put false is less than 15 into Result
+if not Result
+    say "! FALSE: false < 15"
+
+put false is as little as 15 into Result
+if not Result
+    say "! FALSE: false <= 15"
+
+put false is greater than 15 into Result
+if Result
+    say "! TRUE: false > 15"
+
+put false is as great as 15 into Result
+if Result
+    say "! TRUE: false >= 15"
+
+put false is 15 into Result
+if Result
+    say "! TRUE: false is 15"
+
+put false isnt 15 into Result
+if not Result
+    say "! FALSE: false isnt 15"
+
+( Test 15, true: convert to true, true )
+put 15 is less than true into Result
+if Result
+    say "! TRUE: 15 < true"
+
+put 15 is as little as true into Result
+if not Result
+    say "! FALSE: 15 <= true"
+
+put 15 is greater than true into Result
+if Result
+    say "! TRUE: 15 > true"
+
+put 15 is as great as true into Result
+if not Result
+    say "! FALSE: 15 >= true"
+
+put 15 is true into Result
+if not Result
+    say "! FALSE: 15 is true"
+
+put 15 isnt true into Result
+if Result
+    say "! TRUE: 15 isnt true"
+
+put true is less than 15 into Result
+if Result
+    say "! TRUE: true < 15"
+
+put true is as little as 15 into Result
+if not Result
+    say "! FALSE: true <= 15"
+
+put true is greater than 15 into Result
+if Result
+    say "! TRUE: true > 15"
+
+put true is as great as 15 into Result
+if not Result
+    say "! FALSE: true >= 15"
+
+put true is 15 into Result
+if not Result
+    say "! FALSE: true is 15"
+
+put true isnt 15 into Result
+if Result
+    say "! TRUE: true isnt 15"
+
+( Test NaN, false: convert to true, false )
+put NaN is less than false into Result
+if Result
+    say "! TRUE: NaN < false"
+
+put NaN is as little as false into Result
+if Result
+    say "! TRUE: NaN <= false"
+
+put NaN is greater than false into Result
+if not Result
+    say "! FALSE: NaN > false"
+
+put NaN is as great as false into Result
+if not Result
+    say "! FALSE: NaN >= false"
+
+put NaN is false into Result
+if Result
+    say "! TRUE: NaN is false"
+
+put NaN isnt false into Result
+if not Result
+    say "! FALSE: NaN isnt false"
+
+put false is less than NaN into Result
+if not Result
+    say "! FALSE: false < NaN"
+
+put false is as little as NaN into Result
+if not Result
+    say "! FALSE: false <= NaN"
+
+put false is greater than NaN into Result
+if Result
+    say "! TRUE: false > NaN"
+
+put false is as great as NaN into Result
+if Result
+    say "! TRUE: false >= NaN"
+
+put false is NaN into Result
+if Result
+    say "! TRUE: false is NaN"
+
+put false isnt NaN into Result
+if not Result
+    say "! FALSE: false isnt NaN"
+
+( Test 0, null: convert to null, null )
+put 0 is less than null into Result
+if Result
+    say "! TRUE: 0 < null"
+
+put 0 is as little as null into Result
+if not Result
+    say "! FALSE: 0 <= null"
+
+put 0 is greater than null into Result
+if Result
+    say "! TRUE: 0 > null"
+
+put 0 is as great as null into Result
+if not Result
+    say "! FALSE: 0 >= null"
+
+put 0 is null into Result
+if not Result
+    say "! FALSE: 0 is null"
+
+put 0 isnt null into Result
+if Result
+    say "! TRUE: 0 isnt null"
+
+put null is less than 0 into Result
+if Result
+    say "! TRUE: null < 0"
+
+put null is as little as 0 into Result
+if not Result
+    say "! FALSE: null <= 0"
+
+put null is greater than 0 into Result
+if Result
+    say "! TRUE: null > 0"
+
+put null is as great as 0 into Result
+if not Result
+    say "! FALSE: null >= 0"
+
+put null is 0 into Result
+if not Result
+    say "! FALSE: null is 0"
+
+put null isnt 0 into Result
+if Result
+    say "! TRUE: null isnt 0"
+
+( Test 15, null: no applicable conversion )
+put 15 is less than null into Result
+if Result
+    say "! TRUE: 15 < null"
+
+put 15 is as little as null into Result
+if Result
+    say "! TRUE: 15 <= null"
+
+put 15 is greater than null into Result
+if Result
+    say "! TRUE: 15 > null"
+
+put 15 is as great as null into Result
+if Result
+    say "! TRUE: 15 >= null"
+
+put 15 is null into Result
+if Result
+    say "! TRUE: 15 is null"
+
+put 15 isnt null into Result
+if not Result
+    say "! FALSE: 15 isnt null"
+
+put null is less than 15 into Result
+if Result
+    say "! TRUE: null < 15"
+
+put null is as little as 15 into Result
+if Result
+    say "! TRUE: null <= 15"
+
+put null is greater than 15 into Result
+if Result
+    say "! TRUE: null > 15"
+
+put null is as great as 15 into Result
+if Result
+    say "! TRUE: null >= 15"
+
+put null is 15 into Result
+if Result
+    say "! TRUE: null is 15"
+
+put null isnt 15 into Result
+if not Result
+    say "! FALSE: null isnt 15"
+
+( BOOLEANS )
+( Test true, true: no conversion needed )
+put true is less than true into Result
+if Result
+    say "! TRUE: true < true"
+
+put true is as little as true into Result
+if not Result
+    say "! FALSE: true <= true"
+
+put true is greater than true into Result
+if Result
+    say "! TRUE: true > true"
+
+put true is as great as true into Result
+if not Result
+    say "! FALSE: true >= true"
+
+put true is true into Result
+if not Result
+    say "! FALSE: true is true"
+
+put true isnt true into Result
+if Result
+    say "! TRUE: true isnt true"
+
+( Test false, false: no conversion needed )
+put false is less than false into Result
+if Result
+    say "! TRUE: false < false"
+
+put false is as little as false into Result
+if not Result
+    say "! FALSE: false <= false"
+
+put false is greater than false into Result
+if Result
+    say "! TRUE: false > false"
+
+put false is as great as false into Result
+if not Result
+    say "! FALSE: false >= false"
+
+put false is false into Result
+if not Result
+    say "! FALSE: false is false"
+
+put false isnt false into Result
+if Result
+    say "! TRUE: false isnt false"
+
+( Test true, false: no conversion needed )
+put true is less than false into Result
+if Result
+    say "! TRUE: true < false"
+
+put true is as little as false into Result
+if Result
+    say "! TRUE: true <= false"
+
+put true is greater than false into Result
+if not Result
+    say "! FALSE: true > false"
+
+put true is as great as false into Result
+if not Result
+    say "! FALSE: true >= false"
+
+put true is false into Result
+if Result
+    say "! TRUE: true is false"
+
+put true isnt false into Result
+if not Result
+    say "! FALSE: true isnt false"
+
+put false is less than true into Result
+if not Result
+    say "! FALSE: false < true"
+
+put false is as little as true into Result
+if not Result
+    say "! FALSE: false <= true"
+
+put false is greater than true into Result
+if Result
+    say "! TRUE: false > true"
+
+put false is as great as true into Result
+if Result
+    say "! TRUE: false >= true"
+
+put false is true into Result
+if Result
+    say "! TRUE: false is true"
+
+put false isnt true into Result
+if not Result
+    say "! FALSE: false isnt true"
+
+( BOOLEAN COERCIONS )
+( Test null, false: convert to null, null )
+put null is less than false into Result
+if Result
+    say "! TRUE: null < false"
+
+put null is as little as false into Result
+if not Result
+    say "! FALSE: null <= false"
+
+put null is greater than false into Result
+if Result
+    say "! TRUE: null > false"
+
+put null is as great as false into Result
+if not Result
+    say "! FALSE: null >= false"
+
+put null is false into Result
+if not Result
+    say "! FALSE: null is false"
+
+put null isnt false into Result
+if Result
+    say "! TRUE: null isnt false"
+
+put false is less than null into Result
+if Result
+    say "! TRUE: false < null"
+
+put false is as little as null into Result
+if not Result
+    say "! FALSE: false <= null"
+
+put false is greater than null into Result
+if Result
+    say "! TRUE: false > null"
+
+put false is as great as null into Result
+if not Result
+    say "! FALSE: false >= null"
+
+put false is null into Result
+if not Result
+    say "! FALSE: false is null"
+
+put false isnt null into Result
+if Result
+    say "! TRUE: false isnt null"
+
+( Test null, true: no applicable conversion )
+put null is less than true into Result
+if Result
+    say "! TRUE: null < true"
+
+put null is as little as true into Result
+if Result
+    say "! TRUE: null <= true"
+
+put null is greater than true into Result
+if Result
+    say "! TRUE: null > true"
+
+put null is as great as true into Result
+if Result
+    say "! TRUE: null >= true"
+
+put null is true into Result
+if Result
+    say "! TRUE: null is true"
+
+put null isnt true into Result
+if not Result
+    say "! FALSE: null isnt true"
+
+put true is less than null into Result
+if Result
+    say "! TRUE: true < null"
+
+put true is as little as null into Result
+if Result
+    say "! TRUE: true <= null"
+
+put true is greater than null into Result
+if Result
+    say "! TRUE: true > null"
+
+put true is as great as null into Result
+if Result
+    say "! TRUE: true >= null"
+
+put true is null into Result
+if Result
+    say "! TRUE: true is null"
+
+put true isnt null into Result
+if not Result
+    say "! FALSE: true isnt null"
+
+( NULL )
+( Test null, null: no conversion needed )
+put null is less than null into Result
+if Result
+    say "! TRUE: null < null"
+
+put null is as little as null into Result
+if not Result
+    say "! FALSE: null <= null"
+
+put null is greater than null into Result
+if Result
+    say "! TRUE: null > null"
+
+put null is as great as null into Result
+if not Result
+    say "! FALSE: null >= null"
+
+put null is null into Result
+if not Result
+    say "! FALSE: null is null"
+
+put null isnt null into Result
+if Result
+    say "! TRUE: null isnt null"
+
+( MYSTERIOUS )
+( Test mysterious, mysterious: no conversion needed )
+put mysterious is less than mysterious into Result
+if Result
+    say "! TRUE: mysterious < mysterious"
+
+put mysterious is as little as mysterious into Result
+if not Result
+    say "! FALSE: mysterious <= mysterious"
+
+put mysterious is greater than mysterious into Result
+if Result
+    say "! TRUE: mysterious > mysterious"
+
+put mysterious is as great as mysterious into Result
+if not Result
+    say "! FALSE: mysterious >= mysterious"
+
+put mysterious is mysterious into Result
+if not Result
+    say "! FALSE: mysterious is mysterious"
+
+put mysterious isnt mysterious into Result
+if Result
+    say "! TRUE: mysterious isnt mysterious"
+
+( NO CONVERSION )
+( Test null, mysterious: no applicable conversion )
+put null is less than mysterious into Result
+if Result
+    say "! TRUE: null < mysterious"
+
+put null is as little as mysterious into Result
+if Result
+    say "! TRUE: null <= mysterious"
+
+put null is greater than mysterious into Result
+if Result
+    say "! TRUE: null > mysterious"
+
+put null is as great as mysterious into Result
+if Result
+    say "! TRUE: null >= mysterious"
+
+put null is mysterious into Result
+if Result
+    say "! TRUE: null is mysterious"
+
+put null isnt mysterious into Result
+if not Result
+    say "! FALSE: null isnt mysterious"
+
+put mysterious is less than null into Result
+if Result
+    say "! TRUE: mysterious < null"
+
+put mysterious is as little as null into Result
+if Result
+    say "! TRUE: mysterious <= null"
+
+put mysterious is greater than null into Result
+if Result
+    say "! TRUE: mysterious > null"
+
+put mysterious is as great as null into Result
+if Result
+    say "! TRUE: mysterious >= null"
+
+put mysterious is null into Result
+if Result
+    say "! TRUE: mysterious is null"
+
+put mysterious isnt null into Result
+if not Result
+    say "! FALSE: mysterious isnt null"
+

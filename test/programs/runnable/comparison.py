@@ -37,28 +37,6 @@ type_list = [
 
 types = { t.name: t for t in type_list }
 
-
-values = [
-    RockstarValue('"0"', types['string']),
-    RockstarValue('".0"', types['string']),
-    # RockstarValue('"-10"', types['string']),
-    RockstarValue('"yes"', types['string']),
-    RockstarValue('"no"', types['string']),
-    RockstarValue('"null"', types['string']),
-    RockstarValue('"other"', types['string']),
-
-    RockstarValue('0', types['number']),
-    RockstarValue('10', types['number']),
-    # RockstarValue('-10', types['number']),
-    # Defined in test prelude
-    RockstarValue('NaN', types['number']),
-
-    RockstarValue('true', types['boolean']),
-    RockstarValue('false', types['boolean']),
-    RockstarValue('null', types['null']),
-    RockstarValue('mysterious', types['mysterious']),
-]
-
 prelude = '''\
 put 0 over 0 into NaN
 '''
@@ -66,30 +44,104 @@ put 0 over 0 into NaN
 
 def main():
     print(prelude)
-    no_type_conversion_pairs = set()
-    for v1 in values:
-        for v2 in values:
-            generate_order_comparisons(v1, v2, no_type_conversion_pairs)
+
+    N_0 = RockstarValue('0', types['number'])
+    N_15 = RockstarValue('15', types['number'])
+    N_NAN = RockstarValue('NaN', types['number'])
+
+    TRUE = RockstarValue('true', types['boolean'])
+    FALSE = RockstarValue('false', types['boolean'])
+    NULL = RockstarValue('null', types['null'])
+    MYST = RockstarValue('mysterious', types['mysterious'])
+
+    comment('STRINGS')
+    S_ = RockstarValue('""', types['string'])
+    S_A = RockstarValue('"a"', types['string'])
+    S_AB = RockstarValue('"ab"', types['string'])
+    S_B = RockstarValue('"b"', types['string'])
+
+    gen_order_comparisons(S_A, S_A)
+    gen_order_comparisons(S_, S_A)
+    gen_order_comparisons(S_A, S_AB)
+    gen_order_comparisons(S_A, S_B)
+
+    comment('STRING COERCIONS')
+    S_0 = RockstarValue('"0"', types['string'])
+    S_OTHER = RockstarValue('"other"', types['string'])
+
+    gen_order_comparisons(N_0, S_0)
+    gen_order_comparisons(N_15, S_0)
+    gen_order_comparisons(N_0, RockstarValue('".0"', types['string']))
+    gen_order_comparisons(N_NAN, S_0)
+    gen_order_comparisons(N_0, S_OTHER)
+
+    gen_order_comparisons(TRUE, RockstarValue('"yes"', types['string']))
+    gen_order_comparisons(FALSE, RockstarValue('"no"', types['string']))
+    gen_order_comparisons(TRUE, RockstarValue('"no"', types['string']))
+    gen_order_comparisons(TRUE, S_OTHER)
+
+    gen_order_comparisons(NULL, RockstarValue('"null"', types['string']))  # XXX is this a thing?
+    gen_order_comparisons(NULL, S_OTHER)
+
+    gen_order_comparisons(MYST, RockstarValue('"mysterious"', types['string']))
+
+    comment('NUMBERS')
+    gen_order_comparisons(N_0, N_0)
+    gen_order_comparisons(N_0, N_15)
+    gen_order_comparisons(N_0, N_NAN)
+
+    comment('NUMBER COERCIONS')
+    gen_order_comparisons(N_0, FALSE)
+    gen_order_comparisons(N_15, FALSE)
+    gen_order_comparisons(N_15, TRUE)
+    gen_order_comparisons(N_NAN, FALSE)
+
+    gen_order_comparisons(N_0, NULL)
+    gen_order_comparisons(N_15, NULL)
+
+    comment('BOOLEANS')
+    gen_order_comparisons(TRUE, TRUE)
+    gen_order_comparisons(FALSE, FALSE)
+    gen_order_comparisons(TRUE, FALSE)
+
+    comment('BOOLEAN COERCIONS')
+    gen_order_comparisons(NULL, FALSE)
+    gen_order_comparisons(NULL, TRUE)
+
+    comment('NULL')
+    gen_order_comparisons(NULL, NULL)
+
+    comment('MYSTERIOUS')
+    gen_order_comparisons(MYST, MYST)
+
+    comment('NO CONVERSION')
+    gen_order_comparisons(NULL, MYST)
 
 
-def generate_order_comparisons(v1, v2, no_type_conversion_pairs):
+def comment(s):
+    print(f'( {s} )')
+
+
+def gen_order_comparisons(v1, v2):
+    initial = (v1, v2)
     coerced = apply_coercion(v1, v2)
 
     if coerced is None:
-        tys = (v1.ty.name, v2.ty.name)
-        if tys in no_type_conversion_pairs:
-            return
-        else:
-            no_type_conversion_pairs.add(tys)
-
-        print('(Expected: no applicable conversion)')
+        comment(f'Test {v1.value}, {v2.value}: no applicable conversion')
         test_comparison((v1, v2), lambda f: f == op.ne)
+        test_comparison((v2, v1), lambda f: f == op.ne)
     else:
         c1 = coerced[0].ty.conv(coerced[0].value)
         c2 = coerced[1].ty.conv(coerced[1].value)
 
-        print(f'(Expected: converted to {c1}, {c2})')
+        if initial == coerced:
+            comment(f'Test {v1.value}, {v2.value}: no conversion needed')
+        else:
+            comment(f'Test {v1.value}, {v2.value}: convert to {coerced[0].value}, {coerced[1].value}')
+
         test_comparison((v1, v2), lambda f: f(c1, c2))
+        if v1.value != v2.value:
+            test_comparison((v2, v1), lambda f: f(c2, c1))
 
 
 def test_comparison(vals, t):
@@ -110,10 +162,6 @@ def verify_expr(v1, v2, expected, expr, tag):
         f'put {v1.value} {expr} {v2.value} into Result\n'
         f'if {fail_check}\n'
         f'    say "! {fail_res}: {esc(v1)} {tag} {esc(v2)}"\n'
-        #f'if {v1.value} {expr} {v2.value}\n'
-        #f'    say "{true_mark} TRUE: {esc(v1)} {tag} {esc(v2)}"\n'
-        #f'else\n'
-        #f'    say "{false_mark} FALSE: {esc(v1)} {tag} {esc(v2)}"\n'
     )
 
 

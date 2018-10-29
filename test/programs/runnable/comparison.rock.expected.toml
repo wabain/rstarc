@@ -1,0 +1,94 @@
+[tests]
+enabled = ["run"]
+
+["run.exec"]
+returncode = "0"
+stdout = """
+! FALSE: string(a) <= string(a)
+! FALSE: string(a) >= string(a)
+! FALSE: string() < string(a)
+! FALSE: string() <= string(a)
+! FALSE: string(a) > string()
+! FALSE: string(a) >= string()
+! FALSE: string(a) < string(ab)
+! FALSE: string(a) <= string(ab)
+! FALSE: string(ab) > string(a)
+! FALSE: string(ab) >= string(a)
+! FALSE: string(a) < string(b)
+! FALSE: string(a) <= string(b)
+! FALSE: string(b) > string(a)
+! FALSE: string(b) >= string(a)
+! FALSE: 0 <= string(0)
+! FALSE: 0 >= string(0)
+! FALSE: 0 is string(0)
+! TRUE: 0 isnt string(0)
+! FALSE: string(0) <= 0
+! FALSE: string(0) >= 0
+! FALSE: string(0) is 0
+! TRUE: string(0) isnt 0
+! FALSE: 15 > string(0)
+! FALSE: 15 >= string(0)
+! FALSE: string(0) < 15
+! FALSE: string(0) <= 15
+! FALSE: 0 <= string(.0)
+! FALSE: 0 >= string(.0)
+! FALSE: 0 is string(.0)
+! TRUE: 0 isnt string(.0)
+! FALSE: string(.0) <= 0
+! FALSE: string(.0) >= 0
+! FALSE: string(.0) is 0
+! TRUE: string(.0) isnt 0
+! FALSE: true <= string(yes)
+! FALSE: true >= string(yes)
+! FALSE: true is string(yes)
+! TRUE: true isnt string(yes)
+! FALSE: string(yes) <= true
+! FALSE: string(yes) >= true
+! FALSE: string(yes) is true
+! TRUE: string(yes) isnt true
+! FALSE: false <= string(no)
+! FALSE: false >= string(no)
+! FALSE: false is string(no)
+! TRUE: false isnt string(no)
+! FALSE: string(no) <= false
+! FALSE: string(no) >= false
+! FALSE: string(no) is false
+! TRUE: string(no) isnt false
+! FALSE: true > string(no)
+! FALSE: true >= string(no)
+! FALSE: string(no) < true
+! FALSE: string(no) <= true
+! FALSE: null <= string(null)
+! FALSE: null >= string(null)
+! FALSE: null is string(null)
+! TRUE: null isnt string(null)
+! FALSE: string(null) <= null
+! FALSE: string(null) >= null
+! FALSE: string(null) is null
+! TRUE: string(null) isnt null
+! FALSE: 15 <= true
+! TRUE: 15 > true
+! FALSE: 15 is true
+! TRUE: 15 isnt true
+! TRUE: true < 15
+! FALSE: true >= 15
+! FALSE: true is 15
+! TRUE: true isnt 15
+! FALSE: NaN > false
+! FALSE: NaN >= false
+! FALSE: false < NaN
+! FALSE: false <= NaN
+! TRUE: 15 > null
+! TRUE: 15 >= null
+! TRUE: null < 15
+! TRUE: null <= 15
+! TRUE: null < true
+! TRUE: null <= true
+! TRUE: true > null
+! TRUE: true >= null
+! FALSE: mysterious <= mysterious
+! FALSE: mysterious >= mysterious
+"""
+
+["run.interpret"]
+returncode = "0"
