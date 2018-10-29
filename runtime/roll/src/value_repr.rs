@@ -34,6 +34,7 @@
 use core::{str, slice};
 use core::marker::PhantomData;
 
+use rstarc_types::Value;
 use super::{VoidPtr, RockstarValue};
 
 pub const NULL_BITS: u64 = 0x0;
@@ -116,7 +117,7 @@ impl<'a> Scalar<'a> {
     pub fn deref_rec(&self) -> RockstarValue<'a> {
         unsafe {
             match self.scalar_type() {
-                TagType::Null => RockstarValue::Null,
+                TagType::Null => Value::Null,
                 TagType::Immediate => immediate_from_bits(self.bits),
                 TagType::HeapPointer => deref_heap_pointer(self.bits),
                 TagType::ConstString => deref_const_string(self.bits),
@@ -148,7 +149,7 @@ impl<'a> HeapValue<'a> {
         unsafe {
             let head = *self.ptr;
             match get_tag_type(head) {
-                TagType::Null => RockstarValue::Null,
+                TagType::Null => Value::Null,
                 TagType::Immediate => immediate_from_bits(head),
                 TagType::HeapPointer => deref_heap_pointer(head),
                 TagType::ConstString => deref_const_string(head),
@@ -181,9 +182,9 @@ fn get_tag_type(bits: u64) -> TagType {
 #[inline(always)]
 fn immediate_from_bits<'a>(bits: u64) -> RockstarValue<'a> {
     match bits {
-        TRUE_BITS => RockstarValue::Boolean(true),
-        FALSE_BITS => RockstarValue::Boolean(false),
-        MYSTERIOUS_BITS => RockstarValue::Mysterious,
+        TRUE_BITS => Value::Boolean(true),
+        FALSE_BITS => Value::Boolean(false),
+        MYSTERIOUS_BITS => Value::Mysterious,
         _ => panic!("Unexpected immediate value 0x{:x}", bits),
     }
 }
@@ -210,19 +211,19 @@ unsafe fn deref_const_string<'a>(bits: u64) -> RockstarValue<'a> {
     let len = strlen(ptr);
     let s = str::from_utf8_unchecked(slice::from_raw_parts(ptr, len));
 
-    RockstarValue::String(s)
+    Value::String(s)
 }
 
 #[inline]
 unsafe fn extract_function_ptr<'a>(bits: u64) -> RockstarValue<'a> {
     let ptr = tag_to_ptr!((const) VoidPtr, FUNCTION_TAG, bits);
-    RockstarValue::Function(ptr)
+    Value::Function(ptr)
 }
 
 #[inline]
 unsafe fn deref_heap_number<'a>(_head: u64, ptr: *const u64) -> RockstarValue<'a> {
     let n_ptr = (ptr as *const f64).offset(1);
-    RockstarValue::Number(*n_ptr)
+    Value::Number(*n_ptr)
 }
 
 #[inline]
@@ -231,7 +232,7 @@ unsafe fn deref_heap_string<'a>(head: u64, ptr: *const u64) -> RockstarValue<'a>
     let s_ptr = (ptr as *const u8).offset(8);
     let s = str::from_utf8_unchecked(slice::from_raw_parts(s_ptr, len));
 
-    RockstarValue::String(s)
+    Value::String(s)
 }
 
 unsafe fn strlen(p: *const u8) -> usize {

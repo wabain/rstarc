@@ -6,8 +6,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::cmp::Ordering;
 
+use rstarc_types::Value;
 use base_analysis;
-use lang_constructs::{Value, LangVariable};
+use lang_constructs::{RockstarValue as BaseValue, LangVariable};
 use ast::{Statement, StatementKind, Expr, Logical, Comparison, Comparator, LValue};
 use runtime_error::RuntimeError;
 
@@ -58,7 +59,7 @@ impl fmt::Display for InterpreterError {
 
 type InterpResult<T> = Result<T, InterpreterError>;
 
-type InterpValue<'a> = Value<InterpFunc<'a>>;
+type InterpValue<'a> = BaseValue<InterpFunc<'a>>;
 type ScopeCell<'a> = Rc<RefCell<VariableScope<'a>>>;
 
 #[derive(Clone)]

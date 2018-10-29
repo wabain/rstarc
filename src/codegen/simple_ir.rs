@@ -2,9 +2,10 @@ use std::fmt;
 use std::borrow::Cow;
 use std::collections::HashSet;
 
+use rstarc_types::Value as LangValue;
 use base_analysis::{ScopeId, ScopeMap, VariableType};
 use ast::{self, Expr, Logical, Statement, StatementKind, Pos};
-use lang_constructs::{self, LangVariable, Value as LangValue};
+use lang_constructs::{RockstarValue as BaseValue, LangVariable};
 
 use base_analysis::CompileError;
 
@@ -238,7 +239,7 @@ impl Label {
     }
 }
 
-type LiteralValue = lang_constructs::Value<ScopeId>;
+type LiteralValue = BaseValue<ScopeId>;
 
 #[derive(Debug, Hash, PartialEq, Eq, Copy, Clone)]
 pub struct LocalTemp(u64);
@@ -776,7 +777,7 @@ impl<'prog> IRBuilder<'prog> {
                 globals.push((var.clone(), scope_id));
             } else {
                 let ir_lval = self.synthesize_ir_lval(var, func_pos);
-                let initial_value = IRValue::Literal(lang_constructs::Value::Mysterious);
+                let initial_value = IRValue::Literal(LangValue::Mysterious);
                 self.emit(SimpleIR::Store(ir_lval, initial_value));
             }
         }
@@ -854,9 +855,9 @@ impl<'prog> AstAdapter<'prog> {
 
                 let add_val = match &statement.kind {
                     StatementKind::Incr(..) =>
-                        IRValue::Literal(lang_constructs::Value::Number(*count as f64)),
+                        IRValue::Literal(LangValue::Number(*count as f64)),
                     StatementKind::Decr(..) =>
-                        IRValue::Literal(lang_constructs::Value::Number(-(*count as f64))),
+                        IRValue::Literal(LangValue::Number(-(*count as f64))),
                     _ => unreachable!(),
                 };
 
@@ -926,7 +927,7 @@ impl<'prog> AstAdapter<'prog> {
                 let ir_lval = ir_builder.resolve_ast_variable(&var);
                 ir_builder.emit(SimpleIR::Store(
                     ir_lval,
-                    IRValue::Literal(lang_constructs::Value::Function(scope_id)),
+                    IRValue::Literal(LangValue::Function(scope_id)),
                 ));
 
                 let mut func_builder = IRBuilder::new(self.scope_map, scope_id);
@@ -976,7 +977,7 @@ fn resolve_ast_lval<'prog>(lval: &'prog ast::LValue) -> &'prog ast::Variable {
 
 #[cfg(test)]
 mod test {
-    use lang_constructs::Value;
+    use rstarc_types::Value;
     use super::{verify_ir_func, SimpleIR, IRValue, IRLValue, LocalTemp};
 
     #[test]

@@ -6,8 +6,8 @@ extern crate llvm_sys as llvm;
 extern crate regex;
 extern crate tempdir;
 extern crate void;
-
 #[cfg(unix)] extern crate libc;
+extern crate rstarc_types;
 
 mod ast;
 mod ast_print;
