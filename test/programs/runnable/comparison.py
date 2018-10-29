@@ -3,39 +3,9 @@
 import operator as op
 from collections import namedtuple
 
-RockstarType = namedtuple('RockstarType', 'name, coercions, conv')
-RockstarValue = namedtuple('RockstarType', 'value, ty')
-
-true_literals = ["true", "right", "yes", "ok"]
-false_literals = ["false", "wrong", "no", "lies"]
-null_literals = ["null", "nothing", "nowhere", "nobody", "empty", "gone"]
-
-
-def none_on_err(fn):
-    try:
-        return fn()
-    except (TypeError, ValueError):
-        return None
-
-
-type_list = [
-    RockstarType('string', {
-        'number': lambda s: none_on_err(lambda: float(s)),
-        'boolean': lambda s: 'true' if s in true_literals else 'false' if s in false_literals else None,
-        'null': lambda s: 'null' if s in null_literals else None,
-    }, lambda s: s.strip('"')),
-    RockstarType('number', {
-        'boolean': lambda n: 'false' if (n == 0.0) else 'true',
-        'null': lambda n: 'null' if n == 0.0 else None,
-    }, lambda n: float(n)),
-    RockstarType('boolean', {
-        'null': lambda b: 'null' if not b else None
-    }, lambda b: (b == 'true')),
-    RockstarType('null', {}, lambda _: 0),
-    RockstarType('mysterious', {}, lambda _: 0),
-]
-
-types = { t.name: t for t in type_list }
+# A Rockstar value, with a Python value that will give
+# an equivalent in-type ordering
+RockstarValue = namedtuple('RockstarValue', 'value, py')
 
 prelude = '''\
 put 0 over 0 into NaN
@@ -45,103 +15,105 @@ put 0 over 0 into NaN
 def main():
     print(prelude)
 
-    N_0 = RockstarValue('0', types['number'])
-    N_15 = RockstarValue('15', types['number'])
-    N_NAN = RockstarValue('NaN', types['number'])
+    N_0 = RockstarValue('0', 0.0)
+    N_15 = RockstarValue('15', 15.0)
+    N_NAN = RockstarValue('NaN', float('nan'))
 
-    TRUE = RockstarValue('true', types['boolean'])
-    FALSE = RockstarValue('false', types['boolean'])
-    NULL = RockstarValue('null', types['null'])
-    MYST = RockstarValue('mysterious', types['mysterious'])
+    TRUE = RockstarValue('true', True)
+    FALSE = RockstarValue('false', False)
+    NULL = RockstarValue('null', 0)
+    MYST = RockstarValue('mysterious', 0)
 
     comment('STRINGS')
-    S_ = RockstarValue('""', types['string'])
-    S_A = RockstarValue('"a"', types['string'])
-    S_AB = RockstarValue('"ab"', types['string'])
-    S_B = RockstarValue('"b"', types['string'])
+    S_ = r_str('')
+    S_A = r_str('a')
+    S_AB = r_str('ab')
+    S_B = r_str('b')
 
-    gen_order_comparisons(S_A, S_A)
-    gen_order_comparisons(S_, S_A)
-    gen_order_comparisons(S_A, S_AB)
-    gen_order_comparisons(S_A, S_B)
+    gen_order_comparisons(S_A, S_A, conv=False)
+    gen_order_comparisons(S_, S_A, conv=False)
+    gen_order_comparisons(S_A, S_AB, conv=False)
+    gen_order_comparisons(S_A, S_B, conv=False)
 
     comment('STRING COERCIONS')
-    S_0 = RockstarValue('"0"', types['string'])
-    S_OTHER = RockstarValue('"other"', types['string'])
+    S_0 = r_str('0')
+    S_OTHER = r_str('other')
 
-    gen_order_comparisons(N_0, S_0)
-    gen_order_comparisons(N_15, S_0)
-    gen_order_comparisons(N_0, RockstarValue('".0"', types['string']))
-    gen_order_comparisons(N_NAN, S_0)
-    gen_order_comparisons(N_0, S_OTHER)
+    gen_order_comparisons(N_0, S_0, conv=(N_0, N_0))
+    gen_order_comparisons(N_15, S_0, conv=(N_15, N_0))
+    gen_order_comparisons(N_0, r_str('.0'), conv=(N_0, N_0))
+    gen_order_comparisons(N_NAN, S_0, conv=(N_NAN, N_0))
+    gen_order_comparisons(N_0, S_OTHER, conv=None)
 
-    gen_order_comparisons(TRUE, RockstarValue('"yes"', types['string']))
-    gen_order_comparisons(FALSE, RockstarValue('"no"', types['string']))
-    gen_order_comparisons(TRUE, RockstarValue('"no"', types['string']))
-    gen_order_comparisons(TRUE, S_OTHER)
+    gen_order_comparisons(TRUE, r_str('yes'), conv=(TRUE, TRUE))
+    gen_order_comparisons(FALSE, r_str('no'), conv=(FALSE, FALSE))
+    gen_order_comparisons(TRUE, r_str('no'), conv=(TRUE, FALSE))
+    gen_order_comparisons(TRUE, S_OTHER, conv=None)
 
-    gen_order_comparisons(NULL, RockstarValue('"null"', types['string']))  # XXX is this a thing?
-    gen_order_comparisons(NULL, S_OTHER)
+    gen_order_comparisons(NULL, r_str('null'), conv=(NULL, NULL))  # FIXME: is this in the spec?
+    gen_order_comparisons(NULL, S_OTHER, conv=None)
 
-    gen_order_comparisons(MYST, RockstarValue('"mysterious"', types['string']))
+    gen_order_comparisons(MYST, r_str('mysterious'), conv=None)
 
     comment('NUMBERS')
-    gen_order_comparisons(N_0, N_0)
-    gen_order_comparisons(N_0, N_15)
-    gen_order_comparisons(N_0, N_NAN)
+    gen_order_comparisons(N_0, N_0, conv=False)
+    gen_order_comparisons(N_0, N_15, conv=False)
+    gen_order_comparisons(N_0, N_NAN, conv=False)
 
     comment('NUMBER COERCIONS')
-    gen_order_comparisons(N_0, FALSE)
-    gen_order_comparisons(N_15, FALSE)
-    gen_order_comparisons(N_15, TRUE)
-    gen_order_comparisons(N_NAN, FALSE)
+    gen_order_comparisons(N_0, FALSE, conv=(FALSE, FALSE))
+    gen_order_comparisons(N_15, FALSE, conv=(TRUE, FALSE))
+    gen_order_comparisons(N_15, TRUE, conv=(TRUE, TRUE))
+    gen_order_comparisons(N_NAN, FALSE, conv=(TRUE, FALSE))
 
-    gen_order_comparisons(N_0, NULL)
-    gen_order_comparisons(N_15, NULL)
+    gen_order_comparisons(N_0, NULL, conv=(NULL, NULL))
+    gen_order_comparisons(N_15, NULL, conv=None)
 
     comment('BOOLEANS')
-    gen_order_comparisons(TRUE, TRUE)
-    gen_order_comparisons(FALSE, FALSE)
-    gen_order_comparisons(TRUE, FALSE)
+    gen_order_comparisons(TRUE, TRUE, conv=False)
+    gen_order_comparisons(FALSE, FALSE, conv=False)
+    gen_order_comparisons(TRUE, FALSE, conv=False)
 
     comment('BOOLEAN COERCIONS')
-    gen_order_comparisons(NULL, FALSE)
-    gen_order_comparisons(NULL, TRUE)
+    gen_order_comparisons(NULL, FALSE, conv=(NULL, NULL))
+    gen_order_comparisons(NULL, TRUE, conv=None)
 
     comment('NULL')
-    gen_order_comparisons(NULL, NULL)
+    gen_order_comparisons(NULL, NULL, conv=False)
 
     comment('MYSTERIOUS')
-    gen_order_comparisons(MYST, MYST)
+    gen_order_comparisons(MYST, MYST, conv=False)
 
     comment('NO CONVERSION')
-    gen_order_comparisons(NULL, MYST)
+    gen_order_comparisons(NULL, MYST, conv=None)
+
+
+def r_str(s):
+    return RockstarValue(f'"{s}"', s)
 
 
 def comment(s):
     print(f'( {s} )')
 
 
-def gen_order_comparisons(v1, v2):
-    initial = (v1, v2)
-    coerced = apply_coercion(v1, v2)
-
-    if coerced is None:
+def gen_order_comparisons(v1, v2, conv):
+    if conv is None:
         comment(f'Test {v1.value}, {v2.value}: no applicable conversion')
         test_comparison((v1, v2), lambda f: f == op.ne)
         test_comparison((v2, v1), lambda f: f == op.ne)
-    else:
-        c1 = coerced[0].ty.conv(coerced[0].value)
-        c2 = coerced[1].ty.conv(coerced[1].value)
+    elif conv is False:
+        comment(f'Test {v1.value}, {v2.value}: no conversion needed')
 
-        if initial == coerced:
-            comment(f'Test {v1.value}, {v2.value}: no conversion needed')
-        else:
-            comment(f'Test {v1.value}, {v2.value}: convert to {coerced[0].value}, {coerced[1].value}')
-
-        test_comparison((v1, v2), lambda f: f(c1, c2))
+        test_comparison((v1, v2), lambda f: f(v1.py, v2.py))
         if v1.value != v2.value:
-            test_comparison((v2, v1), lambda f: f(c2, c1))
+            test_comparison((v2, v1), lambda f: f(v2.py, v1.py))
+    else:
+        c1, c2 = conv
+        comment(f'Test {v1.value}, {v2.value}: convert to {c1.value}, {c2.value}')
+
+        test_comparison((v1, v2), lambda f: f(c1.py, c2.py))
+        if v1.value != v2.value:
+            test_comparison((v2, v1), lambda f: f(c2.py, c1.py))
 
 
 def test_comparison(vals, t):
@@ -165,45 +137,11 @@ def verify_expr(v1, v2, expected, expr, tag):
     )
 
 
-def apply_coercion(v1, v2):
-    t1 = v1.ty.name
-    t2 = v2.ty.name
-
-    if t1 == t2:
-        return v1, v2
-
-    assert not (t1 in v2.ty.coercions and t2 in v1.ty.coercions), \
-        f'mutually convertible: {t1}, {t2}'
-
-    if t1 in v2.ty.coercions:
-        v2 = coerce_value(v2, v1.ty)
-
-    elif t2 in v1.ty.coercions:
-        v1 = coerce_value(v1, v2.ty)
-
-    else:
-        v1 = v2 = None
-
-    if v1 is None or v2 is None:
-        return None
-
-    return v1, v2
-
-
-def coerce_value(value, dest_ty):
-    conv = value.ty.conv(value.value)
-    coerced = value.ty.coercions[dest_ty.name](conv)
-    if coerced is None:
-        return None
-    return RockstarValue(coerced, dest_ty)
-
-
 def esc(value):
-    if value.ty == types['string']:
+    if value.value.startswith('"'):
         escaped = value.value.strip('"')
         return f'string({escaped})'
     return value.value
-
 
 
 main()

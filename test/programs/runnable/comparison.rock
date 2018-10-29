@@ -174,7 +174,7 @@ if not Result
     say "! FALSE: string(b) isnt string(a)"
 
 ( STRING COERCIONS )
-( Test 0, "0": convert to 0, 0.0 )
+( Test 0, "0": convert to 0, 0 )
 put 0 is less than "0" into Result
 if Result
     say "! TRUE: 0 < string(0)"
@@ -223,7 +223,7 @@ put "0" isnt 0 into Result
 if Result
     say "! TRUE: string(0) isnt 0"
 
-( Test 15, "0": convert to 15, 0.0 )
+( Test 15, "0": convert to 15, 0 )
 put 15 is less than "0" into Result
 if Result
     say "! TRUE: 15 < string(0)"
@@ -272,7 +272,7 @@ put "0" isnt 15 into Result
 if not Result
     say "! FALSE: string(0) isnt 15"
 
-( Test 0, ".0": convert to 0, 0.0 )
+( Test 0, ".0": convert to 0, 0 )
 put 0 is less than ".0" into Result
 if Result
     say "! TRUE: 0 < string(.0)"
@@ -321,7 +321,7 @@ put ".0" isnt 0 into Result
 if Result
     say "! TRUE: string(.0) isnt 0"
 
-( Test NaN, "0": convert to NaN, 0.0 )
+( Test NaN, "0": convert to NaN, 0 )
 put NaN is less than "0" into Result
 if Result
     say "! TRUE: NaN < string(0)"
