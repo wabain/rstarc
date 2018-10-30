@@ -18,6 +18,16 @@ use io::FDWrite;
 
 type RockstarValue<'a> = rstarc_types::Value<&'a str, *const VoidPtr>;
 
+macro_rules! fatal {
+    ($msg:expr, $($arg:expr),*) => {{
+        let mut stderr = io::FDWrite::stderr();
+        writeln!(stderr, concat!("error: ", $msg), $($arg),*);
+        unsafe {
+            libc::exit(1);
+        }
+    }};
+}
+
 #[no_mangle]
 pub extern fn roll_alloc(size: usize) -> *mut VoidPtr {
     alloc::alloc(size)
@@ -33,42 +43,16 @@ pub extern fn roll_say(ptr: *mut VoidPtr) {
 
 #[no_mangle]
 pub extern fn roll_is(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
-    use Value::*;
-
     let v1 = value_repr::Scalar::new(p1).deref_rec();
     let v2 = value_repr::Scalar::new(p2).deref_rec();
-
-    let equality = match (&v1, &v2) {
-        (Null, Null) => true,
-        (Mysterious, Mysterious) => true,
-        (Boolean(b1), Boolean(b2)) => *b1 == *b2,
-        (String(s1), String(s2)) => s1 == s2,
-        (Number(n1), Number(n2)) => *n1 == *n2,
-        (Function(p1), Function(p2)) => p1 == p2,
-        _ => coerce_number(&v1) == coerce_number(&v2),
-    };
-
-    value_repr::scalar_bool(equality)
+    value_repr::scalar_bool(v1.rstar_is(v2))
 }
 
 #[no_mangle]
 pub extern fn roll_is_not(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
-    use Value::*;
-
     let v1 = value_repr::Scalar::new(p1).deref_rec();
     let v2 = value_repr::Scalar::new(p2).deref_rec();
-
-    let equality = match (&v1, &v2) {
-        (Null, Null) => false,
-        (Mysterious, Mysterious) => false,
-        (Boolean(b1), Boolean(b2)) => *b1 != *b2,
-        (String(s1), String(s2)) => s1 != s2,
-        (Number(n1), Number(n2)) => *n1 != *n2,
-        (Function(p1), Function(p2)) => p1 != p2,
-        _ => coerce_number(&v1) != coerce_number(&v2),
-    };
-
-    value_repr::scalar_bool(equality)
+    value_repr::scalar_bool(v1.rstar_is_not(v2))
 }
 
 #[no_mangle]
@@ -88,69 +72,99 @@ pub extern fn roll_mk_number(value: f64) -> u64 {
 pub extern fn roll_add(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
     let v1 = value_repr::Scalar::new(p1).deref_rec();
     let v2 = value_repr::Scalar::new(p2).deref_rec();
-    new_number(coerce_number(&v1) + coerce_number(&v2))
+
+    match (v1, v2) {
+        (Value::Number(n1), Value::Number(n2)) => new_number(n1 + n2),
+        (Value::String(_), _) | (_, Value::String(_)) => {
+            unimplemented!("String concatenation")
+        }
+        (v1, v2) => {
+            fatal!("Cannot add '{}' and '{}'",
+                   v1.user_display(),
+                   v2.user_display())
+        }
+    }
 }
 
 #[no_mangle]
 pub extern fn roll_sub(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
     let v1 = value_repr::Scalar::new(p1).deref_rec();
     let v2 = value_repr::Scalar::new(p2).deref_rec();
-    new_number(coerce_number(&v1) - coerce_number(&v2))
+    match (v1, v2) {
+        (Value::Number(n1), Value::Number(n2)) => new_number(n1 - n2),
+        (v1, v2) => {
+            fatal!("Cannot subtract '{}' and '{}'",
+                   v1.user_display(),
+                   v2.user_display())
+        }
+    }
 }
 
 #[no_mangle]
 pub extern fn roll_mul(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
     let v1 = value_repr::Scalar::new(p1).deref_rec();
     let v2 = value_repr::Scalar::new(p2).deref_rec();
-    new_number(coerce_number(&v1) * coerce_number(&v2))
+    match (v1, v2) {
+        (Value::Number(n1), Value::Number(n2)) => new_number(n1 * n2),
+        (Value::String(_), Value::Number(_)) |
+        (Value::Number(_), Value::String(_)) => {
+            unimplemented!("String repetition")
+        }
+        (v1, v2) => {
+            fatal!("Cannot multiply '{}' and '{}'",
+                   v1.user_display(),
+                   v2.user_display())
+        }
+    }
 }
 
 #[no_mangle]
 pub extern fn roll_div(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
     let v1 = value_repr::Scalar::new(p1).deref_rec();
     let v2 = value_repr::Scalar::new(p2).deref_rec();
-    new_number(coerce_number(&v1) / coerce_number(&v2))
+    match (v1, v2) {
+        (Value::Number(n1), Value::Number(n2)) => new_number(n1 / n2),
+        (v1, v2) => {
+            fatal!("Cannot divide '{}' and '{}'",
+                   v1.user_display(),
+                   v2.user_display())
+        }
+    }
 }
 
 #[no_mangle]
 pub extern fn roll_gt(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
     let v1 = value_repr::Scalar::new(p1).deref_rec();
     let v2 = value_repr::Scalar::new(p2).deref_rec();
-    value_repr::scalar_bool(coerce_number(&v1) > coerce_number(&v2))
+    value_repr::scalar_bool(v1.rstar_gt(v2))
 }
 
 #[no_mangle]
 pub extern fn roll_lt(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
     let v1 = value_repr::Scalar::new(p1).deref_rec();
     let v2 = value_repr::Scalar::new(p2).deref_rec();
-    value_repr::scalar_bool(coerce_number(&v1) < coerce_number(&v2))
+    value_repr::scalar_bool(v1.rstar_lt(v2))
 }
 
 #[no_mangle]
 pub extern fn roll_ge(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
     let v1 = value_repr::Scalar::new(p1).deref_rec();
     let v2 = value_repr::Scalar::new(p2).deref_rec();
-    value_repr::scalar_bool(coerce_number(&v1) >= coerce_number(&v2))
+    value_repr::scalar_bool(v1.rstar_ge(v2))
 }
 
 #[no_mangle]
 pub extern fn roll_le(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
     let v1 = value_repr::Scalar::new(p1).deref_rec();
     let v2 = value_repr::Scalar::new(p2).deref_rec();
-    value_repr::scalar_bool(coerce_number(&v1) <= coerce_number(&v2))
+    value_repr::scalar_bool(v1.rstar_le(v2))
 }
 
 #[no_mangle]
 pub extern fn roll_coerce_function(value: *mut VoidPtr) -> *const VoidPtr {
     match value_repr::Scalar::new(value).deref_rec() {
         Value::Function(p) => p,
-        v => {
-            let mut stderr = io::FDWrite::stderr();
-            writeln!(stderr, "error: Cannot call value '{}'", v.user_display());
-            unsafe {
-                libc::exit(1);
-            }
-        }
+        v => fatal!("Cannot call value '{}'", v.user_display()),
     }
 }
 
@@ -169,16 +183,4 @@ fn new_number(value: f64) -> u64 {
     }
     dbg!("Created number at 0x{:x}", p as u64);
     p as u64
-}
-
-#[inline]
-fn coerce_number(v: &RockstarValue) -> f64 {
-    match *v {
-        Value::String(..) => f64::NAN,
-        Value::Number(n) => n,
-        Value::Boolean(b) => if b { 1.0 } else { 0.0 },
-        Value::Null => 0.0,
-        Value::Mysterious |
-        Value::Function(_) => f64::NAN,
-    }
 }

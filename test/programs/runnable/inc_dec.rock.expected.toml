@@ -99,14 +99,13 @@ main:
 """
 
 ["run.exec"]
-returncode = "0"
+returncode = "1"
 stdout = """
 13
 10
-2
-0
-3
-0
+"""
+stderr = """
+error: Cannot add 'false' and '2'
 """
 
 ["run.interpret"]

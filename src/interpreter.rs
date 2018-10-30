@@ -4,7 +4,6 @@ use std::mem;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::cmp::Ordering;
 
 use rstarc_types::Value;
 use base_analysis;
@@ -416,41 +415,13 @@ impl<'a> Interpreter<'a> {
         let v1 = self.eval_expr(e1)?;
         let v2 = self.eval_expr(e2)?;
 
-        let (v1, v2) = match Value::coerce_binary_operands(v1, v2) {
-            Some(pair) => pair,
-            None => {
-                return Ok(comp == Comparator::IsNot)
-            }
-        };
-
-        debug_assert_eq!(v1.value_type(), v2.value_type());
-
-        match comp {
-            Comparator::Is => return Ok(v1 == v2),
-            Comparator::IsNot => return Ok(v1 != v2),
-            _ => {}
-        }
-
-        let ordering = match (&v1, &v2) {
-            (Value::String(s1), Value::String(s2)) => s1.partial_cmp(s2),
-            (Value::Number(n1), Value::Number(n2)) => n1.partial_cmp(n2),
-            (Value::Boolean(b1), Value::Boolean(b2)) => b1.partial_cmp(b2),
-            (Value::Function(_), Value::Function(_)) => None,
-            (Value::Null, Value::Null) |
-            (Value::Mysterious, Value::Mysterious) => Some(Ordering::Equal),
-            (_, _) => unreachable!("values {:?} {:?}", v1, v2),
-        };
-
         let compared = match comp {
-            Comparator::Is | Comparator::IsNot => unreachable!(),
-            Comparator::IsGreaterThan => ordering == Some(Ordering::Greater),
-            Comparator::IsLessThan => ordering == Some(Ordering::Less),
-            Comparator::IsAsGreatAs => {
-                ordering.is_some() && ordering != Some(Ordering::Less)
-            }
-            Comparator::IsAsLittleAs => {
-                ordering.is_some() && ordering != Some(Ordering::Greater)
-            }
+            Comparator::Is => v1.rstar_is(v2),
+            Comparator::IsNot => v1.rstar_is_not(v2),
+            Comparator::IsGreaterThan => v1.rstar_gt(v2),
+            Comparator::IsLessThan => v1.rstar_lt(v2),
+            Comparator::IsAsGreatAs => v1.rstar_ge(v2),
+            Comparator::IsAsLittleAs => v1.rstar_le(v2),
         };
 
         Ok(compared)
