@@ -7,7 +7,7 @@ use base_analysis::{ScopeId, VariableType};
 
 use codegen::CodegenError;
 use codegen::simple_ir::{IRProgram, SimpleIR, IRFunc, IRBody, IRValue,
-                         IRLValue, BinOp, LocalTemp, LocalDynTemp};
+                         IRLValue, BinOp, InPlaceOp, LocalTemp, LocalDynTemp};
 use codegen::llvm_api::*;
 
 // TODO: Find a way to share these with the runtime
@@ -204,6 +204,7 @@ fn build_shim_branch(llh: &mut LLVMHandle,
 
 fn declare_builtin_functions(llh: &mut LLVMHandle) {
     let i8t = int8_type();
+    let i32t = int32_type();
     let f64t = float64_type();
     let i64t = int64_type();
     let void = void_type();
@@ -213,6 +214,8 @@ fn declare_builtin_functions(llh: &mut LLVMHandle) {
     llh.declare_builtin_function("roll_mk_number", &mut [f64t], i64t);
     llh.declare_builtin_function("roll_coerce_function", &mut [i64t], i64t);
     llh.declare_builtin_function("roll_coerce_boolean", &mut [i64t], i8t);
+    llh.declare_builtin_function("roll_incr", &mut [i64t, i32t], i64t);
+    llh.declare_builtin_function("roll_decr", &mut [i64t, i32t], i64t);
 
     // Binary operations
     let bin_ops = &[
@@ -297,6 +300,24 @@ fn lower_function(llh: &mut LLVMHandle,
 
                 vmgr.store(llh, out, "builtin_out", |llh, name| {
                     llh.build_call_builtin2(builtin, arg1, arg2, name)
+                });
+            }
+            SimpleIR::InPlace(op, out) => {
+                let (builtin, count) = match *op {
+                    InPlaceOp::Incr(count) => ("roll_incr", count),
+                    InPlaceOp::Decr(count) => ("roll_decr", count),
+                };
+
+                match out {
+                    IRLValue::Variable(..) => {}
+                    _ => panic!("Unexpected incr/decr target: {:?}", out),
+                };
+
+                let in_val = vmgr.val_to_llvm(llh, &out.clone().into());
+                let count_val = llh.const_uint(int32_type(), count as u64);
+
+                vmgr.store(llh, out, "inplace_out", |llh, name| {
+                    llh.build_call_builtin2(builtin, in_val, count_val, name)
                 });
             }
             SimpleIR::LoadArg(out, idx) => {

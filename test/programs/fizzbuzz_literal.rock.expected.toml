@@ -166,7 +166,7 @@ main:
   t0 := is Counter, Limit
   jumpif t0, .loop_end2, .loop_start1
 .loop_start1:
-  Counter := add Counter, 1
+  Counter := in-place incr 1
   t1 := call Modulus, [Counter, Fizz]
   dynamic_t0 := is t1, "0"
   jumpif dynamic_t0, .and5, .and_else6

@@ -62,7 +62,7 @@ main:
 .loop_start6:
   say "While loop"
   say X
-  X := add X, 1
+  X := in-place incr 1
   jump .loop_check5
 .loop_end7:
   X := store 0
@@ -73,7 +73,7 @@ main:
 .loop_start9:
   say "Until loop"
   say X
-  X := add X, 1
+  X := in-place incr 1
   jump .loop_check8
 .loop_end10:
   X := store 0
@@ -88,7 +88,7 @@ main:
   t5 := is X, 3
   jumpif t5, .loop_end16, .loop_start15
 .loop_start15:
-  X := add X, 1
+  X := in-place incr 1
   jump .loop_check14
 .loop_end16:
   jump .loop_check11

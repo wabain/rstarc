@@ -82,33 +82,23 @@ main:
   X := store mysterious
   Y := store mysterious
   X := store 10
-  X := add X, 3
+  X := in-place incr 3
   say X
-  X := add X, -3
+  X := in-place decr 3
   say X
   Y := store false
-  Y := add Y, 2
+  Y := in-place incr 2
   say Y
-  Y := add Y, -2
+  Y := in-place decr 2
   say Y
-  Y := add Y, 3
+  Y := in-place incr 3
   say Y
-  Y := add Y, -3
+  Y := in-place decr 3
   say Y
   return-default
 """
 
-["run.exec"]
-returncode = "1"
-stdout = """
-13
-10
-"""
-stderr = """
-error: Cannot add 'false' and '2'
-"""
-
-["run.interpret"]
+[run]
 returncode = "0"
 stdout = """
 13
