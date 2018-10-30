@@ -1,6 +1,4 @@
 use std::fmt;
-use std::borrow::Cow;
-
 use rstarc_types::Value;
 
 // Spec calls for UTF-16 but I don't know that the difference
@@ -12,8 +10,8 @@ pub type RockstarValue<F> = Value<RockstarString, F>;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
 pub enum LangVariable<'a> {
-    Common(Cow<'a, str>, Cow<'a, str>),
-    Proper(Cow<'a, str>),
+    Common(&'a str, &'a str),
+    Proper(&'a str),
 }
 
 impl<'a> fmt::Display for LangVariable<'a> {
