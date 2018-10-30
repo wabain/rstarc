@@ -5,9 +5,13 @@
 
 #[cfg(feature = "std")]
 use std::fmt;
-
 #[cfg(not(feature = "std"))]
 use core::fmt;
+
+#[cfg(feature = "std")]
+use std::cmp::Ordering;
+#[cfg(not(feature = "std"))]
+use core::cmp::Ordering;
 
 #[cfg(feature = "std")]
 use std::borrow::Cow;
@@ -26,7 +30,11 @@ pub enum Type {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Value<S: AsRef<str>, F: fmt::Debug> {
+pub enum Value<S, F>
+    where
+        S: AsRef<str> + fmt::Debug + PartialEq,
+        F: fmt::Debug
+{
     String(S),
     Number(RockstarNumber),
     Boolean(bool),
@@ -35,7 +43,11 @@ pub enum Value<S: AsRef<str>, F: fmt::Debug> {
     Mysterious,
 }
 
-impl<S: AsRef<str>, F: fmt::Debug> Value<S, F> {
+impl<S, F> Value<S, F>
+    where
+        S: AsRef<str> + fmt::Debug + PartialEq,
+        F: fmt::Debug
+{
     pub fn value_type(&self) -> Type {
         match *self {
             Value::String(_) => Type::String,
@@ -63,7 +75,7 @@ impl<S: AsRef<str>, F: fmt::Debug> Value<S, F> {
         }
     }
 
-    #[cfg(feature="std")]
+    #[cfg(feature = "std")]
     /// String coercion, as performed by `plus` and `times`
     pub fn coerce_string(&self) -> Option<Cow<str>> {
         match self {
@@ -79,7 +91,47 @@ impl<S: AsRef<str>, F: fmt::Debug> Value<S, F> {
         }
     }
 
-    pub fn coerce_binary_operands(v1: Self, v2: Self) -> Option<(Self, Self)> {
+    pub fn rstar_gt(self, other: Self) -> bool {
+        Value::rstar_compare(self, other) == Some(Ordering::Greater)
+    }
+
+    pub fn rstar_ge(self, other: Self) -> bool {
+        let ordering = Value::rstar_compare(self, other);
+        ordering.is_some() && ordering != Some(Ordering::Less)
+    }
+
+    pub fn rstar_lt(self, other: Self) -> bool {
+        Value::rstar_compare(self, other) == Some(Ordering::Less)
+    }
+
+    pub fn rstar_le(self, other: Self) -> bool {
+        let ordering = Value::rstar_compare(self, other);
+        ordering.is_some() && ordering != Some(Ordering::Greater)
+    }
+
+    /// Compare the two values according to Rockstar's semantics. This isn't
+    /// suitable as a PartialOrd impl because it performs type coercions.
+    fn rstar_compare(v1: Self, v2: Self) -> Option<Ordering> {
+        let (v1, v2) = match Value::coerce_binary_operands(v1, v2) {
+            Some(pair) => pair,
+            None => return None,
+        };
+
+        match (&v1, &v2) {
+            (Value::String(s1), Value::String(s2)) => {
+                s1.as_ref().partial_cmp(s2.as_ref())
+            }
+            (Value::Number(n1), Value::Number(n2)) => n1.partial_cmp(n2),
+            (Value::Boolean(b1), Value::Boolean(b2)) => b1.partial_cmp(b2),
+            (Value::Function(_), Value::Function(_)) => None,
+            (Value::Null, Value::Null) |
+            (Value::Mysterious, Value::Mysterious) => Some(Ordering::Equal),
+            (_, _) => unreachable!("values {:?} {:?}", v1, v2),
+        }
+    }
+
+    /// Coerce binary operands, potentially consuming the originals
+    fn coerce_binary_operands(v1: Self, v2: Self) -> Option<(Self, Self)> {
         // Reorder for convenience
         if v1.value_type() > v2.value_type() {
             Value::coerce_type_ordered_binary_operands(v2, v1)
@@ -169,7 +221,33 @@ impl<S: AsRef<str>, F: fmt::Debug> Value<S, F> {
     }
 }
 
-impl<S, F> Value<S, F> where S: AsRef<str>, F: fmt::Debug + fmt::Display {
+// Equality comparisons require F: PartialEq.
+impl<S, F> Value<S, F>
+    where
+        S: AsRef<str> + fmt::Debug + PartialEq,
+        F: fmt::Debug + PartialEq,
+{
+    pub fn rstar_is(self, other: Self) -> bool {
+        match Value::coerce_binary_operands(self, other) {
+            Some((v1, v2)) => v1 == v2,
+            None => false,
+        }
+    }
+
+    pub fn rstar_is_not(self, other: Self) -> bool {
+        match Value::coerce_binary_operands(self, other) {
+            Some((v1, v2)) => v1 != v2,
+            None => true,
+        }
+    }
+}
+
+// repr_format requires F: Display
+impl<S, F> Value<S, F>
+    where
+        S: AsRef<str> + fmt::Debug + PartialEq,
+        F: fmt::Debug + fmt::Display,
+{
     pub fn repr_format(&self) -> ReprDisplay<S, F> {
         ReprDisplay { value: self }
     }
@@ -177,7 +255,7 @@ impl<S, F> Value<S, F> where S: AsRef<str>, F: fmt::Debug + fmt::Display {
 
 pub struct UserDisplay<'a, S, F>
     where
-        S: AsRef<str> + 'a,
+        S: AsRef<str> + fmt::Debug + PartialEq + 'a,
         F: fmt::Debug + 'a,
 {
     value: &'a Value<S, F>,
@@ -185,7 +263,7 @@ pub struct UserDisplay<'a, S, F>
 
 impl<'a, S, F> fmt::Display for UserDisplay<'a, S, F>
     where
-        S: AsRef<str> + 'a,
+        S: AsRef<str> + fmt::Debug + PartialEq + 'a,
         F: fmt::Debug + 'a,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -202,7 +280,7 @@ impl<'a, S, F> fmt::Display for UserDisplay<'a, S, F>
 
 pub struct ReprDisplay<'a, S, F>
     where
-        S: AsRef<str> + 'a,
+        S: AsRef<str> + fmt::Debug + PartialEq + 'a,
         F: fmt::Debug + fmt::Display + 'a,
 {
     value: &'a Value<S, F>,
@@ -210,7 +288,7 @@ pub struct ReprDisplay<'a, S, F>
 
 impl<'a, S, F> fmt::Display for ReprDisplay<'a, S, F>
     where
-        S: AsRef<str> + 'a,
+        S: AsRef<str> + fmt::Debug + PartialEq + 'a,
         F: fmt::Debug + fmt::Display + 'a,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
