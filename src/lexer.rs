@@ -715,13 +715,13 @@ impl<'a> TokenStream<'a> {
 
             "mysterious" if initially_lower => Token::MysteriousLiteral,
 
-            // Keep these in sync with lang_constructs::string_is_null_keyword
+            // Keep these in sync with rstarc_types::string_is_null_keyword
             "null" | "nothing" | "nowhere" |
             "nobody" | "empty" | "gone" if initially_lower => {
                 Token::NullLiteral
             }
 
-            // Keep these in sync with lang_constructs::string_to_bool
+            // Keep these in sync with rstarc_types::string_to_bool
             "true" | "right" | "yes" | "ok" if initially_lower => {
                 Token::BooleanLiteral(true)
             },
