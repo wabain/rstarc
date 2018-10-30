@@ -41,13 +41,13 @@ Statement: ast::StatementKind = {
         ast::StatementKind::FuncDef(v, a, b),
 }
 
-IncrCount: usize = {
+IncrCount: u32 = {
     "Up" => 1,
     "Up" "," <c:IncrCount> => c + 1,
     "Up" <c:IncrCount> => c + 1,
 }
 
-DecrCount: usize = {
+DecrCount: u32 = {
     "Down" => 1,
     "Down" "," <c:DecrCount> => c + 1,
     "Down" <c:DecrCount> => c + 1,

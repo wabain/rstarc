@@ -133,6 +133,40 @@ pub extern fn roll_div(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
 }
 
 #[no_mangle]
+pub extern fn roll_incr(p: *mut VoidPtr, count: u32) -> u64 {
+    let v = value_repr::Scalar::new(p).deref_rec();
+    match v {
+        Value::Number(n) => {
+            new_number(n + (count as f64))
+        }
+        Value::Boolean(b) => {
+            let new = if count % 2 == 0 { b } else { !b };
+            value_repr::scalar_bool(new)
+        }
+        v @ _ => {
+            fatal!("Cannot increment '{}'", v.user_display())
+        }
+    }
+}
+
+#[no_mangle]
+pub extern fn roll_decr(p: *mut VoidPtr, count: u32) -> u64 {
+    let v = value_repr::Scalar::new(p).deref_rec();
+    match v {
+        Value::Number(n) => {
+            new_number(n - (count as f64))
+        }
+        Value::Boolean(b) => {
+            let new = if count % 2 == 0 { b } else { !b };
+            value_repr::scalar_bool(new)
+        }
+        v @ _ => {
+            fatal!("Cannot decrement '{}'", v.user_display())
+        }
+    }
+}
+
+#[no_mangle]
 pub extern fn roll_gt(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
     let v1 = value_repr::Scalar::new(p1).deref_rec();
     let v2 = value_repr::Scalar::new(p2).deref_rec();

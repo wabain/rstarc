@@ -47,9 +47,9 @@ f1_Func_One:
   Y := div 0, 0
   jump .else1
 .else1:
-  X := add X, 1
-  Y := add Y, 1
-  Z<0> := add Z<0>, 1
+  X := in-place incr 1
+  Y := in-place incr 1
+  Z<0> := in-place incr 1
   say "x"
   say X
   say "y"

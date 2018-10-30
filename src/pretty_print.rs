@@ -39,10 +39,10 @@ impl PrettyPrint for Statement {
                 pp!(out, "Put ", pp e, " into ", pp lval, "\n")
             }
             StatementKind::Incr(lval, count) => {
-                pp!(out, "Build ", pp lval, " up".repeat(*count), "\n")
+                pp!(out, "Build ", pp lval, " up".repeat(*count as usize), "\n")
             }
             StatementKind::Decr(lval, count) => {
-                pp!(out, "Knock ", pp lval, " down".repeat(*count), "\n")
+                pp!(out, "Knock ", pp lval, " down".repeat(*count as usize), "\n")
             }
             StatementKind::Say(e) => {
                 pp!(out, "Say ", pp e, "\n")

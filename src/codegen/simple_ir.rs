@@ -100,6 +100,17 @@ fn dump_ir_op(scope_id: ScopeId, op: &SimpleIR) {
                      fmt_scoped!(arg2));
         }
 
+        SimpleIR::InPlace(op, dst) => {
+            let (op_fmt, count) = match op {
+                InPlaceOp::Incr(c) => ("incr", c),
+                InPlaceOp::Decr(c) => ("decr", c),
+            };
+            println!("  {} := in-place {} {}",
+                     fmt_scoped!(dst),
+                     op_fmt,
+                     count);
+        }
+
         SimpleIR::LoadArg(dst, idx) => {
             println!("  {} := load-arg {}", fmt_scoped!(dst), idx);
         }
@@ -199,6 +210,10 @@ fn verify_ir_func<'a>(scope_map: &ScopeMap,
                 handle_write(&mut vals_seen, lval)?;
                 handle_value(v1)?;
                 handle_value(v2)?;
+            }
+            SimpleIR::InPlace(_, lval) => {
+                handle_value(&lval.clone().into())?;
+                handle_write(&mut vals_seen, lval)?;
             }
             SimpleIR::LoadArg(lval, _) => {
                 handle_write(&mut vals_seen, lval)?;
@@ -376,6 +391,12 @@ pub enum BinOp {
     Div,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub enum InPlaceOp {
+    Incr(u32),
+    Decr(u32),
+}
+
 /// Simple intermediate representation. This is just a flattened
 /// version of the source AST, with control flow translated to jumps.
 #[derive(Debug)]
@@ -385,6 +406,7 @@ pub enum SimpleIR<'prog> {
     Label(Label),
     LoadArg(IRLValue<'prog>, usize),
     Operate(BinOp, IRLValue<'prog>, IRValue<'prog>, IRValue<'prog>),
+    InPlace(InPlaceOp, IRLValue<'prog>),
     Store(IRLValue<'prog>, IRValue<'prog>),
     Call(IRLValue<'prog>, IRValue<'prog>, Vec<IRValue<'prog>>),
     Say(IRValue<'prog>),
@@ -403,6 +425,7 @@ impl<'prog> SimpleIR<'prog> {
             SimpleIR::Label(..) |
             SimpleIR::LoadArg(..) |
             SimpleIR::Operate(..) |
+            SimpleIR::InPlace(..) |
             SimpleIR::Store(..) |
             SimpleIR::Call(..) |
             SimpleIR::Say(..) => false,
@@ -853,18 +876,13 @@ impl<'prog> AstAdapter<'prog> {
                 let var = resolve_ast_lval(lval);
                 let ir_lval = ir_builder.resolve_ast_variable(var);
 
-                let add_val = match &statement.kind {
-                    StatementKind::Incr(..) =>
-                        IRValue::Literal(LangValue::Number(*count as f64)),
-                    StatementKind::Decr(..) =>
-                        IRValue::Literal(LangValue::Number(-(*count as f64))),
+                let op = match &statement.kind {
+                    StatementKind::Incr(..) => InPlaceOp::Incr(*count),
+                    StatementKind::Decr(..) => InPlaceOp::Decr(*count),
                     _ => unreachable!(),
                 };
 
-                ir_builder.emit(SimpleIR::Operate(BinOp::Add,
-                                                  ir_lval.clone(),
-                                                  ir_lval.into(),
-                                                  add_val));
+                ir_builder.emit(SimpleIR::InPlace(op, ir_lval));
             }
             StatementKind::Say(expr) => {
                 let expr_var = ir_builder.emit_expr(None, expr).into();
