@@ -247,8 +247,8 @@ fn lower_function(llh: &mut LLVMHandle,
     llh.enter_block(entry_block);
 
     // Initialize allocas
-    for var in program.scope_map.get_owned_vars_for_scope(scope_id) {
-        vmgr.prepare_variable(llh, &var, scope_id);
+    for (var, _) in program.scope_map.get_owned_vars_for_scope(scope_id) {
+        vmgr.prepare_variable(llh, var, scope_id);
     }
     vmgr.prepare_dyn_temporaries(llh, body.dyn_temp_count);
 
@@ -579,17 +579,16 @@ impl<'a> ValueTracker<'a> {
                    "Variable initialization request for non-local variable");
 
         let var_type = self.program.scope_map
-            .get_scope_data(scope_id)
-            .get_variable_type(var);
+            .get_variable_type(var, scope_id);
 
         match var_type {
-            None | Some(VariableType::Closure) => {
+            None | Some(VariableType::Closure(_)) => {
                 unreachable!("Variable type {:?}", var_type);
             }
             Some(VariableType::Global) => {
                 // Already addressed
             },
-            Some(VariableType::Local) => {
+            Some(VariableType::Local(_)) => {
                 let alloca = llh.build_alloca(int64_type(), &format!("{}", &var));
                 self.allocas.insert(var.clone(), alloca);
             }

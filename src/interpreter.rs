@@ -437,14 +437,12 @@ impl<'a> Interpreter<'a> {
     fn get_var(&mut self, var: &LangVariable) -> InterpValue<'a> {
         let scope = self.scope.borrow();
         let leaf_scope_id = scope.static_scope_id;
-        let owning_scope_id = if let Some(own) = self.scope_map
-                .get_owning_scope_for_var(&var, leaf_scope_id)
-        {
-            own
-        } else {
-            // Values can be missing from the owning scope map if they were never
-            // written
-            return Value::Mysterious;
+
+        // Values can be missing from the owning scope map if they were never
+        // written
+        let owning_scope_id = match self.scope_map.get_variable_type(&var, leaf_scope_id) {
+            Some(var_type) => var_type.owner(),
+            None => return Value::Mysterious,
         };
 
         // Fast path: local read, don't need to touch refcounts
@@ -466,12 +464,13 @@ impl<'a> Interpreter<'a> {
     // Otherwise, write it to the leaf scope.
     fn set_var(&mut self, var: LangVariable<'a>, value: InterpValue<'a>) {
         let leaf_scope_id = self.scope.borrow().static_scope_id;
-        let owning_scope_id = self.scope_map
-            .get_owning_scope_for_var(&var, leaf_scope_id)
-            .unwrap_or_else(|| {
+        let owning_scope_id = match self.scope_map.get_variable_type(&var, leaf_scope_id) {
+            Some(var_type) => var_type.owner(),
+            None => {
                 panic!("No known owning scope on write for {:?} from scope {}",
                        var, leaf_scope_id)
-            });
+            }
+        };
 
         // Fast path: local write, don't need to touch refcounts
         if owning_scope_id == leaf_scope_id {
