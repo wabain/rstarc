@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 
 use rstarc_types::Value as LangValue;
-use base_analysis::{ScopeId, ScopeMap, VariableType};
+use base_analysis::{ScopeId, ScopeMap};
 use ast::{self, Expr, Logical, Statement, StatementKind, Pos};
 use lang_constructs::{RockstarValue as BaseValue, LangVariable};
 
@@ -159,11 +159,10 @@ fn verify_ir_func<'a>(scope_map: &ScopeMap,
     let handle_value = |v: &IRValue| -> Result<(), CompileError> {
         match v {
             IRValue::Variable(var, i, p) if *i != scope_id => {
-                let var_type = scope_map.get_scope_data(*i)
-                    .get_variable_type(var)
+                let var_type = scope_map.get_variable_type(var, *i)
                     .expect("get variable in owner");
 
-                if var_type == VariableType::Closure {
+                if var_type.is_closure() {
                     Err(CompileError::UnsupportedFeature {
                         feature: format!("using non-local variable '{}'", var),
                         has_interpreter_support: true,
@@ -465,8 +464,9 @@ impl<'prog> IRBuilder<'prog> {
 
     // XXX inline this?
     fn lookup_scope(&self, var: &LangVariable) -> ScopeId {
-        self.scope_map.get_owning_scope_for_var(var, self.ref_scope)
+        self.scope_map.get_variable_type(var, self.ref_scope)
             .expect("variable scope lookup")
+            .owner()
     }
 
     fn resolve_ast_variable(&self, var: &'prog ast::Variable) -> IRLValue<'prog> {
@@ -788,16 +788,13 @@ impl<'prog> IRBuilder<'prog> {
             }
         };
 
-        let scope_data = self.scope_map.get_scope_data(self.ref_scope);
-
-        for var in self.scope_map.get_owned_vars_for_scope(self.ref_scope) {
+        for (var, var_type) in self.scope_map.get_owned_vars_for_scope(self.ref_scope) {
             if let Some((idx, arg)) = args.iter().enumerate().find(|(_, v)| {
                 unwrap_variable(*v) == var
             }) {
                 self.emit(SimpleIR::LoadArg(arg.clone(), idx));
-            } else if scope_data.get_variable_type(var) == Some(VariableType::Global) {
-                let scope_id = self.lookup_scope(var);
-                globals.push((var.clone(), scope_id));
+            } else if var_type.is_global() {
+                globals.push((var.clone(), var_type.owner()));
             } else {
                 let ir_lval = self.synthesize_ir_lval(var, func_pos);
                 let initial_value = IRValue::Literal(LangValue::Mysterious);
