@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use lexer::NEWLINE_SEARCH;
+use syntax::lexer::NEWLINE_SEARCH;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct IntraLineSpan<'a> {

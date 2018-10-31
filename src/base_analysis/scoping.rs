@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::collections::hash_map::{HashMap, Entry};
 
-use ast::{self, Statement, StatementKind, LValue};
+use syntax::ast::{self, Statement, StatementKind, LValue};
 use lang_constructs::LangVariable;
 
 pub type ScopeId = u64;
@@ -264,7 +264,7 @@ impl<'prog> ScopeMapBuilder<'prog> {
     }
 
     fn observe_expr(&mut self, expr: &'prog ast::Expr) {
-        use ast::{Expr, Logical};
+        use syntax::ast::{Expr, Logical};
 
         match expr {
             Expr::LValue(lval) => {

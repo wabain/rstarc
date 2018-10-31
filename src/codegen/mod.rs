@@ -7,7 +7,7 @@ mod simple_ir;
 mod link;
 
 use base_analysis::ScopeMap;
-use ast::Statement;
+use syntax::ast::Statement;
 use runtime_error::RuntimeError;
 
 pub use self::lower_llvm::CodegenOptions;

@@ -8,8 +8,16 @@ use std::collections::HashMap;
 use rstarc_types::Value;
 use base_analysis;
 use lang_constructs::{RockstarValue as BaseValue, LangVariable};
-use ast::{Statement, StatementKind, Expr, Logical, Comparison, Comparator, LValue};
 use runtime_error::RuntimeError;
+use syntax::ast::{
+    Statement,
+    StatementKind,
+    Expr,
+    Logical,
+    Comparison,
+    Comparator,
+    LValue,
+};
 
 pub fn interpret(program: &[Statement], scope_map: &base_analysis::ScopeMap)
     -> Result<(), RuntimeError>

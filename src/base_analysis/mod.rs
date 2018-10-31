@@ -7,7 +7,7 @@ use std::error;
 use std::fmt;
 
 use super::BINARY_NAME;
-use super::ast::Pos;
+use syntax::ast::Pos;
 
 pub use self::control_flow_verifier::verify_control_flow;
 pub use self::scoping::{ScopeId, ScopeMap, VariableType,

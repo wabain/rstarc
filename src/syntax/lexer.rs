@@ -6,7 +6,7 @@ use regex::{RegexBuilder, Regex};
 
 use rstarc_types::{Value, RockstarNumber};
 use lang_constructs::{RockstarValue, RockstarString};
-use source_loc::{SourceLocator, IntraLineSpan};
+use syntax::source_loc::{SourceLocator, IntraLineSpan};
 
 #[derive(Debug, PartialEq)]
 pub enum LexicalError {

@@ -1,5 +1,5 @@
-use lexer;
-use ast;
+use syntax::lexer;
+use syntax::ast;
 
 grammar;
 

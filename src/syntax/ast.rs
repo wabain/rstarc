@@ -1,6 +1,6 @@
 use std::fmt;
-use lexer::Token;
 use lang_constructs::LangVariable;
+use syntax::lexer::Token;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Pos(pub usize, pub usize);

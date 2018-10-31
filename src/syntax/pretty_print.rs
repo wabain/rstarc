@@ -1,5 +1,14 @@
 use io;
-use ast::{Statement, StatementKind, Expr, Logical, Comparison, Comparator, LValue, Variable};
+use syntax::ast::{
+    Statement,
+    StatementKind,
+    Expr,
+    Logical,
+    Comparison,
+    Comparator,
+    LValue,
+    Variable,
+};
 
 macro_rules! pp {
     ($out:ident, $($toks:tt)*) => ({

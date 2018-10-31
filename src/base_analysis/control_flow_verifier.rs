@@ -1,5 +1,5 @@
-use ast::{Statement, StatementKind};
-use ast_walker::{visit_statements, StatementVisitor, BlockType};
+use syntax::ast::{Statement, StatementKind};
+use syntax::ast_walker::{visit_statements, StatementVisitor, BlockType};
 use super::CompileError;
 
 pub fn verify_control_flow<'prog>(program: &'prog [Statement]) -> Result<(), CompileError> {
