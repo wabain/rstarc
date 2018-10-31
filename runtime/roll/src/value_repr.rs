@@ -1,57 +1,8 @@
-//! Value representation
-//!
-//! The runtime uses a simple tagged pointer representation, requiring
-//! pointers to have 8-byte alignment.
-//!
-//! Currently, the only immediate values provided without a pointer
-//! dereference are null and mysterious. My hope is to detect AOT when values
-//! don't need to be boxed, but I can also add an unboxed-but-dynamic number
-//! representation. In particular, I may use NaN-boxing to put numbers on the
-//! stack if I don't want to make the move to DEC64. Currently, numbers are
-//! allocated on the heap with an extra 64 bits (!) reserved for a tag.
-//!
-//!
-//! Scalar values:
-//!
-//!     Null        0b0.......00000
-//!     False       0b0.......00010
-//!     True        0b0.......01010
-//!     Mysterious  0b0.......10010
-//!     Heap ptr    [61 bits]...000
-//!     Const str   [61 bits]...011
-//!     Function    [61 bits]...110
-//!
-//! One motivation for this choice of tags was to avoid having false = 0x1,
-//! while still allowing booleans to be coerced to their conventional values
-//! with a simple shift (although I'm not sure I'll use that ability).
-//!
-//! All scalar values can occur on the heap. In addition, there are additional
-//! tags:
-//!
-//!     Number      0x00000004 [64-bit float]
-//!     String      [32 bit len] 0x0005 [string content]
-
 use core::{str, slice};
 use core::marker::PhantomData;
 
-use rstarc_types::Value;
+use rstarc_types::{Value, value_constants::*};
 use super::{VoidPtr, RockstarValue};
-
-pub const NULL_BITS: u64 = 0x0;
-pub const FALSE_BITS: u64 = 0x2;
-pub const TRUE_BITS: u64 = 0xa;
-pub const MYSTERIOUS_BITS: u64 = 0x12;
-
-pub const TAG_MASK: u64 = 0x7;
-
-pub const HEAP_PTR_TAG: u64 = 0x0;
-pub const CONST_IMMEDIATE_TAG: u64 = 0x2;
-pub const CONST_STRING_TAG: u64 = 0x3;
-pub const HEAP_NUMBER_TAG: u64 = 0x4;
-pub const HEAP_STRING_TAG: u64 = 0x5;
-pub const FUNCTION_TAG: u64 = 0x6;
-
-pub const STRING_LEN_BITS: u64 = 32;
 
 #[inline]
 pub fn scalar_bool(b: bool) -> u64 {
