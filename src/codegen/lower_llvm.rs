@@ -1,6 +1,6 @@
 use std::collections::hash_map::{HashMap, Entry};
 
-use rstarc_types::Value;
+use rstarc_types::{Value, value_constants::*};
 use lang_constructs::LangVariable;
 use ast::Comparator;
 use base_analysis::{ScopeId, VariableType};
@@ -9,14 +9,6 @@ use codegen::CodegenError;
 use codegen::simple_ir::{IRProgram, SimpleIR, IRFunc, IRBody, IRValue,
                          IRLValue, BinOp, InPlaceOp, LocalTemp, LocalDynTemp};
 use codegen::llvm_api::*;
-
-// TODO: Find a way to share these with the runtime
-const NULL_BITS: u64 = 0x0;
-const FALSE_BITS: u64 = 0x2;
-const TRUE_BITS: u64 = 0xa;
-const MYSTERIOUS_BITS: u64 = 0x12;
-const CONST_STRING_TAG: u64 = 0x3;
-const FUNCTION_TAG: u64 = 0x6;
 
 // Leave file paths as strings because that's how they're input from the CLI
 // and the complexity of interacting between paths and FFI isn't worth it.

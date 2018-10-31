@@ -212,7 +212,7 @@ pub extern fn roll_coerce_boolean(value: *mut VoidPtr) -> u8 {
 fn new_number(value: f64) -> u64 {
     let p = alloc::alloc(16) as *mut u64;
     unsafe {
-        *p = value_repr::HEAP_NUMBER_TAG;
+        *p = rstarc_types::value_constants::HEAP_NUMBER_TAG;
         *p.offset(1) = value.to_bits();
     }
     dbg!("Created number at 0x{:x}", p as u64);
