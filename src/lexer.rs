@@ -92,7 +92,6 @@ impl Token {
     fn is_keyword(&self) -> bool {
         use self::Token::*;
 
-        // XXX: All of this is pretty iffy
         match *self {
             // Variables etc.
             ProperVar(_) |
@@ -100,19 +99,30 @@ impl Token {
             Pronoun(_) |
             CommonPrep(_) => false,
 
-            // Types - Tokens whose values form a finite set are keywords
-            StringLiteral(_) | NumberLiteral(_) => false,
-
+            // Type literals and constants
+            StringLiteral(_) |
+            NumberLiteral(_) |
             BooleanLiteral(_) |
             MysteriousLiteral |
-            NullLiteral => true,
+            NullLiteral => false,
 
             // Punctuation
             Newline |
             Comma => false,
 
-            // Actual keywords
+            // Keywords
             _ => true,
+        }
+    }
+
+    fn is_constant(&self) -> bool {
+        use self::Token::*;
+
+        match *self {
+            BooleanLiteral(_) |
+            MysteriousLiteral |
+            NullLiteral => true,
+            _ => false,
         }
     }
 
@@ -587,8 +597,8 @@ impl<'a> TokenStream<'a> {
     }
 
     fn handle_word(&self, word: String) -> Result<(Option<Token>, LexAction), LexicalError> {
-        if let Some(token) = self.match_special_word(&word) {
-            if self.ctx.poetic_number_or_keyword && !token.is_keyword() {
+        if let Some(token) = self.match_keyword_or_constant(&word) {
+            if self.ctx.poetic_number_or_keyword && !(token.is_keyword() || token.is_constant()) {
                 return Ok((None, LexAction::TakePoeticNumber));
             }
 
@@ -679,7 +689,7 @@ impl<'a> TokenStream<'a> {
                         None => break,
                     };
 
-                    if self.match_special_word(&next_word).is_some() {
+                    if self.match_keyword_or_constant(&next_word).is_some() {
                         break;
                     }
 
@@ -696,7 +706,7 @@ impl<'a> TokenStream<'a> {
         }
     }
 
-    fn match_special_word(&self, word: &str) -> Option<Token> {
+    fn match_keyword_or_constant(&self, word: &str) -> Option<Token> {
         let lower = word.to_lowercase();
 
         // Restrict value keywords to be lowercase
