@@ -1,4 +1,4 @@
-use ast::{Statement, StatementKind};
+use syntax::ast::{Statement, StatementKind};
 
 #[derive(Debug, PartialEq)]
 pub enum BlockType {

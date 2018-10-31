@@ -2,7 +2,7 @@ use std::collections::hash_map::{HashMap, Entry};
 
 use rstarc_types::{Value, value_constants::*};
 use lang_constructs::LangVariable;
-use ast::Comparator;
+use syntax::ast::Comparator;
 use base_analysis::{ScopeId, VariableType};
 
 use codegen::CodegenError;

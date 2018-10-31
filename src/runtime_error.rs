@@ -8,7 +8,7 @@ use void::Void;
 use base_analysis::CompileError;
 use codegen::CodegenError;
 use interpreter::InterpreterError;
-use lexer::{LexicalError, Token};
+use syntax::lexer::{LexicalError, Token};
 
 #[derive(Debug)]
 pub enum RuntimeError {

@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use rstarc_types::Value as LangValue;
 use base_analysis::{ScopeId, ScopeMap};
-use ast::{self, Expr, Logical, Statement, StatementKind, Pos};
+use syntax::ast::{self, Expr, Logical, Statement, StatementKind, Pos};
 use lang_constructs::{RockstarValue as BaseValue, LangVariable};
 
 use base_analysis::CompileError;

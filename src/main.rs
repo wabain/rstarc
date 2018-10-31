@@ -9,17 +9,12 @@ extern crate void;
 #[cfg(unix)] extern crate libc;
 extern crate rstarc_types;
 
-mod ast;
-mod ast_print;
-mod ast_walker;
+mod base_analysis;
 mod codegen;
 mod lang_constructs;
-mod lexer;
 mod interpreter;
-mod pretty_print;
 mod runtime_error;
-mod source_loc;
-mod base_analysis;
+mod syntax;
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
@@ -31,11 +26,9 @@ use std::fs::File;
 use tempdir::TempDir;
 
 use runtime_error::RuntimeError;
-use lexer::{LexicalError, Tokenizer};
+use syntax::lexer::{LexicalError, Tokenizer};
 
-pub const BINARY_NAME: &str = "rstarc";
-
-lalrpop_mod!(parser);
+pub(crate) const BINARY_NAME: &str = "rstarc";
 
 fn main() {
     let action = build_action(&build_cli().get_matches());
@@ -402,7 +395,7 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<Option<i32>, RuntimeErr
         return Ok(None);
     }
 
-    let tree = parser::ProgramParser::new().parse(tokenizer.tokenize())?;
+    let tree = syntax::parser::ProgramParser::new().parse(tokenizer.tokenize())?;
     base_analysis::verify_control_flow(&tree)?;
     let scope_map = base_analysis::identify_variable_scopes(&tree);
 
@@ -423,10 +416,10 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<Option<i32>, RuntimeErr
                 &pretty_tree
             };
 
-            pretty_print::pretty_print_program(io::stdout(), out_tree)?;
+            syntax::pretty_print::pretty_print_program(io::stdout(), out_tree)?;
         }
         Some(DebugOutputFormat::AST) => {
-            ast_print::ast_print_program(io::stdout(), &tree)?;
+            syntax::ast_print::ast_print_program(io::stdout(), &tree)?;
         }
         Some(DebugOutputFormat::IR) => {
             // FIXME: IR may be generated twice along this path
@@ -500,24 +493,24 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<Option<i32>, RuntimeErr
 }
 
 /// Capture the output of the pretty printer and reparse it, outputting the
-/// pretty-print of the reparsed AST. This function exits on failure to
+/// reparsed AST to be pretty-printed again. This function exits on failure to
 /// reparse so that it can display syntax errors using the right tokenizer.
 /// This is a bit hacky but this functionality is only really intended for
 /// testing the compiler anyway.
-fn reparse_pretty_tree_or_exit(tree: &[ast::Statement])
-    -> Result<Vec<ast::Statement>, RuntimeError>
+fn reparse_pretty_tree_or_exit(tree: &[syntax::ast::Statement])
+    -> Result<Vec<syntax::ast::Statement>, RuntimeError>
 {
     use bytes::BufMut;
     let mut buf_stream = Vec::new().writer();
 
-    pretty_print::pretty_print_program(&mut buf_stream, tree)?;
+    syntax::pretty_print::pretty_print_program(&mut buf_stream, tree)?;
 
     let pretty_src = String::from_utf8(buf_stream.into_inner())
         .expect("Non-UTF8 output from pretty printer");
 
     let tokenizer = Tokenizer::new(pretty_src);
 
-    match parser::ProgramParser::new().parse(tokenizer.tokenize()) {
+    match syntax::parser::ProgramParser::new().parse(tokenizer.tokenize()) {
         Ok(tree) => Ok(tree),
         Err(e) => {
             eprintln!("Failed to reparse pretty printed output:");

@@ -5,7 +5,15 @@
 //! regular.
 
 use io;
-use ast::{Statement, StatementKind, Expr, Logical, Comparison, LValue, Variable};
+use syntax::ast::{
+    Statement,
+    StatementKind,
+    Expr,
+    Logical,
+    Comparison,
+    LValue,
+    Variable,
+};
 
 macro_rules! node {
     ($out:ident, $indent:expr, $e:expr, $($toks:tt)*) => {{
