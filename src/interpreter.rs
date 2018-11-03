@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use rstarc_types::Value;
-use base_analysis;
+use base_analysis::{ScopeId, ScopeMap};
 use lang_constructs::{RockstarValue as BaseValue, LangVariable};
 use runtime_error::RuntimeError;
 use syntax::ast::{
@@ -19,7 +19,7 @@ use syntax::ast::{
     LValue,
 };
 
-pub fn interpret(program: &[Statement], scope_map: &base_analysis::ScopeMap)
+pub fn interpret(program: &[Statement], scope_map: &ScopeMap)
     -> Result<(), RuntimeError>
 {
     Interpreter::new(scope_map).run_program(program)?;
@@ -72,7 +72,7 @@ type ScopeCell<'a> = Rc<RefCell<VariableScope<'a>>>;
 #[derive(Clone)]
 struct InterpFunc<'a> {
     id: u64,
-    static_scope_id: base_analysis::ScopeId,
+    static_scope_id: ScopeId,
     args: Vec<LangVariable<'a>>,
     statements: &'a [Statement],
     parent_scope: ScopeCell<'a>,
@@ -92,7 +92,7 @@ impl<'a> PartialEq for InterpFunc<'a> {
 
 #[derive(Default, Debug)]
 struct VariableScope<'a> {
-    static_scope_id: base_analysis::ScopeId,
+    static_scope_id: ScopeId,
     vars: HashMap<LangVariable<'a>, InterpValue<'a>>,
     parent: Option<ScopeCell<'a>>,
 }
@@ -123,11 +123,11 @@ enum Flow<'a> {
 pub struct Interpreter<'a> {
     func_id: u64,
     scope: ScopeCell<'a>,
-    scope_map: &'a base_analysis::ScopeMap<'a>,
+    scope_map: &'a ScopeMap<'a>,
 }
 
 impl<'a> Interpreter<'a> {
-    fn new(scope_map: &'a base_analysis::ScopeMap<'a>) -> Self {
+    fn new(scope_map: &'a ScopeMap<'a>) -> Self {
         Interpreter {
             func_id: 0,
             scope: ScopeCell::default(),
@@ -491,7 +491,7 @@ impl<'a> Interpreter<'a> {
         scope_cell.borrow_mut().vars.insert(var, value);
     }
 
-    fn find_ancestor_scope_by_id(&self, static_id: base_analysis::ScopeId) -> ScopeCell<'a> {
+    fn find_ancestor_scope_by_id(&self, static_id: ScopeId) -> ScopeCell<'a> {
         // Slow path: walk the scope chain to find the owning scope
         let mut scope_cell = self.scope.borrow().parent.clone();
 
