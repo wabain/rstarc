@@ -3,6 +3,7 @@
 import re
 import os
 import sys
+import time
 import logging
 import subprocess
 import argparse
@@ -342,6 +343,7 @@ class TestResults:
 def run_test(test_name, src, cmd, config):
     logger.debug('Testing %s with command %s', test_name, cmd)
 
+    start = time.time()
     proc = subprocess.Popen(cmd,
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE,
@@ -349,6 +351,9 @@ def run_test(test_name, src, cmd, config):
 
     proc.wait()
     out, err = proc.communicate()
+    end = time.time()
+
+    logger.debug('Elapsed for %s %s: %.2fs', src, test_name, end - start)
 
     output = {
         'returncode': str(proc.returncode),
