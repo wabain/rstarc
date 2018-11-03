@@ -1,4 +1,3 @@
-use std::hash::Hash;
 use std::collections::BTreeMap;
 use std::collections::hash_map::{HashMap, Entry};
 use std::mem::replace;
@@ -49,37 +48,29 @@ impl VariableType {
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
-enum UseType {
-    Read,
-    Write,
-    ForcedLocalWrite,
+#[derive(Debug, Clone)]
+enum ClosureSource {
+    Local { idx: usize },
+    Parent { closure_idx: usize, idx: usize },
 }
 
-impl UseType {
-    fn merge(&mut self, other: UseType) {
-        match (&self, other) {
-            (UseType::Read, _) |
-            (UseType::Write, UseType::ForcedLocalWrite) => { *self = other; }
+/// Storage type for a variable
+#[derive(Debug, Clone)]
+enum StorageType {
+    Global,
+    Local { scope_id: ScopeId, idx: usize },
+    Closure { scope_id: ScopeId, src: ClosureSource },
+}
 
-            (_, UseType::Read) |
-            (UseType::Write, UseType::Write) |
-            (UseType::ForcedLocalWrite, _) => {}
+impl<'a> Into<VariableType> for &'a StorageType {
+    fn into(self) -> VariableType {
+        match *self {
+            StorageType::Global => VariableType::Global,
+            StorageType::Local { scope_id, .. } => VariableType::Local(scope_id),
+            StorageType::Closure { scope_id, .. } => VariableType::Closure(scope_id),
         }
     }
 }
-
-/// Each entry in a closure can either be a variable or a pointer to an
-/// ancestor scope's closure
-#[derive(Debug, Clone)]
-enum ClosureEntry<'prog> {
-    Variable(LangVariable<'prog>),
-    Closure(ScopeId),
-}
-
-// used_variable: var -> type=[local{idx}|nonlocal{scope, closure_idx, var_idx}] expose=[no|yes{var_idx}]
-//
-
 
 /// Data associated with a given scope. Each ScopeData instance contains ***.
 #[derive(Default, Debug, Clone)]
@@ -87,31 +78,18 @@ struct ScopeData<'prog> {
     // Use a binary tree to get a stable iteration order. Ideally we'd
     // probably use insertion order, but that would also push extra
     // requirements into the the scope analysis pass.
-    used_variables: BTreeMap<LangVariable<'prog>, VariableType>,
-    /// Scopes from which this scope takes a closure. Each closure can be
-    /// local to the current scope, or reexported as part of this scope's
-    /// closure.
-    reexported_closures: Vec<ScopeId>,
-    // /// A list of the entries owned by this closure
-    // closure_variables: Vec<LangVariable<'prog>>,
+    used_variables: BTreeMap<LangVariable<'prog>, StorageType>,
+    /// Count of closure variables initiated in this scope
+    local_scope_closure_var_count: usize,
+    /// Count of local variables used in this scope
+    local_var_count: usize,
 }
 
-// impl<'prog> ScopeData<'prog> {
-//     fn access_nonlocal(&mut self, var: &LangVariable<'prog>) -> VariableType {
-//         let var_type = self.used_variables.get_mut(var)
-//             .expect("access_nonlocal lookup");
-
-//         match *var_type {
-//             VariableType::Local(s) => {
-//                 let closure_idx = self.closure_layout.len();
-//                 self.closure_layout.push(ClosureEntry::Variable(var.clone()));
-//                 *var_type = VariableType::Closure(s);
-//                 return *var_type
-//             }
-//             VariableType::Closure(_) | VariableType::Global => return *var_type
-//         }
-//     }
-// }
+impl<'prog> ScopeData<'prog> {
+    fn get_storage_type<'a>(&'a self, var: &'a LangVariable) -> Option<&'a StorageType> {
+        self.used_variables.get(var)
+    }
+}
 
 #[derive(Default)]
 pub struct ScopeMap<'prog> {
@@ -131,7 +109,7 @@ impl<'prog> ScopeMap<'prog> {
     {
         self.scope_data(referencing_scope)
             .used_variables.get(var)
-            .cloned()
+            .map(Into::into)
     }
 
     pub fn get_owned_vars_for_scope(&self, scope_id: ScopeId)
@@ -139,8 +117,14 @@ impl<'prog> ScopeMap<'prog> {
     {
         self.scope_data(scope_id)
             .used_variables.iter()
-            .filter(move |(_, &t)| t.owner() == scope_id)
-            .map(|(k, &t)| (k, t))
+            .filter(move |(_, t)| {
+                let vt: VariableType = (*t).into();
+                vt.owner() == scope_id
+            })
+            .map(|(k, t)| (k, {
+                let vt: VariableType = t.into();
+                vt
+            }))
     }
 
     fn scope_data(&self, scope_id: ScopeId) -> &ScopeData<'prog> {
@@ -153,61 +137,107 @@ impl<'prog> ScopeMap<'prog> {
 type FuncParams<'a> = (SrcPos, &'a [ast::Variable], &'a [Statement]);
 
 #[derive(Debug, PartialEq, Clone, Copy)]
-enum ScopeBuildingVarType {
-    Local { has_nonlocal_access: bool },
-    NonLocal { owner: ScopeId },
+enum StorageTypeSpec {
+    LocalScope { has_nonlocal_access: bool },
+    ParentScope { owner: ScopeId },
 }
 
-impl ScopeBuildingVarType {
-    fn could_become(&self, other: &ScopeBuildingVarType) -> bool {
-        use self::ScopeBuildingVarType::*;
+impl StorageTypeSpec {
+    fn local() -> Self {
+        StorageTypeSpec::LocalScope { has_nonlocal_access: false }
+    }
+
+    fn merge(&mut self, other: &StorageTypeSpec) {
+        use self::StorageTypeSpec::*;
         match (self, other) {
-            (Local { has_nonlocal_access: true },
-             Local { has_nonlocal_access: true }) |
-            (Local { has_nonlocal_access: false },
-             Local { has_nonlocal_access: _ }) => true,
+            (LocalScope { has_nonlocal_access: a },
+             LocalScope { has_nonlocal_access: b }) => {
+                if *b && !*a {
+                    *a = true;
+                }
+            }
 
-            (NonLocal { owner: a },
-             NonLocal { owner: b }) if a == b => true,
+            (ParentScope { owner: a },
+             ParentScope { owner: b }) if a == b => {},
 
-            _ => false,
-        }
+            (s, o) => panic!("Incompatible XXX types: {:?} and {:?}", s, o),
+        };
     }
 }
 
 #[derive(Default, Debug)]
 struct ScopeBuildingParams<'prog> {
-    inorder_vars: Vec<ScopeBuildingVarType>,
+    inorder_vars: Vec<StorageTypeSpec>,
     var_map: HashMap<LangVariable<'prog>, usize>,
 }
 
 impl<'prog> ScopeBuildingParams<'prog> {
     fn to_scope_data(self, prev: &[ScopeData]) -> ScopeData<'prog> {
-        // let mut closure_vars
-
         let scope_id = prev.len() as ScopeId;
 
-        let mut inorder_used_vars: Vec<_> = self.inorder_vars.into_iter()
-            .map(|build_t| {
-                let scope_id = scope_id as u64;
-                let t = match build_t {
-                    ScopeBuildingVarType::Local { has_nonlocal_access: false } => {
-                        VariableType::Local(scope_id)
-                    }
-                    ScopeBuildingVarType::Local { has_nonlocal_access: true } => {
-                        if scope_id == 0 {
-                            VariableType::Global
-                        } else {
-                            VariableType::Closure(scope_id)
+        let mut parent_closure_idxs = HashMap::new();
+        let mut local_scope_closure_var_count = 0;
+        let mut local_var_count = 0;
+
+        let mut inorder_used_vars: Vec<_>;
+
+        {
+            let mut inorder_var_src: Vec<_> = self.var_map.iter().collect();
+            inorder_var_src.sort_by_key(|(_, &idx)| idx);
+
+            inorder_used_vars = self.inorder_vars.into_iter()
+                .enumerate()
+                .map(|(var_idx, spec)| {
+                    let t = match spec {
+                        StorageTypeSpec::LocalScope { has_nonlocal_access: false } => {
+                            let idx = local_var_count;
+                            local_var_count += 1;
+                            StorageType::Local { scope_id, idx }
                         }
-                    }
-                    ScopeBuildingVarType::NonLocal { owner } => {
-                        VariableType::Closure(owner)
-                    }
-                };
-                Some(t)
-            })
-            .collect();
+                        StorageTypeSpec::LocalScope { has_nonlocal_access: true } => {
+                            if scope_id == 0 {
+                                return Some(StorageType::Global);
+                            }
+
+                            let idx = local_scope_closure_var_count;
+                            local_scope_closure_var_count += 1;
+                            StorageType::Closure {
+                                scope_id,
+                                src: ClosureSource::Local { idx },
+                            }
+                        }
+                        StorageTypeSpec::ParentScope { owner } => {
+                            let var = inorder_var_src[var_idx].0;
+
+                            let parent_type = prev[owner as usize]
+                                .get_storage_type(var)
+                                .expect("owner storage type");
+
+                            match *parent_type {
+                                StorageType::Global => StorageType::Global,
+
+                                StorageType::Closure {
+                                    src: ClosureSource::Local { idx },
+                                    ..
+                                } => {
+                                    let parent_closure_idxs_count = parent_closure_idxs.len();
+                                    let closure_idx = *parent_closure_idxs.entry(owner)
+                                        .or_insert(parent_closure_idxs_count);
+
+                                    StorageType::Closure {
+                                        scope_id: owner,
+                                        src: ClosureSource::Parent { closure_idx, idx },
+                                    }
+                                }
+
+                                _ => unreachable!("parent storage type {:?}", parent_type),
+                            }
+                        }
+                    };
+                    Some(t)
+                })
+                .collect();
+        }
 
         let used_vars = self.var_map.into_iter()
             .map(|(var, idx)| {
@@ -217,27 +247,23 @@ impl<'prog> ScopeBuildingParams<'prog> {
 
         ScopeData {
             used_variables: used_vars,
-            ..ScopeData::default()
+            local_scope_closure_var_count,
+            local_var_count,
         }
-    }
-
-    fn has(&self, var: &LangVariable) -> bool {
-        self.var_map.contains_key(var)
     }
 
     fn add_var(&mut self,
                var: LangVariable<'prog>,
-               building_var_type: ScopeBuildingVarType)
+               var_type: StorageTypeSpec)
     {
         match self.var_map.entry(var) {
             Entry::Occupied(e) => {
-                // XXX: Should do merge?
-                let prior_type = &self.inorder_vars[*e.get()];
-                debug_assert!(building_var_type.could_become(prior_type));
+                let prior_type = &mut self.inorder_vars[*e.get()];
+                prior_type.merge(&var_type);
             }
             Entry::Vacant(e) => {
                 let idx = self.inorder_vars.len();
-                self.inorder_vars.push(building_var_type);
+                self.inorder_vars.push(var_type);
                 e.insert(idx);
             }
         }
@@ -248,7 +274,7 @@ impl<'prog> ScopeBuildingParams<'prog> {
             panic!("set_nonlocal_access for missing var {:?}", var)
         });
         match self.inorder_vars[idx] {
-            ScopeBuildingVarType::Local { has_nonlocal_access: ref mut a } => {
+            StorageTypeSpec::LocalScope { has_nonlocal_access: ref mut a } => {
                 *a = true;
             }
             ref t @ _ => {
@@ -256,6 +282,13 @@ impl<'prog> ScopeBuildingParams<'prog> {
             }
         }
     }
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+enum UseType {
+    Read,
+    Write,
+    ForcedLocalWrite,
 }
 
 /// *** to build the scope map. The procedure is as follows:
@@ -295,11 +328,6 @@ impl<'prog> ScopeMapBuilder<'prog> {
         // Exit the root scope
         self.exit_root_scope();
         assert!(self.scope_stack.is_empty());
-
-        // let scope_data = (0..self.scope_parents.len()).into_iter()
-        //     .map(|i| self.scope_data.remove(&(i as ScopeId))
-        //         .unwrap_or_else(|| panic!("Missing scope data for scope {}", i)))
-        //     .collect();
 
         let scope_data = self.scope_params.into_iter()
             .fold(Vec::new(), |mut prev, params| {
@@ -406,7 +434,7 @@ impl<'prog> ScopeMapBuilder<'prog> {
 
         // Forced local: shadow any assignments in ancestor scopes
         if use_type == UseType::ForcedLocalWrite {
-            let var_type = ScopeBuildingVarType::Local { has_nonlocal_access: false };
+            let var_type = StorageTypeSpec::local();
             self.add_var(current_scope, current_scope, var, var_type);
             return;
         }
@@ -428,9 +456,9 @@ impl<'prog> ScopeMapBuilder<'prog> {
             let var_type;
 
             if owner == current_scope {
-                var_type = ScopeBuildingVarType::Local { has_nonlocal_access: false };
+                var_type = StorageTypeSpec::local();
             } else {
-                var_type = ScopeBuildingVarType::NonLocal { owner };
+                var_type = StorageTypeSpec::ParentScope { owner };
                 self.scope_params[owner as usize].set_nonlocal_access(&var);
             }
 
@@ -438,10 +466,10 @@ impl<'prog> ScopeMapBuilder<'prog> {
 
             // Each scope between the previously registering scope and the
             // current scope needs to register the variable
-            let mut chain_idx = self.scope_stack.len();
-            while chain_idx > 0 {
-                chain_idx -= 1;
-                let ancestor = self.scope_stack[chain_idx];
+            let mut stack_idx = self.scope_stack.len();
+            while stack_idx > 0 {
+                stack_idx -= 1;
+                let ancestor = self.scope_stack[stack_idx];
                 if ancestor == reg_id {
                     return;
                 }
@@ -452,7 +480,7 @@ impl<'prog> ScopeMapBuilder<'prog> {
         }
 
         // Fallthrough: no ancestor scope has registered the variable
-        let var_type = ScopeBuildingVarType::Local { has_nonlocal_access: false };
+        let var_type = StorageTypeSpec::local();
         self.add_var(current_scope, current_scope, var, var_type);
     }
 
@@ -460,7 +488,7 @@ impl<'prog> ScopeMapBuilder<'prog> {
                scope_id: ScopeId,
                owner_id: ScopeId,
                var: LangVariable<'prog>,
-               var_type: ScopeBuildingVarType)
+               var_type: StorageTypeSpec)
     {
         self.scope_params[scope_id as usize].add_var(var.clone(), var_type);
         self.var_owners.insert((var, scope_id), owner_id);
