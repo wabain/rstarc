@@ -7,6 +7,7 @@ import logging
 import subprocess
 import argparse
 import difflib
+from multiprocessing.pool import Pool
 
 import pytoml as toml
 
@@ -108,12 +109,21 @@ def get_files_in_dir(dir):
 def verify_output(files, *, binary, refresh, tests_for_new_files):
     results = []
 
-    for src in files:
-        result = verify_source_file(src,
-                                    binary=binary,
-                                    refresh=refresh,
-                                    tests_for_new_files=tests_for_new_files)
-        results.append(result)
+    with Pool() as pool:
+        pending_results = []
+
+        for src in files:
+            res = pool.apply_async(verify_source_file, (src,), dict(
+                binary=binary,
+                refresh=refresh,
+                tests_for_new_files=tests_for_new_files,
+            ))
+
+            pending_results.append(res)
+
+        for pending in pending_results:
+            result = pending.get()
+            results.append(result)
 
     failures = []
     success_count = 0
