@@ -81,6 +81,9 @@ impl UseType {
 
 #[derive(Default, Debug, Clone)]
 struct ScopeData<'prog> {
+    /// Id of this scope's parent
+    parent_id: Option<ScopeId>,
+
     // Use a binary tree to get a stable iteration order. Ideally we'd
     // probably use insertion order, but that would also push extra
     // requirements into the the scope analysis pass.
@@ -94,6 +97,14 @@ pub struct ScopeMap<'prog> {
 }
 
 impl<'prog> ScopeMap<'prog> {
+    pub fn scopes(&self) -> impl Iterator<Item=ScopeId> {
+        (0..self.scope_data.len() as ScopeId)
+    }
+
+    pub fn get_parent_scope(&self, scope_id: ScopeId) -> Option<ScopeId> {
+        self.scope_data(scope_id).parent_id
+    }
+
     pub fn get_scope_for_func_declaration(&self, statement: &Statement) -> ScopeId {
         *self.block_scopes.get(&statement.pos.0)
             .unwrap_or_else(|| panic!("No scope for statement {:?}", statement))
@@ -106,6 +117,14 @@ impl<'prog> ScopeMap<'prog> {
         self.scope_data(referencing_scope)
             .used_variables.get(var)
             .cloned()
+    }
+
+    pub fn get_used_vars_for_scope(&self, scope_id: ScopeId)
+        -> impl Iterator<Item=(&LangVariable<'prog>, VariableType)>
+    {
+        self.scope_data(scope_id)
+            .used_variables.iter()
+            .map(|(k, &t)| (k, t))
     }
 
     pub fn get_owned_vars_for_scope(&self, scope_id: ScopeId)
@@ -143,14 +162,13 @@ impl<'prog> ScopeMapBuilder<'prog> {
 
     fn to_scope_map(self) -> ScopeMap<'prog> {
         let mut scope_data: Vec<ScopeData> = self.scope_parents.iter()
-            .map(|_| ScopeData::default())
+            .map(|&parent_id| ScopeData { parent_id, ..Default::default() })
             .collect();
 
         for (var, var_users) in self.var_uses {
             let owner_for_scope = ScopeMapBuilder::analyze_use(&self.scope_parents, var_users);
 
             for (scope, var_type) in owner_for_scope {
-                // FIXME: Cloning var could be expensive and shouldn't be necessary
                 scope_data.get_mut(scope as usize)
                     .expect("scope data update")
                     .used_variables.insert(var.clone(), var_type);

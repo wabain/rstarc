@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use rstarc_types::Value;
-use base_analysis::{ScopeId, ScopeMap};
+use base_analysis::{ScopeId, ScopeMap, VariableType};
 use lang_constructs::{RockstarValue as BaseValue, LangVariable};
 use runtime_error::RuntimeError;
 use syntax::ast::{
@@ -67,6 +67,7 @@ impl fmt::Display for InterpreterError {
 type InterpResult<T> = Result<T, InterpreterError>;
 
 type InterpValue<'a> = BaseValue<InterpFunc<'a>>;
+type ValueCell<'a> = Rc<RefCell<InterpValue<'a>>>;
 type ScopeCell<'a> = Rc<RefCell<VariableScope<'a>>>;
 
 #[derive(Clone)]
@@ -90,20 +91,45 @@ impl<'a> PartialEq for InterpFunc<'a> {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 struct VariableScope<'a> {
     static_scope_id: ScopeId,
-    vars: HashMap<LangVariable<'a>, InterpValue<'a>>,
-    parent: Option<ScopeCell<'a>>,
+    local: Vec<InterpValue<'a>>,
+    closure: Vec<ValueCell<'a>>,
 }
 
 impl<'a> VariableScope<'a> {
-    fn for_function(func: &InterpFunc<'a>) -> VariableScope<'a> {
+    fn new(layout: &VariableLayout<'a>,
+           static_scope_id: ScopeId,
+           parent: Option<&VariableScope<'a>>)
+        -> Self
+    {
+        let scope_layout = &layout.scope_layouts[static_scope_id as usize];
+        let local = init_var_lookup(scope_layout.locals_count);
+        let closure = scope_layout.closure_srcs.iter().map(|src| {
+            match *src {
+                ClosureSrc::Local => Rc::new(RefCell::new(Value::Mysterious)),
+                ClosureSrc::Parent(idx) => {
+                    parent.expect("closure scope parent").closure[idx].clone()
+                }
+            }
+        }).collect();
+
         VariableScope {
-            static_scope_id: func.static_scope_id,
-            vars: HashMap::new(),
-            parent: Some(func.parent_scope.clone()),
+            static_scope_id,
+            local,
+            closure,
         }
+    }
+
+    fn for_root(layout: &VariableLayout<'a>) -> Self {
+        VariableScope::new(layout, 0, None)
+    }
+
+    fn for_function(layout: &VariableLayout<'a>, func: &InterpFunc<'a>) -> Self {
+        VariableScope::new(layout,
+                           func.static_scope_id,
+                           Some(&func.parent_scope.borrow()))
     }
 
     fn to_cell(self) -> ScopeCell<'a> {
@@ -124,14 +150,19 @@ pub struct Interpreter<'a> {
     func_id: u64,
     scope: ScopeCell<'a>,
     scope_map: &'a ScopeMap<'a>,
+    globals: Vec<InterpValue<'a>>,
+    var_layout: VariableLayout<'a>,
 }
 
 impl<'a> Interpreter<'a> {
     fn new(scope_map: &'a ScopeMap<'a>) -> Self {
+        let var_layout = VariableLayout::new(scope_map);
         Interpreter {
             func_id: 0,
-            scope: ScopeCell::default(),
+            scope: VariableScope::for_root(&var_layout).to_cell(),
             scope_map,
+            globals: init_var_lookup(var_layout.globals_count),
+            var_layout,
         }
     }
 
@@ -324,34 +355,13 @@ impl<'a> Interpreter<'a> {
             }
         };
 
-        let mut fcall_scope = VariableScope::for_function(&func);
-
-        let arg_values = {
-            let mut v = Vec::with_capacity(arg_exprs.len());
-            for a in arg_exprs {
-                v.push(self.eval_expr(a)?);
-            }
-            v
-        };
-
-        for (arg_var, arg_value) in func.args.iter().zip(arg_values.into_iter()) {
-            fcall_scope.vars.insert(arg_var.clone(), arg_value);
-        }
-
-        // Preset arguments for which values weren't provided by
-        // the caller to shadow any values in parent scopes
-        for i in arg_exprs.len()..func.args.len() {
-            fcall_scope.vars.insert(func.args[i].clone(), Value::Mysterious);
-        }
-
-        let flow;
-
-        {
+        let fcall_scope = self.init_function_scope(&func, arg_exprs)?;
+        let flow = {
             let old_scope = mem::replace(&mut self.scope, fcall_scope.to_cell());
             let res = self.dispatch_statements(func.statements);
             mem::replace(&mut self.scope, old_scope);
 
-            flow = res?;
+            res?
         };
 
         match flow {
@@ -444,65 +454,151 @@ impl<'a> Interpreter<'a> {
 
     fn get_var(&mut self, var: &LangVariable) -> InterpValue<'a> {
         let scope = self.scope.borrow();
-        let leaf_scope_id = scope.static_scope_id;
+        let scope_id = scope.static_scope_id;
 
-        // Values can be missing from the owning scope map if they were never
-        // written
-        let owning_scope_id = match self.scope_map.get_variable_type(&var, leaf_scope_id) {
-            Some(var_type) => var_type.owner(),
-            None => return Value::Mysterious,
-        };
-
-        // Fast path: local read, don't need to touch refcounts
-        if owning_scope_id == leaf_scope_id {
-            // FIXME: Do I really need to clone?
-            return scope.vars.get(var).map_or(Value::Mysterious, Value::clone);
+        // FIXME: Currently this entails string cloning
+        match *self.var_layout.get_storage_type(scope_id, var) {
+            StorageType::Global(idx) => self.globals[idx].clone(),
+            StorageType::Local(idx) => scope.local[idx].clone(),
+            StorageType::Closure(idx) => scope.closure[idx].borrow().clone(),
         }
-
-        // Slow path: walk the scope chain to find the owning scope
-        let scope_cell = self.find_ancestor_scope_by_id(owning_scope_id);
-        let value = scope_cell.borrow().vars
-            .get(var)
-            .map_or(Value::Mysterious, Value::clone);
-
-        value
     }
 
     // If the variable already exists in a parent scope, overwrite it.
     // Otherwise, write it to the leaf scope.
     fn set_var(&mut self, var: LangVariable<'a>, value: InterpValue<'a>) {
-        let leaf_scope_id = self.scope.borrow().static_scope_id;
-        let owning_scope_id = match self.scope_map.get_variable_type(&var, leaf_scope_id) {
-            Some(var_type) => var_type.owner(),
-            None => {
-                panic!("No known owning scope on write for {:?} from scope {}",
-                       var, leaf_scope_id)
-            }
-        };
+        let mut scope = self.scope.borrow_mut();
+        let scope_id = scope.static_scope_id;
 
-        // Fast path: local write, don't need to touch refcounts
-        if owning_scope_id == leaf_scope_id {
-            self.scope.borrow_mut().vars.insert(var, value);
-            return;
+        match *self.var_layout.get_storage_type(scope_id, &var) {
+            StorageType::Global(idx) => { self.globals[idx] = value; }
+            StorageType::Local(idx) => { scope.local[idx] = value; }
+            StorageType::Closure(idx) => { *scope.closure[idx].borrow_mut() = value; }
         }
-
-        // Slow path: walk the scope chain to find the owning scope
-        let scope_cell = self.find_ancestor_scope_by_id(owning_scope_id);
-        scope_cell.borrow_mut().vars.insert(var, value);
     }
 
-    fn find_ancestor_scope_by_id(&self, static_id: ScopeId) -> ScopeCell<'a> {
-        // Slow path: walk the scope chain to find the owning scope
-        let mut scope_cell = self.scope.borrow().parent.clone();
+    fn init_function_scope(&mut self,
+                           func: &InterpFunc<'a>,
+                           arg_exprs: &[Box<Expr>])
+        -> InterpResult<VariableScope<'a>>
+    {
+        let scope_id = func.static_scope_id;
+        let mut fcall_scope = VariableScope::for_function(&self.var_layout, func);
 
-        while let Some(sc) = scope_cell {
-            if sc.borrow().static_scope_id == static_id {
-                return sc;
+        // Evaluate arguments and assign them in a child scope. Need to
+        // maintain predictable evaluation order here.
+        for (arg_expr, var) in arg_exprs.iter().zip(func.args.iter()) {
+            let value = self.eval_expr(arg_expr)?;
+
+            match *self.var_layout.get_storage_type(scope_id, var) {
+                StorageType::Global(_) => panic!("Cannot assign function argument as global"),
+                StorageType::Local(idx) => {
+                    fcall_scope.local[idx] = value;
+                }
+                StorageType::Closure(idx) => {
+                    *fcall_scope.closure[idx].borrow_mut() = value;
+                }
             }
-
-            scope_cell = sc.borrow().parent.clone();
         }
 
-        panic!("Did not find scope {} from {:?}", static_id, self.scope);
+        Ok(fcall_scope)
     }
+}
+
+struct VariableLayout<'prog> {
+    globals_count: usize,
+    scope_layouts: Vec<ScopeLayout<'prog>>,
+}
+
+impl<'prog> VariableLayout<'prog> {
+    fn new(scope_map: &ScopeMap<'prog>) -> Self {
+        let mut scope_layouts = Vec::new();
+        let mut globals = HashMap::new();
+        let mut closures: Vec<HashMap<&LangVariable<'prog>, usize>> = Vec::new();
+
+        for scope_id in scope_map.scopes() {
+            let mut layout = ScopeLayout::default();
+            let mut locals = HashMap::new();
+            let mut closure_vars = HashMap::new();
+
+            for (var, var_type) in scope_map.get_used_vars_for_scope(scope_id) {
+                let storage_type = match var_type {
+                    VariableType::Global => {
+                        let globals_count = globals.len();
+                        let idx = *globals.entry(var).or_insert(globals_count);
+                        StorageType::Global(idx)
+                    }
+                    VariableType::Local(_) => {
+                        let idx = *locals.entry(var).or_insert_with(|| {
+                            let idx = layout.locals_count;
+                            layout.locals_count += 1;
+                            idx
+                        });
+                        StorageType::Local(idx)
+                    }
+                    VariableType::Closure(owner) => {
+                        let idx = *closure_vars.entry(var).or_insert_with(|| {
+                            let src = if owner == scope_id {
+                                ClosureSrc::Local
+                            } else {
+                                let parent_id = scope_map.get_parent_scope(scope_id)
+                                    .expect("Parent of scope with closure");
+
+                                let parent_idx = closures[parent_id as usize][var];
+                                ClosureSrc::Parent(parent_idx)
+                            };
+
+                            let idx = layout.closure_srcs.len();
+                            layout.closure_srcs.push(src);
+                            idx
+                        });
+
+                        StorageType::Closure(idx)
+                    }
+                };
+
+                layout.vars.insert(var.clone(), storage_type);
+            }
+
+            scope_layouts.push(layout);
+            closures.push(closure_vars);
+        }
+
+        VariableLayout {
+            globals_count: globals.len(),
+            scope_layouts,
+        }
+    }
+
+    fn get_storage_type<'a>(&'a self, scope_id: ScopeId, var: &'a LangVariable)
+        -> &'a StorageType
+    {
+        self.scope_layouts[scope_id as usize]
+            .vars.get(var)
+            .expect("variable layout lookup")
+    }
+}
+
+#[derive(Debug)]
+enum StorageType {
+    Global(usize),
+    Local(usize),
+    Closure(usize),
+}
+
+#[derive(Debug, Copy, Clone)]
+enum ClosureSrc {
+    Local,
+    Parent(usize),
+}
+
+#[derive(Default, Debug)]
+struct ScopeLayout<'prog> {
+    vars: HashMap<LangVariable<'prog>, StorageType>,
+    locals_count: usize,
+    closure_srcs: Vec<ClosureSrc>,
+}
+
+fn init_var_lookup<'a>(size: usize) -> Vec<InterpValue<'a>> {
+    vec![Value::Mysterious; size]
 }
