@@ -47,18 +47,6 @@ impl VariableType {
             _ => false,
         }
     }
-
-    fn register_use(&mut self, scope_id: ScopeId) {
-        if let VariableType::Local(s) = *self {
-            if s != scope_id {
-                if s == 0 {
-                    *self = VariableType::Global;
-                } else {
-                    *self = VariableType::Closure(s);
-                }
-            }
-        }
-    }
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -89,6 +77,10 @@ enum ClosureEntry<'prog> {
     Closure(ScopeId),
 }
 
+// used_variable: var -> type=[local{idx}|nonlocal{scope, closure_idx, var_idx}] expose=[no|yes{var_idx}]
+//
+
+
 /// Data associated with a given scope. Each ScopeData instance contains ***.
 #[derive(Default, Debug, Clone)]
 struct ScopeData<'prog> {
@@ -99,27 +91,27 @@ struct ScopeData<'prog> {
     /// Scopes from which this scope takes a closure. Each closure can be
     /// local to the current scope, or reexported as part of this scope's
     /// closure.
-    used_closures: HashMap<ScopeId, VariableType>,
-    /// A list of the entries owned by this closure
-    closure_layout: Vec<ClosureEntry<'prog>>,
+    reexported_closures: Vec<ScopeId>,
+    // /// A list of the entries owned by this closure
+    // closure_variables: Vec<LangVariable<'prog>>,
 }
 
-impl<'prog> ScopeData<'prog> {
-    fn access_nonlocal(&mut self, var: &LangVariable<'prog>) -> VariableType {
-        let var_type = self.used_variables.get_mut(var)
-            .expect("access_nonlocal lookup");
+// impl<'prog> ScopeData<'prog> {
+//     fn access_nonlocal(&mut self, var: &LangVariable<'prog>) -> VariableType {
+//         let var_type = self.used_variables.get_mut(var)
+//             .expect("access_nonlocal lookup");
 
-        match *var_type {
-            VariableType::Local(s) => {
-                let closure_idx = self.closure_layout.len();
-                self.closure_layout.push(ClosureEntry::Variable(var.clone()));
-                *var_type = VariableType::Closure(s);
-                return *var_type
-            }
-            VariableType::Closure(_) | VariableType::Global => return *var_type
-        }
-    }
-}
+//         match *var_type {
+//             VariableType::Local(s) => {
+//                 let closure_idx = self.closure_layout.len();
+//                 self.closure_layout.push(ClosureEntry::Variable(var.clone()));
+//                 *var_type = VariableType::Closure(s);
+//                 return *var_type
+//             }
+//             VariableType::Closure(_) | VariableType::Global => return *var_type
+//         }
+//     }
+// }
 
 #[derive(Default)]
 pub struct ScopeMap<'prog> {
@@ -521,14 +513,6 @@ impl<'prog> ScopeMapBuilder<'prog> {
 
         self.scope_stack.pop().expect("ScopeBuilder::exit_scope::pop");
     }
-}
-
-fn into_sorted_by_key<K, V>(map: HashMap<K, V>) -> Vec<(K, V)>
-    where K: Eq + Hash + Ord + Clone
-{
-    let mut var_uses: Vec<_> = map.into_iter().collect();
-    var_uses.sort_by_key(|(k, _)| k.clone());
-    var_uses
 }
 
 fn lval_to_lang_var(lval: &ast::LValue) -> LangVariable {
