@@ -54,7 +54,7 @@ def main():
     if args.bin:
         binary = args.bin
     else:
-        binary = os.path.join(basedir, 'target', 'debug', 'rstarc')
+        binary = cwd_relative(os.path.join(basedir, 'target', 'debug', 'rstarc'))
 
         if args.rebuild:
             cmd = ['cargo', 'build']
@@ -93,7 +93,7 @@ def get_files(locations):
         else:
             files.append(loc)
 
-    return files
+    return [cwd_relative(f) for f in files]
 
 
 def get_files_in_dir(dir):
@@ -104,6 +104,19 @@ def get_files_in_dir(dir):
             if name.endswith('.rock'):
                 files.append(os.path.join(dirpath, name))
     return files
+
+
+def cwd_relative(path):
+    cwd = os.path.realpath(os.getcwd())
+    if not cwd.endswith(os.path.sep):
+        cwd += os.path.sep
+
+    path = os.path.realpath(path)
+
+    if path.startswith(cwd):
+        return path[len(cwd):]
+
+    return path
 
 
 def verify_output(files, *, binary, refresh, tests_for_new_files):
