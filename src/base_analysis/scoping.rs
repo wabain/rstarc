@@ -16,9 +16,9 @@ pub fn identify_variable_scopes(program: &[Statement]) -> ScopeMap {
     builder.to_scope_map()
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Hash, Copy, Clone, PartialEq, Eq)]
 pub enum VariableType {
-    /// Global variable. For now this must belong to the root scope, although
+    /// Global variable. For now globals must belong to the root scope, although
     /// it should be possible to use globals instead of closures in some cases.
     Global,
     Local(ScopeId),
@@ -98,6 +98,10 @@ pub struct ScopeMap<'prog> {
 }
 
 impl<'prog> ScopeMap<'prog> {
+    pub fn scope_count(&self) -> usize {
+        self.scope_data.len()
+    }
+
     pub fn scopes(&self) -> impl Iterator<Item=ScopeId> {
         (0..self.scope_data.len() as ScopeId)
     }

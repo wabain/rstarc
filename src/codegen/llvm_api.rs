@@ -6,7 +6,7 @@ use llvm::target::*;
 use llvm::target_machine::*;
 use llvm::{LLVMModule, LLVMBuilder};
 // Reexports
-pub use llvm::LLVMLinkage;
+pub use llvm::{LLVMLinkage, LLVMType, LLVMValue, LLVMBasicBlock};
 pub use llvm::prelude::{LLVMTypeRef, LLVMValueRef, LLVMBasicBlockRef};
 
 use std::collections::hash_map::{HashMap, Entry};
@@ -20,6 +20,13 @@ const DEFAULT_ADDRESS_SPACE: u32 = 0;
 pub fn dump_value(value_ref: LLVMValueRef) {
     unsafe {
         LLVMDumpValue(value_ref);
+    }
+    eprintln!("");
+}
+
+pub fn dump_type(type_ref: LLVMTypeRef) {
+    unsafe {
+        LLVMDumpType(type_ref);
     }
     eprintln!("");
 }
@@ -48,8 +55,16 @@ pub fn float64_type() -> LLVMTypeRef {
     unsafe { LLVMDoubleType() }
 }
 
+pub fn struct_type(ts: &mut [LLVMTypeRef]) -> LLVMTypeRef {
+    unsafe { LLVMStructType(ts.as_mut_ptr(), ts.len() as u32, 0) }
+}
+
 pub fn ptr_type(t: LLVMTypeRef) -> LLVMTypeRef {
     unsafe { LLVMPointerType(t, DEFAULT_ADDRESS_SPACE) }
+}
+
+pub fn array_type(t: LLVMTypeRef, size: u32) -> LLVMTypeRef {
+    unsafe { LLVMArrayType(t, size) }
 }
 
 pub fn func_type(args: &mut [LLVMTypeRef], ret: LLVMTypeRef) -> LLVMTypeRef {
@@ -153,6 +168,12 @@ impl LLVMHandle {
         }
     }
 
+    pub fn new_block_before(&mut self, prev: LLVMBasicBlockRef, name: &str) -> LLVMBasicBlockRef {
+        unsafe {
+            LLVMInsertBasicBlock(prev, self.new_cstr(name))
+        }
+    }
+
     pub fn enter_block(&mut self, bb: LLVMBasicBlockRef) {
         unsafe {
             LLVMPositionBuilderAtEnd(self.builder, bb);
@@ -175,13 +196,43 @@ impl LLVMHandle {
         }
     }
 
+    pub fn const_null(&self, ty: LLVMTypeRef) -> LLVMValueRef {
+        unsafe {
+            LLVMConstNull(ty)
+        }
+    }
+
     //
     // Instructions
     //
+    pub fn build_add(&mut self,
+                     lhs: LLVMValueRef,
+                     rhs: LLVMValueRef,
+                     name: &str)
+        -> LLVMValueRef
+    {
+        unsafe {
+            let name = self.new_cstr(name);
+            LLVMBuildAdd(self.builder, lhs, rhs, name)
+        }
+    }
+
     pub fn build_alloca(&mut self, ty: LLVMTypeRef, name: &str) -> LLVMValueRef {
         unsafe {
             let name = self.new_cstr(name);
             LLVMBuildAlloca(self.builder, ty, name)
+        }
+    }
+
+    pub fn build_bitcast(&mut self,
+                         value: LLVMValueRef,
+                         ty: LLVMTypeRef,
+                         name: &str)
+        -> LLVMValueRef
+    {
+        unsafe {
+            let name = self.new_cstr(name);
+            LLVMBuildBitCast(self.builder, value, ty, name)
         }
     }
 
@@ -304,6 +355,21 @@ impl LLVMHandle {
         }
     }
 
+    pub fn build_get_elem_ptr(&mut self,
+                              ptr: LLVMValueRef,
+                              indices: &mut [LLVMValueRef],
+                              name: &str)
+        -> LLVMValueRef
+    {
+        unsafe {
+            LLVMBuildGEP(self.builder,
+                         ptr,
+                         indices.as_mut_ptr(),
+                         indices.len() as u32,
+                         self.new_cstr(name))
+        }
+    }
+
     pub fn build_in_bounds_get_elem_ptr(&mut self,
                                         ptr: LLVMValueRef,
                                         indices: &mut [LLVMValueRef],
@@ -317,7 +383,6 @@ impl LLVMHandle {
                                  indices.len() as u32,
                                  self.new_cstr(name))
         }
-
     }
 
     pub fn build_load(&mut self, ptr: LLVMValueRef, name: &str) -> LLVMValueRef {
@@ -348,6 +413,24 @@ impl LLVMHandle {
         }
     }
 
+    pub fn build_phi(&mut self,
+                     ty: LLVMTypeRef,
+                     incoming: &[(LLVMValueRef, LLVMBasicBlockRef)],
+                     name: &str)
+        -> LLVMValueRef
+    {
+        let mut values: Vec<_> = incoming.iter().map(|&(v, bb)| v).collect();
+        let mut blocks: Vec<_> = incoming.iter().map(|&(v, bb)| bb).collect();
+
+        unsafe {
+            let phi = LLVMBuildPhi(self.builder, ty, self.new_cstr(name));
+            LLVMAddIncoming(
+                phi, values.as_mut_ptr(), blocks.as_mut_ptr(), incoming.len() as u32
+            );
+            phi
+        }
+    }
+
     pub fn build_ptr_to_int(&mut self,
                             val: LLVMValueRef,
                             dest_ty: LLVMTypeRef,
@@ -363,6 +446,21 @@ impl LLVMHandle {
         unsafe {
             LLVMBuildRet(self.builder, arg);
         }
+    }
+
+    /// Derive a sizeof operation. Based on [1].
+    ///
+    /// [1]: http://nondot.org/sabre/LLVMNotes/SizeOf-OffsetOf-VariableSizedStructs.txt
+    pub fn build_sizeof(&mut self, ty: LLVMTypeRef, name: &str) -> LLVMValueRef {
+        let i64t = int64_type();
+
+        let gep = self.build_get_elem_ptr(
+            self.const_null(ptr_type(ty)),
+            &mut [self.const_uint(i64t, 1)],
+            &format!("{}.gep", name),
+        );
+
+        self.build_ptr_to_int(gep, i64t, name)
     }
 
     pub fn build_store(&mut self, val: LLVMValueRef, ptr: LLVMValueRef) -> LLVMValueRef {
@@ -392,6 +490,12 @@ impl LLVMHandle {
         }
     }
 
+    pub fn build_trap(&mut self) {
+        let fn_val = self.builtin_ptr("llvm.trap");
+        self.build_call(fn_val, &mut [], "");
+        self.build_unreachable();
+    }
+
     pub fn build_trunc(&mut self,
                        val: LLVMValueRef,
                        trunc: LLVMTypeRef,
@@ -400,6 +504,12 @@ impl LLVMHandle {
     {
         unsafe {
             LLVMBuildTrunc(self.builder, val, trunc, self.new_cstr(name))
+        }
+    }
+
+    pub fn build_unreachable(&mut self) {
+        unsafe {
+            LLVMBuildUnreachable(self.builder);
         }
     }
 

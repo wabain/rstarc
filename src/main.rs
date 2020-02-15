@@ -423,8 +423,8 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<Option<i32>, RuntimeErr
             syntax::ast_print::ast_print_program(io::stdout(), &tree)?;
         }
         Some(DebugOutputFormat::IR) => {
-            // FIXME: IR may be generated twice along this path
-            codegen::dump_ir(&tree, &scope_map)?;
+            let ir = codegen::build_ir(&tree, &scope_map)?;
+            codegen::dump_ir(&ir);
         }
         Some(DebugOutputFormat::LLVM) |
         Some(DebugOutputFormat::Tokens) |
@@ -448,16 +448,14 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<Option<i32>, RuntimeErr
         None => None,
     };
 
-    codegen::lower_llvm(
-        &tree,
-        &scope_map,
-        &codegen::CodegenOptions {
-            source_file: source,
-            llvm_dump: debug_output == Some(DebugOutputFormat::LLVM),
-            output: obj_output.as_ref().map(|p| p.to_str().expect("obj path")),
-            opt_level: compile_options.opt_level,
-        },
-    )?;
+    let ir = codegen::build_ir(&tree, &scope_map)?;
+    let opts = &codegen::CodegenOptions {
+        source_file: source,
+        llvm_dump: debug_output == Some(DebugOutputFormat::LLVM),
+        output: obj_output.as_ref().map(|p| p.to_str().expect("obj path")),
+        opt_level: compile_options.opt_level,
+    };
+    codegen::lower_llvm(&ir, opts)?;
 
     if !action.needs_linking() {
         return Ok(None);

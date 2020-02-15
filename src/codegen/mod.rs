@@ -5,24 +5,11 @@ use std::fmt;
 mod lower_llvm;
 mod simple_ir;
 mod link;
+mod closure_layout;
 
-use base_analysis::ScopeMap;
-use syntax::ast::Statement;
-use runtime_error::RuntimeError;
-
-pub use self::lower_llvm::CodegenOptions;
-pub use self::simple_ir::dump_ir;
+pub use self::lower_llvm::{CodegenOptions, lower_ir as lower_llvm};
+pub use self::simple_ir::{build_ir, dump_ir};
 pub use self::link::perform_link;
-
-pub fn lower_llvm(program: &[Statement],
-                  scope_map: &ScopeMap,
-                  opts: &CodegenOptions)
-    -> Result<(), RuntimeError>
-{
-    let ir = simple_ir::build_ir(program, scope_map)?;
-    lower_llvm::lower_ir(&ir, opts)?;
-    Ok(())
-}
 
 #[derive(Debug)]
 pub enum CodegenError {

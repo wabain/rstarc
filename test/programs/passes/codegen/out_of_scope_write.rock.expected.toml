@@ -18,9 +18,9 @@ global the sun<0>
 
 main:
   Perseverance := store mysterious
-  the sun := store null
+  the sun<0> := store null
   Perseverance := store Function(1)
-  say the sun
+  say the sun<0>
   return-default
 
 ;

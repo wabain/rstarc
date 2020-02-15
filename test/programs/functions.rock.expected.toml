@@ -13,7 +13,7 @@ main:
   Y := store mysterious
   X := store 1
   Y := store 1
-  Z := store 1
+  Z<0> := store 1
   Func One := store Function(1)
   say "invoking function"
   Temp := call Func One, [1]
@@ -23,7 +23,7 @@ main:
   say "y"
   say Y
   say "z"
-  say Z
+  say Z<0>
   return-default
 
 ;

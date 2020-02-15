@@ -1,4 +1,8 @@
-use std::collections::hash_map::{HashMap, Entry};
+use std::{
+    collections::hash_map::{HashMap, Entry},
+    iter,
+    ptr::NonNull,
+};
 
 use rstarc_types::{Value, value_constants::*};
 use lang_constructs::LangVariable;
@@ -6,9 +10,23 @@ use syntax::ast::Comparator;
 use base_analysis::{ScopeId, VariableType};
 
 use codegen::CodegenError;
-use codegen::simple_ir::{IRProgram, SimpleIR, IRFunc, IRBody, IRValue,
-                         IRLValue, BinOp, InPlaceOp, LocalTemp, LocalDynTemp};
+use codegen::simple_ir::{
+    IRProgram,
+    SimpleIR,
+    IRSubRoutine,
+    IRClosure,
+    IRFuncParams,
+    IRValue,
+    IRLValue,
+    BinOp,
+    InPlaceOp,
+    LocalTemp,
+    LocalDynTemp,
+};
+use codegen::closure_layout::ClosureLayout;
 use codegen::llvm_api::*;
+
+const MAX_SUPPORTED_ARITY: usize = 5;
 
 // Leave file paths as strings because that's how they're input from the CLI
 // and the complexity of interacting between paths and FFI isn't worth it.
@@ -19,7 +37,7 @@ pub struct CodegenOptions<'a> {
     pub opt_level: u32,
 }
 
-pub fn lower_ir(program: &IRProgram, opts: &CodegenOptions)
+pub fn lower_ir<'a, 'prog: 'a>(program: &'a IRProgram<'prog>, opts: &CodegenOptions)
     -> Result<(), CodegenError>
 {
     let mut llh = LLVMHandle::for_native_target(opts.source_file);
@@ -35,30 +53,30 @@ pub fn lower_ir(program: &IRProgram, opts: &CodegenOptions)
             None,
         );
 
-        func_decs.insert(0, FunctionTarget {
-            direct_func: llvm_func,
-            shim_func: None,
-        });
+        func_decs.insert(0, llvm_func);
     }
 
-    for (func_def, _) in &program.funcs {
+    for def in &program.funcs {
         let i64t = int64_type();
-        let mut arg_ts: Vec<_> = func_def.args.iter().map(|_| i64t).collect();
+        let i8t = int8_type();
 
-        let mut llvm_func = llh.add_function(
-            &format!("{}", func_def.initial_var),
+        let captures_type = def
+            .closure()
+            .and_then(|c| build_captured_closure_type(program, c).map(NonNull::as_ptr));
+
+        let mut arg_ts: Vec<_> = iter::once(ptr_type(captures_type.unwrap_or(i8t)))
+            .chain(def.func_params.args.iter().map(|_| i64t))
+            .collect();
+
+        let llvm_func = llh.add_function(
+            &format!("{}", def.func_params.initial_var),
             &mut arg_ts,
             i64t,
             Some(LLVMLinkage::LLVMPrivateLinkage),
             None,
         );
 
-        let mut shim_func = build_shim_function(&mut llh, func_def, &llvm_func);
-
-        func_decs.insert(func_def.scope_id, FunctionTarget {
-            direct_func: llvm_func,
-            shim_func: Some(shim_func),
-        });
+        func_decs.insert(def.scope_id, llvm_func);
     }
 
     declare_builtin_functions(&mut llh);
@@ -69,40 +87,25 @@ pub fn lower_ir(program: &IRProgram, opts: &CodegenOptions)
     };
 
     // Lower main
-    lower_function(&mut llh,
-                   program,
-                   &declarations,
-                   0,
-                   &program.main,
-                   true);
+    lower_function(&mut llh, program, &declarations, &program.main);
 
     // Lower other functions
-    for (func_def, func_body) in &program.funcs {
-        lower_function(&mut llh,
-                       program,
-                       &declarations,
-                       func_def.scope_id,
-                       func_body,
-                       false);
+    for func_def in &program.funcs {
+        lower_function(&mut llh, program, &declarations, func_def);
     }
 
     llh.finalize(opts)
 }
 
-struct Declarations<'a> {
-    globals: HashMap<(&'a LangVariable<'a>, ScopeId), LLVMValueRef>,
-    functions: HashMap<ScopeId, FunctionTarget>,
-}
-
-struct FunctionTarget {
-    direct_func: FunctionHandle,
-    shim_func: Option<FunctionHandle>,
+struct Declarations<'a, 'prog> {
+    globals: HashMap<(&'a LangVariable<'prog>, ScopeId), LLVMValueRef>,
+    functions: HashMap<ScopeId, FunctionHandle>,
 }
 
 /// Declare and initialize global variables
-fn build_global_var_refs<'a>(llh: &mut LLVMHandle,
-                             program: &'a IRProgram<'a>)
-    -> HashMap<(&'a LangVariable<'a>, ScopeId), LLVMValueRef>
+fn build_global_var_refs<'a, 'prog>(llh: &mut LLVMHandle,
+                                    program: &'a IRProgram<'prog>)
+    -> HashMap<(&'a LangVariable<'prog>, ScopeId), LLVMValueRef>
 {
     let i64t = int64_type();
     let initial_value = llh.const_uint(i64t, MYSTERIOUS_BITS);
@@ -124,74 +127,39 @@ fn build_global_var_refs<'a>(llh: &mut LLVMHandle,
     globals
 }
 
-/// Build a shim function to normalize function arguments before passing them
-/// to the real function.
-///
-/// The way this is done is by passing the argument count as the first
-/// argument to the shim function, which then switches over it and passes
-/// the correct number of arguments to the underlying function.
-///
-/// I don't really know how safe this is in general, and it may come back
-/// to haunt me! Offhand, this seems to work (for 64-bit programs, on MacOS,
-/// at least). It could break for calling conventions that put more
-/// responsibility on the callee.
-pub fn build_shim_function(llh: &mut LLVMHandle,
-                           func_def: &IRFunc,
-                           func_hdl: &FunctionHandle)
-                           -> FunctionHandle
-{
-    let arity = func_def.args.len();
-    let i64t = int64_type();
-
-    let mut arg_ts: Vec<_> = (0..arity + 1).map(|_| i64t).collect();
-    let shim_hdl = llh.add_function(
-        &format!("{}.shim", &format!("{}", func_def.initial_var)),
-        &mut arg_ts,
-        i64t,
-        Some(LLVMLinkage::LLVMPrivateLinkage),
-        Some(8),
-    );
-
-    let mut args: Vec<_> = (0..arity).map(|i| shim_hdl.param(i + 1)).collect();
-
-    let entry = llh.new_block(&shim_hdl, "entry");
-    let full_bb = build_shim_branch(llh, &shim_hdl, func_hdl, &mut args, arity);
-
-    llh.enter_block(entry);
-
-    let switch_inst = llh.build_switch(shim_hdl.param(0), full_bb, arity as u32);
-    let mysterious_value = llh.const_uint(i64t, MYSTERIOUS_BITS);
-
-    for missing_count in 1..=arity {
-        let arg_count = arity - missing_count;
-        args[arg_count] = mysterious_value;
-
-        let branch = build_shim_branch(llh, &shim_hdl, func_hdl, &mut args, arg_count);
-        let arg_count_ref = llh.const_uint(i64t, arg_count as u64);
-        llh.add_case(switch_inst, arg_count_ref, branch);
-    }
-
-    shim_hdl
+#[derive(Copy, Clone)]
+enum UserFuncDataFields {
+    FuncPtr = 0,
+    Arity = 1,
+    ClosureSize = 2,
+    ClosureArgs = 3,
 }
 
-fn build_shim_branch(llh: &mut LLVMHandle,
-                     shim_hdl: &FunctionHandle,
-                     direct_hdl: &FunctionHandle,
-                     args: &mut [LLVMValueRef],
-                     arg_count: usize)
-                     -> LLVMBasicBlockRef
-{
-    let bb = llh.new_block(shim_hdl, &format!("argcount.{}", arg_count));
-    llh.enter_block(bb);
+impl UserFuncDataFields {
+    fn get_ptr(&self, llh: &mut LLVMHandle, value: LLVMValueRef, name: &str)
+        -> LLVMValueRef
+    {
+        let i64t = int64_type();
+        let i32t = int32_type();
 
-    let out_ref = llh.build_call(
-        direct_hdl.func_ref(),
-        args,
-        &format!("argcount.{}.out", arg_count),
-    );
+        llh.build_in_bounds_get_elem_ptr(
+            value,
+            &mut [llh.const_uint(i64t, 0), llh.const_uint(i32t, *self as u64)],
+            name,
+        )
+    }
+}
 
-    llh.build_return(out_ref);
-    bb
+fn user_func_type(closure_capture_type: Option<NonNull<LLVMType>>) -> LLVMTypeRef {
+    let i8t = int8_type();
+    let i64t = int64_type();
+
+    struct_type(&mut [
+        ptr_type(i8t), // function pointer
+        i64t, // arity; should be usize
+        i64t, // closure capture size; should be usize
+        closure_capture_type.map_or_else(|| struct_type(&mut []), NonNull::as_ptr),
+    ])
 }
 
 fn declare_builtin_functions(llh: &mut LLVMHandle) {
@@ -201,8 +169,10 @@ fn declare_builtin_functions(llh: &mut LLVMHandle) {
     let i64t = int64_type();
     let void = void_type();
 
+    llh.declare_builtin_function("llvm.trap", &mut [], void);
+
     llh.declare_builtin_function("roll_say", &mut [i64t], void);
-    llh.declare_builtin_function("roll_alloc", &mut [i64t], ptr_type(i64t));
+    llh.declare_builtin_function("roll_alloc", &mut [i64t], ptr_type(i8t));
     llh.declare_builtin_function("roll_mk_number", &mut [f64t], i64t);
     llh.declare_builtin_function("roll_coerce_function", &mut [i64t], i64t);
     llh.declare_builtin_function("roll_coerce_boolean", &mut [i64t], i8t);
@@ -230,17 +200,22 @@ fn declare_builtin_functions(llh: &mut LLVMHandle) {
     }
 }
 
-fn lower_function(llh: &mut LLVMHandle,
-                  program: &IRProgram,
-                  declarations: &Declarations,
-                  scope_id: ScopeId,
-                  body: &IRBody,
-                  is_main: bool)
+fn lower_function<'a, 'prog: 'a, FP>(
+    llh: &mut LLVMHandle,
+    program: &'a IRProgram<'prog>,
+    declarations: &Declarations<'a, 'prog>,
+    def: &IRSubRoutine<'prog, FP>,
+)
+    where
+        IRSubRoutine<'prog, FP>: IRClosure<'prog>,
 {
-    let mut vmgr = ValueTracker::new(program, declarations, scope_id);
+    let scope_id = def.scope_id;
+
+    let mut vmgr = ValueTracker::new(program, declarations, def);
     let llvm_func = declarations.functions.get(&scope_id)
-        .expect("function by scope")
-        .direct_func;
+        .expect("function by scope");
+
+    // TODO: these initializations should be handled while creating ValueTracker
 
     // Create entry block
     let entry_block = vmgr.basic_block(llh, "entry".into());
@@ -250,10 +225,12 @@ fn lower_function(llh: &mut LLVMHandle,
     for (var, _) in program.scope_map.get_owned_vars_for_scope(scope_id) {
         vmgr.prepare_variable(llh, var, scope_id);
     }
-    vmgr.prepare_dyn_temporaries(llh, body.dyn_temp_count);
+    vmgr.prepare_dyn_temporaries(llh, def.dyn_temp_count);
+    vmgr.prepare_closure_locals(llh);
+    vmgr.prepare_closure_capture(llh);
 
     // Translate ops
-    for op in &body.ops {
+    for op in &def.ops {
         match op {
             SimpleIR::Jump(label) => {
                 let block = vmgr.basic_block(llh, label.name());
@@ -312,12 +289,19 @@ fn lower_function(llh: &mut LLVMHandle,
                     llh.build_call_builtin2(builtin, in_val, count_val, name)
                 });
             }
-            SimpleIR::LoadArg(out, idx) => {
-                let out_ref = vmgr.lval_to_llvm(out).unwrap_mem(op);
-                llh.build_store(llvm_func.param(*idx), out_ref);
+            &SimpleIR::LoadArg(ref out, idx) => {
+                let out_ref = vmgr.lval_to_llvm(out)
+                    .unwrap_mem(op)
+                    .build_ptr(llh, "load-arg");
+
+                // Add 1 to skip the captured closures
+                llh.build_store(llvm_func.param(idx + 1), out_ref);
             }
             SimpleIR::Store(out, val) => {
-                let out_ref = vmgr.lval_to_llvm(out).unwrap_mem(op);
+                let out_ref = vmgr.lval_to_llvm(out)
+                    .unwrap_mem(op)
+                    .build_ptr(llh, "store");
+
                 let val_ref = vmgr.val_to_llvm(llh, val);
                 llh.build_store(val_ref, out_ref);
             }
@@ -331,6 +315,7 @@ fn lower_function(llh: &mut LLVMHandle,
                 vmgr.store(llh, out, &format!("{}.return", func), |llh, name| {
                     build_dynamic_call(
                         llh,
+                        &llvm_func,
                         func,
                         func_ref,
                         &mut arg_refs,
@@ -347,7 +332,7 @@ fn lower_function(llh: &mut LLVMHandle,
                 llh.build_return(arg);
             }
             SimpleIR::ReturnDefault => {
-                let retval = if is_main {
+                let retval = if scope_id == 0 {
                     llh.const_uint(int32_type(), 0)
                 } else {
                     llh.const_uint(int64_type(), MYSTERIOUS_BITS)
@@ -360,48 +345,181 @@ fn lower_function(llh: &mut LLVMHandle,
 }
 
 fn build_dynamic_call(llh: &mut LLVMHandle,
+                      caller_hdl: &FunctionHandle,
                       ir_fn: &IRValue,
                       fn_val: LLVMValueRef,
-                      args: &mut [LLVMValueRef],
-                      name: &str)
+                      user_args: &mut [LLVMValueRef],
+                      return_name: &str)
                       -> LLVMValueRef
 {
     let i64t = int64_type();
+
+    let header_block = llh.new_block(caller_hdl, &format!("{}.call.header", ir_fn));
+    llh.build_br(header_block);
+    llh.enter_block(header_block);
 
     let fn_coerced = llh.build_call_coerce_function(
         fn_val,
         &format!("{}.coerce", ir_fn),
     );
 
-    let arg_count = args.len();
-    let arg_count_ref = llh.const_uint(int64_type(), arg_count as u64);
+    let fn_cast = llh.build_int_to_ptr(
+        fn_coerced,
+        ptr_type(user_func_type(None)),
+        &format!("{}.fn_cast", ir_fn),
+    );
 
-    let mut shim_args = Vec::with_capacity(arg_count + 1);
-    shim_args.push(arg_count_ref);
-    shim_args.extend(args.iter());
+    let fn_ref_ptr_value = UserFuncDataFields::FuncPtr
+        .get_ptr(llh, fn_cast, &format!("{}.fn_ref.ptr", ir_fn));
 
-    let mut shim_arg_types: Vec<_> = shim_args.iter().map(|_| i64t).collect();
-    let fn_type = ptr_type(func_type(&mut shim_arg_types, i64t));
+    let fn_ref_value = llh.build_load(fn_ref_ptr_value, &format!("{}.fn_ref", ir_fn));
 
-    let fn_cast = llh.build_int_to_ptr(fn_coerced,
-                                       fn_type,
-                                       &format!("{}.fn_cast", ir_fn));
+    let arity_ptr_value = UserFuncDataFields::Arity
+        .get_ptr(llh, fn_cast, &format!("{}.arity.ptr", ir_fn));
 
-    llh.build_call(fn_cast, &mut shim_args, name)
+    let arity_value = llh.build_load(arity_ptr_value, &format!("{}.arity", ir_fn));
+
+    let abort_block = llh.new_block(caller_hdl, &format!("{}.call.abort", ir_fn));
+    llh.enter_block(abort_block);
+    llh.build_trap();
+
+    llh.enter_block(header_block);
+
+    let captures_ptr_value = UserFuncDataFields::ClosureArgs
+        .get_ptr(llh, fn_cast, &format!("{}.captures.ptr", ir_fn));
+
+    let mut args: Vec<_> = iter::once(captures_ptr_value)
+        .chain(user_args.iter().copied())
+        .collect();
+
+    let switch_inst = llh.build_switch(arity_value, abort_block, MAX_SUPPORTED_ARITY as u32);
+    let return_block = llh.new_block(caller_hdl, &format!("{}.call.return", ir_fn));
+
+    let incoming: Vec<_> = (0..=MAX_SUPPORTED_ARITY).map(|user_arg_count| {
+        let name = &format!("{}.call.argcount.{}", ir_fn, user_arg_count);
+
+        let (v, bb) = build_call_branch(
+            llh, fn_ref_value, &mut args, user_arg_count, return_block, name
+        );
+
+        let user_arg_count_ref = llh.const_uint(i64t, user_arg_count as u64);
+        llh.add_case(switch_inst, user_arg_count_ref, bb);
+
+        (v, bb)
+    }).collect();
+
+    llh.enter_block(return_block);
+    llh.build_phi(i64t, &incoming, return_name)
 }
 
-#[derive(Debug, Clone, Copy)]
+fn build_call_branch(llh: &mut LLVMHandle,
+                     fnptr_value: LLVMValueRef,
+                     args: &mut [LLVMValueRef],
+                     user_arg_count: usize,
+                     return_block: LLVMBasicBlockRef,
+                     name: &str)
+                     -> (LLVMValueRef, LLVMBasicBlockRef)
+{
+    let i64t = int64_type();
+
+    let bb = llh.new_block_before(return_block, name);
+    llh.enter_block(bb);
+
+    let arg_count = user_arg_count + 1;
+
+    let mut extended_args;
+
+    let args = if arg_count < args.len() {
+        &mut args[..arg_count]
+    } else {
+        let mysterious_value = llh.const_uint(i64t, MYSTERIOUS_BITS);
+
+        extended_args = args.iter()
+            .cloned()
+            .chain((args.len()..arg_count).map(|_| mysterious_value))
+            .collect::<Vec<_>>();
+
+        &mut extended_args
+    };
+
+    let mut arg_types: Vec<_> = args.iter()
+        .enumerate()
+        .map(|(i, _)| if i == 0 { ptr_type(struct_type(&mut [])) } else { i64t })
+        .collect();
+
+    let fn_cast = llh.build_bitcast(
+        fnptr_value,
+        ptr_type(func_type(&mut arg_types, i64t)),
+        &format!("{}.cast", name),
+    );
+
+    let out_ref = llh.build_call(fn_cast, args, &format!("{}.out", name));
+
+    llh.build_br(return_block);
+
+    (out_ref, bb)
+}
+
+#[derive(Debug, Clone)]
+enum MemoryTarget {
+    Simple(LLVMValueRef),
+    ClosureLocal(LLVMValueRef, usize),
+    ClosureCapture(LLVMValueRef, usize, usize),
+}
+
+impl MemoryTarget {
+    fn build_ptr(&self, llh: &mut LLVMHandle, base_name: &str) -> LLVMValueRef {
+        match *self {
+            MemoryTarget::Simple(mem_ref) => mem_ref,
+            MemoryTarget::ClosureLocal(mem_ref, offset) => {
+                llh.build_in_bounds_get_elem_ptr(
+                    mem_ref,
+                    &mut [
+                        llh.const_uint(int64_type(), 0),
+                        llh.const_uint(int32_type(), offset as u64),
+                    ],
+                    &format!("{}.closure-var", base_name),
+                )
+            }
+            MemoryTarget::ClosureCapture(mem_ref, capture_offset, value_offset) => {
+                let capture_ref = llh.build_in_bounds_get_elem_ptr(
+                    mem_ref,
+                    &mut [
+                        llh.const_uint(int64_type(), 0),
+                        llh.const_uint(int32_type(), capture_offset as u64),
+                    ],
+                    &format!("{}.closure-capture.ptr", base_name),
+                );
+
+                let load_ref = llh.build_load(
+                    capture_ref, &format!("{}.closure-capture", base_name)
+                );
+
+                llh.build_in_bounds_get_elem_ptr(
+                    load_ref,
+                    &mut [
+                        llh.const_uint(int64_type(), 0),
+                        llh.const_uint(int32_type(), value_offset as u64),
+                    ],
+                    &format!("{}.closure-var", base_name),
+                )
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 enum LLWriteTarget {
     /// Temporary to be instantiated
     Temp(LocalTemp),
     /// Value ref for an alloca
-    Mem(LLVMValueRef),
+    Mem(MemoryTarget),
 }
 
 impl LLWriteTarget {
-    fn unwrap_mem(&self, op: &SimpleIR) -> LLVMValueRef {
+    fn unwrap_mem(&self, op: &SimpleIR) -> &MemoryTarget {
         match self {
-            LLWriteTarget::Mem(r) => *r,
+            LLWriteTarget::Mem(r) => r,
             LLWriteTarget::Temp(t) => {
                 panic!("Expected operation {:?} to apply to a memory operand, \
                         but got temporary {}", op, t);
@@ -411,16 +529,25 @@ impl LLWriteTarget {
 }
 
 /// Handles translation of values for LLVM in a single scope
-struct ValueTracker<'a> {
-    program: &'a IRProgram<'a>,
-    declarations: &'a Declarations<'a>,
-    func_target: &'a FunctionTarget,
-    scope_id: ScopeId,
+struct ValueTracker<'a, 'prog: 'a, FP>
+where
+    IRSubRoutine<'prog, FP>: IRClosure<'prog>,
+{
+    program: &'a IRProgram<'prog>,
+    declarations: &'a Declarations<'a, 'prog>,
+    func_hdl: &'a FunctionHandle,
+    subroutine: &'a IRSubRoutine<'prog, FP>,
+
+    local_closure_type: Option<NonNull<LLVMType>>,
+    local_closure_value: Option<NonNull<LLVMValue>>,
+
+    captured_closure_type: Option<NonNull<LLVMType>>,
+    captured_closure_value: Option<NonNull<LLVMValue>>,
 
     /// Temporary values in trivial SSA form
     static_temps: HashMap<LocalTemp, LLVMValueRef>,
     /// Allocas for local variables
-    allocas: HashMap<LangVariable<'a>, LLVMValueRef>,
+    allocas: HashMap<LangVariable<'prog>, LLVMValueRef>,
     /// Allocas for local dynamic temporaries
     temp_allocas: HashMap<LocalDynTemp, LLVMValueRef>,
     /// A list of basic blocks defined in scope, identified by the name
@@ -434,19 +561,30 @@ struct ValueTracker<'a> {
     string_cache: HashMap<String, LLVMValueRef>,
 }
 
-impl<'a> ValueTracker<'a> {
-    fn new(program: &'a IRProgram,
-           declarations: &'a Declarations<'a>,
-           scope_id: ScopeId) -> Self
+impl<'a, 'prog: 'a, FP> ValueTracker<'a, 'prog, FP>
+where
+    IRSubRoutine<'prog, FP>: IRClosure<'prog>,
+{
+    fn new(program: &'a IRProgram<'prog>,
+           declarations: &'a Declarations<'a, 'prog>,
+           subroutine: &'a IRSubRoutine<'prog, FP>) -> Self
     {
-        let func_target = declarations.functions.get(&scope_id)
+        let func_hdl = declarations.functions.get(&subroutine.scope_id)
             .expect("ValueTracker own scope func handle");
 
         ValueTracker {
             program,
             declarations,
-            func_target,
-            scope_id,
+            func_hdl,
+            subroutine,
+
+            local_closure_type: subroutine.closure()
+                .and_then(|closure| build_local_closure_type(closure)),
+            local_closure_value: None,
+
+            captured_closure_type: subroutine.closure()
+                .and_then(|closure| build_captured_closure_type(program, closure)),
+            captured_closure_value: None,
 
             static_temps: HashMap::new(),
             allocas: HashMap::new(),
@@ -456,12 +594,16 @@ impl<'a> ValueTracker<'a> {
         }
     }
 
+    #[inline]
+    fn scope_id(&self) -> ScopeId {
+        self.subroutine.scope_id
+    }
+
     fn basic_block(&mut self, llh: &mut LLVMHandle, name: String) -> LLVMBasicBlockRef {
         match self.basic_blocks.entry(name) {
             Entry::Occupied(e) => *e.get(),
             Entry::Vacant(e) => {
-                let func_handle = self.func_target.direct_func;
-                let bb = llh.new_block(&func_handle, e.key());
+                let bb = llh.new_block(&self.func_hdl, e.key());
                 e.insert(bb);
                 bb
             }
@@ -482,15 +624,16 @@ impl<'a> ValueTracker<'a> {
     /// level?
     fn store<F>(&mut self,
                 llh: &mut LLVMHandle,
-                lval: &IRLValue<'a>,
+                lval: &IRLValue<'prog>,
                 fallback_name: &str,
                 build: F)
         where F: FnOnce(&mut LLVMHandle, &str) -> LLVMValueRef
     {
         match self.lval_to_llvm(lval) {
             LLWriteTarget::Mem(r) => {
+                let src_ref = r.build_ptr(llh, fallback_name);
                 let new_temp = build(llh, fallback_name);
-                llh.build_store(new_temp, r);
+                llh.build_store(new_temp, src_ref);
             }
             LLWriteTarget::Temp(t) => {
                 let temp_ref = build(llh, &format!("{}", t));
@@ -499,23 +642,23 @@ impl<'a> ValueTracker<'a> {
         }
     }
 
-    fn lval_to_llvm(&mut self, lval: &IRLValue<'a>) -> LLWriteTarget {
+    fn lval_to_llvm(&mut self, lval: &IRLValue<'prog>) -> LLWriteTarget {
         match lval {
-            IRLValue::Variable(v, i, _pos) => {
-                LLWriteTarget::Mem(self.get_memory_variable(v, *i))
+            IRLValue::Variable(var, var_type, _pos) => {
+                LLWriteTarget::Mem(self.get_memory_target(var, var_type))
             }
             IRLValue::LocalTemp(t) => {
                 LLWriteTarget::Temp(*t)
             }
             IRLValue::LocalDynTemp(t) => {
-                LLWriteTarget::Mem(self.get_temp_memory_variable(*t))
+                LLWriteTarget::Mem(MemoryTarget::Simple(self.get_temp_memory_variable(*t)))
             }
         }
     }
 
     /// Translate an IR value to an LLVM representation, emitting instructions
     /// as needed
-    fn val_to_llvm(&mut self, llh: &mut LLVMHandle, val: &IRValue<'a>) -> LLVMValueRef {
+    fn val_to_llvm(&mut self, llh: &mut LLVMHandle, val: &IRValue<'prog>) -> LLVMValueRef {
         match val {
             IRValue::LocalTemp(temp) => {
                 *self.static_temps.get(temp)
@@ -527,9 +670,13 @@ impl<'a> ValueTracker<'a> {
                 let mem_ref = self.get_temp_memory_variable(*temp);
                 llh.build_load(mem_ref, &format!("{}.load", temp))
             }
-            IRValue::Variable(var, scope_id, _pos) => {
-                let mem_ref = self.get_memory_variable(var, *scope_id);
-                llh.build_load(mem_ref, &format!("{}.load", var))
+            IRValue::Variable(var, var_type, _pos) => {
+                let base_name = format!("{}.load", var);
+
+                let src_ref = self.get_memory_target(var, var_type)
+                    .build_ptr(llh, &base_name);
+
+                llh.build_load(src_ref, &base_name)
             }
             IRValue::Literal(Value::Null) => {
                 llh.const_uint(int64_type(), NULL_BITS)
@@ -559,36 +706,124 @@ impl<'a> ValueTracker<'a> {
                 llh.build_call(mk, &mut [value], "num_mk")
             }
             IRValue::Literal(Value::Function(scope_id)) => {
-                let func_ref = self.declarations.functions.get(scope_id)
-                    .expect("function literal scope")
-                    .shim_func
-                    .expect("user-called function")
-                    .func_ref();
-
-                tag_pointer(llh, func_ref, FUNCTION_TAG, "func")
+                self.build_function_literal(llh, *scope_id)
             }
         }
     }
 
+    fn build_function_literal(&self, llh: &mut LLVMHandle, scope_id: u64) -> LLVMValueRef {
+        let i64t = int64_type();
+
+        let func_params = get_func_params(self.program, scope_id)
+            .expect("function literal scope IR meta");
+
+        let closure_capture_type = func_params.closure
+            .as_ref()
+            .and_then(|c| build_captured_closure_type(self.program, c));
+
+        let func_type = user_func_type(closure_capture_type);
+
+        let alloc = llh.builtin_ptr("roll_alloc");
+        let size = llh.build_sizeof(func_type, "sizeof_fn");
+        let allocated = llh.build_call(alloc, &mut [size], "fn_alloc");
+        let alloc_cast = llh.build_bitcast(allocated, ptr_type(func_type), "fn_alloc.cast");
+
+        {
+            let func_ref = self.declarations.functions.get(&scope_id)
+                .expect("function literal scope")
+                .func_ref();
+
+            let func_ref_cast = llh.build_bitcast(
+                func_ref, ptr_type(int8_type()), "fn_ref.cast"
+            );
+
+            let func_ref_dest = UserFuncDataFields::FuncPtr
+                .get_ptr(llh, alloc_cast, "fn_ref.dest");
+
+            llh.build_store(func_ref_cast, func_ref_dest);
+        }
+
+        {
+            let arity_dest = UserFuncDataFields::Arity
+                .get_ptr(llh, alloc_cast, "arity.dest");
+
+            llh.build_store(llh.const_uint(i64t, func_params.args.len() as u64),
+                            arity_dest);
+        }
+
+        if let Some(ref closure) = func_params.closure {
+            let captures_size_dest = UserFuncDataFields::ClosureSize
+                .get_ptr(llh, alloc_cast, "captures_size.dest");
+
+            llh.build_store(
+                llh.const_uint(int64_type(), closure.captures().len() as u64),
+                captures_size_dest,
+            );
+
+            let captures_dest = UserFuncDataFields::ClosureArgs
+                .get_ptr(llh, alloc_cast, "captures.dest");
+
+            for capture_scope in closure.captures() {
+                let capture_src = if capture_scope == self.scope_id() {
+                    self.local_closure_value
+                        .expect("locals closure src")
+                        .as_ptr()
+                } else {
+                    let src_offset = self.subroutine.closure()
+                        .expect("parent closure")
+                        .get_capture_block_offset(capture_scope);
+
+                    let src_capture_closure_value = self.captured_closure_value
+                        .expect("parent capture type")
+                        .as_ptr();
+
+                    let src_capture_ptr = llh.build_in_bounds_get_elem_ptr(
+                        src_capture_closure_value,
+                        &mut [
+                            llh.const_uint(int64_type(), 0),
+                            llh.const_uint(int32_type(), src_offset as u64),
+                        ],
+                        &format!("captures<{}>.src.ptr", capture_scope),
+                    );
+
+                    llh.build_load(src_capture_ptr, &format!("captures<{}>.src", capture_scope))
+                };
+
+                let dest_offset = closure.get_capture_block_offset(capture_scope);
+
+                let capture_dest = llh.build_in_bounds_get_elem_ptr(
+                    captures_dest,
+                    &mut [
+                        llh.const_uint(int64_type(), 0),
+                        llh.const_uint(int32_type(), dest_offset as u64),
+                    ],
+                    &format!("captures<{}>.dest", capture_scope),
+                );
+
+                llh.build_store(capture_src, capture_dest);
+            }
+        }
+
+        tag_pointer(llh, alloc_cast, FUNCTION_TAG, "fn_alloc.usr")
+    }
+
     fn prepare_variable(&mut self,
                         llh: &mut LLVMHandle,
-                        var: &LangVariable<'a>,
+                        var: &LangVariable<'prog>,
                         scope_id: ScopeId)
     {
-        assert_eq!(self.scope_id, scope_id,
+        assert_eq!(self.scope_id(), scope_id,
                    "Variable initialization request for non-local variable");
 
         let var_type = self.program.scope_map
-            .get_variable_type(var, scope_id);
+            .get_variable_type(var, scope_id)
+            .expect("variable type scope map lookup");
 
         match var_type {
-            None | Some(VariableType::Closure(_)) => {
-                unreachable!("Variable type {:?}", var_type);
-            }
-            Some(VariableType::Global) => {
+            VariableType::Closure(_) | VariableType::Global => {
                 // Already addressed
-            },
-            Some(VariableType::Local(_)) => {
+            }
+            VariableType::Local(_) => {
                 let alloca = llh.build_alloca(int64_type(), &format!("{}", &var));
                 self.allocas.insert(var.clone(), alloca);
             }
@@ -604,22 +839,71 @@ impl<'a> ValueTracker<'a> {
             .for_each(|(k, v)| { self.temp_allocas.insert(k, v); });
     }
 
-    fn get_memory_variable(&mut self, var: &LangVariable<'a>, scope_id: ScopeId)
-        -> LLVMValueRef
-    {
-        if let Some(mem_ref) = self.declarations.globals.get(&(var, scope_id)) {
-            return *mem_ref;
+    fn prepare_closure_locals(&mut self, llh: &mut LLVMHandle) {
+        let closure_type = match self.local_closure_type {
+            Some(t) => t.as_ptr(),
+            None => return,
+        };
+
+        let base_name = format!("closure.locals<{}>", self.scope_id());
+
+        let alloc_fn = llh.builtin_ptr("roll_alloc");
+        let size = llh.build_sizeof(closure_type, &format!("{}.sizeof", base_name));
+        let allocated = llh.build_call(alloc_fn, &mut [size], &format!("{}.alloc", base_name));
+
+        let closure_value = llh.build_bitcast(allocated, ptr_type(closure_type), &base_name);
+
+        self.local_closure_value = Some(NonNull::new(closure_value).expect("closure value"));
+    }
+
+    fn prepare_closure_capture(&mut self, _llh: &mut LLVMHandle) {
+        if self.captured_closure_type.is_none() {
+            return;
         }
 
-        assert!(scope_id == self.scope_id,
-                "non-local alloca (for var {} in scope {} from scope {})",
-                var,
-                scope_id,
-                self.scope_id);
+        // TODO: should spill to alloca here
+        self.captured_closure_value = Some(NonNull::new(self.func_hdl.param(0))
+            .expect("capture func param"));
+    }
 
-        *self.allocas.get(var).unwrap_or_else(|| {
-            panic!("read of {} alloca should follow write", var);
-        })
+    fn get_memory_target(&mut self, var: &LangVariable<'prog>, var_type: &VariableType)
+        -> MemoryTarget
+    {
+        match *var_type {
+            VariableType::Closure(scope_id) if scope_id == self.scope_id() => {
+                let mem_ref = self.local_closure_value.expect("local closure").as_ptr();
+                let offset = self.subroutine.closure()
+                    .expect("closure offsets for requested variable")
+                    .get_local_offset(var);
+
+                MemoryTarget::ClosureLocal(mem_ref, offset)
+            }
+            VariableType::Closure(scope_id) => {
+                let mem_ref = self.captured_closure_value.expect("capture closure").as_ptr();
+                let (capture_offset, var_offset) = self.subroutine.closure()
+                    .expect("closure offsets for requested variable")
+                    .get_capture_offset(scope_id, var);
+
+                MemoryTarget::ClosureCapture(mem_ref, capture_offset, var_offset)
+            }
+            VariableType::Global => {
+                let val = *self.declarations.globals.get(&(var, 0))
+                    .expect("global variable lookup");
+
+                MemoryTarget::Simple(val)
+            }
+            VariableType::Local(scope_id) => {
+                assert_eq!(scope_id, self.scope_id(),
+                           "unexpected local variable (for var {} in scope {} \
+                            from scope {})", var, scope_id, self.scope_id());
+
+                let val = *self.allocas.get(var).unwrap_or_else(|| {
+                    panic!("read of {} alloca should follow write", var);
+                });
+
+                MemoryTarget::Simple(val)
+            }
+        }
     }
 
     fn get_temp_memory_variable(&mut self, temp: LocalDynTemp) -> LLVMValueRef {
@@ -642,4 +926,53 @@ fn tag_pointer(llh: &mut LLVMHandle,
 
     let func_tag = llh.const_uint(i64t, tag);
     llh.build_xor(scalar_ref, func_tag, &format!("{}.tagged", kind))
+}
+
+fn build_local_closure_type(closure: &ClosureLayout) -> Option<NonNull<LLVMType>> {
+    let locals_count = closure.locals().len();
+
+    if locals_count == 0 {
+        None
+    } else {
+        Some(NonNull::new(array_type(int64_type(), locals_count as u32))
+            .expect("local closure type construction"))
+    }
+}
+
+fn build_captured_closure_type(program: &IRProgram, closure: &ClosureLayout)
+    -> Option<NonNull<LLVMType>>
+{
+    let mut fields = closure.captures().map(|indirect_scope| {
+        let antecedent = get_func_params(program, indirect_scope)
+            .expect("closure antecedent params")
+            .closure
+            .as_ref()
+            .expect("closure antecedent closure");
+
+        ptr_type(build_local_closure_type(antecedent)
+            .expect("captured closure antecedent")
+            .as_ptr())
+    }).collect::<Vec<_>>();
+
+    if fields.is_empty() {
+        None
+    } else {
+        Some(NonNull::new(struct_type(&mut fields))
+            .expect("closure type construction"))
+    }
+}
+
+fn get_func_params<'a, 'prog>(program: &'a IRProgram<'prog>, scope_id: ScopeId)
+    -> Option<&'a IRFuncParams<'prog>>
+{
+    // find IR metadata
+    // TODO: handle this in O(1)
+    let mut func_params = None;
+    for ir_func in &program.funcs {
+        if ir_func.scope_id == scope_id {
+            func_params = Some(&ir_func.func_params);
+            break;
+        }
+    }
+    func_params
 }

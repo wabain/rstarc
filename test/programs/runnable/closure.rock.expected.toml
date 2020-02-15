@@ -2,28 +2,65 @@
 enabled = ["ir", "run"]
 
 [ir]
-returncode = "1"
-stderr = """
-error: using non-local variable 'Value' in compiled code is not supported.
+returncode = "0"
+stdout = """
+main:
+  FnOne := store mysterious
+  FnTwo := store mysterious
+  MakeFnIndirect := store mysterious
+  OutOne := store mysterious
+  OutTwo := store mysterious
+  MakeFnIndirect := store Function(1)
+  FnOne := call MakeFnIndirect, ["a"]
+  FnTwo := call MakeFnIndirect, ["b"]
+  OutOne := call FnOne, [100]
+  say OutOne
+  OutTwo := call FnTwo, [FnOne]
+  say OutTwo
+  OutTwo := call FnTwo, ["x"]
+  say OutTwo
+  OutOne := call FnOne, [101]
+  say OutOne
+  return-default
 
-Try executing your program using 'rstarc run --interpret <program>' instead
+;
+; Function Fn takes NewValue
+; Captures closure<1> using Value<1>
+; Scope is 3
+;
+f3_Fn:
+  NewValue := load-arg 0
+  Ret := store mysterious
+  Ret := store closure.Value<1>
+  closure.Value<1> := store NewValue
+  return Ret
 
-4:              Put Value Into Ret
-                    ^^^^^
+;
+; Function MakeFn takes NoArg
+; Captures closure<1> for passthrough
+; Scope is 2
+;
+f2_MakeFn:
+  Fn := store mysterious
+  NoArg := load-arg 0
+  Fn := store Function(3)
+  return Fn
+
+;
+; Function MakeFnIndirect takes closure.Value<1>
+; Closure has Value
+; Scope is 1
+;
+f1_MakeFnIndirect:
+  FnLocal := store mysterious
+  MakeFn := store mysterious
+  closure.Value<1> := load-arg 0
+  MakeFn := store Function(2)
+  FnLocal := call MakeFn, [null]
+  return FnLocal
 """
 
-["run.exec"]
-returncode = "1"
-stderr = """
-error: using non-local variable 'Value' in compiled code is not supported.
-
-Try executing your program using 'rstarc run --interpret <program>' instead
-
-4:              Put Value Into Ret
-                    ^^^^^
-"""
-
-["run.interpret"]
+[run]
 returncode = "0"
 stdout = """
 a

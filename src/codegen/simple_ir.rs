@@ -1,13 +1,12 @@
 use std::fmt;
-use std::borrow::Cow;
 use std::collections::HashSet;
 
 use rstarc_types::Value as LangValue;
-use base_analysis::{ScopeId, ScopeMap};
+use base_analysis::{CompileError, ScopeId, ScopeMap, VariableType};
 use syntax::ast::{self, Expr, Logical, Statement, StatementKind, Pos};
 use lang_constructs::{RockstarValue as BaseValue, LangVariable};
 
-use base_analysis::CompileError;
+use super::closure_layout::{get_closure_layout, ClosureLayout};
 
 const IR_TRUE: IRValue = IRValue::Literal(LangValue::Boolean(true));
 const IR_FALSE: IRValue = IRValue::Literal(LangValue::Boolean(false));
@@ -16,14 +15,17 @@ pub fn build_ir<'prog>(program: &'prog [Statement],
                        scope_map: &'prog ScopeMap<'prog>)
                        -> Result<IRProgram<'prog>, CompileError>
 {
-    AstAdapter::adapt(program, scope_map)
+    let mut ir = AstAdapter::adapt(program, scope_map)?;
+    let mut closure_layout = get_closure_layout(scope_map);
+
+    for def in &mut ir.funcs {
+        def.func_params.closure = closure_layout[def.scope_id as usize].take();
+    }
+
+    Ok(ir)
 }
 
-pub fn dump_ir(program: &[Statement], scope_map: &ScopeMap)
-    -> Result<(), CompileError>
-{
-    let ir = AstAdapter::adapt(program, scope_map)?;
-
+pub fn dump_ir(ir: &IRProgram) {
     for (global_var, var_scope) in &ir.globals {
         println!("global {}<{}>", global_var, var_scope);
     }
@@ -34,43 +36,66 @@ pub fn dump_ir(program: &[Statement], scope_map: &ScopeMap)
 
     println!("main:");
     for op in &ir.main.ops {
-        dump_ir_op(0, op);
+        dump_ir_op(op);
     }
 
-    for (func_def, func_body) in &ir.funcs {
+    for IRFunc { scope_id, func_params, ops, .. } in &ir.funcs {
         println!("");
 
         println!(";");
-        print!("; Function {} takes ", func_def.initial_var);
-        for (i, arg) in func_def.args.iter().enumerate() {
-            if i == 0 {
-                print!("{}", arg.fmt_scope_relative(func_def.scope_id));
-            } else {
-                print!(", {}", arg.fmt_scope_relative(func_def.scope_id));
+        print!("; Function {} takes ", func_params.initial_var);
+        for (i, arg) in func_params.args.iter().enumerate() {
+            if i > 0 {
+                print!(", ");
+            }
+            print!("{}", arg);
+        }
+        println!("");
+        if let Some(closure) = func_params.closure.as_ref() {
+            if closure.locals().len() > 0 {
+                print!("; Closure has ");
+                for (i, var) in closure.locals().enumerate() {
+                    if i > 0 {
+                        print!(", ");
+                    }
+                    print!("{}", var);
+                }
+                println!("");
+            }
+
+            for (scope_id, accesses) in closure.capture_accesses() {
+                print!("; Captures closure<{}> ", scope_id);
+
+                if accesses.len() == 0 {
+                    println!("for passthrough");
+                    continue;
+                }
+
+                print!("using ");
+
+                for (i, var) in accesses.enumerate() {
+                    if i > 0 {
+                        print!(", ");
+                    }
+                    print!("{}<{}>", var, scope_id);
+                }
+
+                println!("");
             }
         }
-        println!("");
-        println!("; Scope is {}", func_def.scope_id);
+        println!("; Scope is {}", scope_id);
         println!(";");
 
-        let fname = format!("{}", func_def.initial_var).replace(" ", "_");
-        println!("f{}_{}:", func_def.scope_id, fname);
+        let fname = format!("{}", func_params.initial_var).replace(" ", "_");
+        println!("f{}_{}:", scope_id, fname);
 
-        for op in &func_body.ops {
-            dump_ir_op(func_def.scope_id, op);
+        for op in ops {
+            dump_ir_op(op);
         }
     }
-
-    Ok(())
 }
 
-fn dump_ir_op(scope_id: ScopeId, op: &SimpleIR) {
-    macro_rules! fmt_scoped {
-        ($v:expr) => {
-            $v.fmt_scope_relative(scope_id)
-        };
-    }
-
+fn dump_ir_op(op: &SimpleIR) {
     match op {
         SimpleIR::Jump(label) => println!("  jump .{}", label.name()),
 
@@ -93,11 +118,7 @@ fn dump_ir_op(scope_id: ScopeId, op: &SimpleIR) {
                 BinOp::Mul => "mul",
                 BinOp::Div => "div",
             };
-            println!("  {} := {} {}, {}",
-                     fmt_scoped!(dst),
-                     op_fmt,
-                     fmt_scoped!(arg1),
-                     fmt_scoped!(arg2));
+            println!("  {} := {} {}, {}", dst, op_fmt, arg1, arg2);
         }
 
         SimpleIR::InPlace(op, dst) => {
@@ -105,38 +126,35 @@ fn dump_ir_op(scope_id: ScopeId, op: &SimpleIR) {
                 InPlaceOp::Incr(c) => ("incr", c),
                 InPlaceOp::Decr(c) => ("decr", c),
             };
-            println!("  {} := in-place {} {}",
-                     fmt_scoped!(dst),
-                     op_fmt,
-                     count);
+            println!("  {} := in-place {} {}", dst, op_fmt, count);
         }
 
         SimpleIR::LoadArg(dst, idx) => {
-            println!("  {} := load-arg {}", fmt_scoped!(dst), idx);
+            println!("  {} := load-arg {}", dst, idx);
         }
 
         SimpleIR::Store(dst, arg) => {
-            println!("  {} := store {}", fmt_scoped!(dst), fmt_scoped!(arg));
+            println!("  {} := store {}", dst, arg);
         }
 
         SimpleIR::Call(dst, func, args) => {
-            print!("  {} := call {}, [", fmt_scoped!(dst), fmt_scoped!(func));
+            print!("  {} := call {}, [", dst, func);
             for (i, arg) in args.iter().enumerate() {
                 if i == 0 {
-                    print!("{}", fmt_scoped!(arg));
+                    print!("{}", arg);
                 } else {
-                    print!(", {}", fmt_scoped!(arg));
+                    print!(", {}", arg);
                 }
             }
             println!("]");
         }
 
         SimpleIR::Say(arg) => {
-            println!("  say {}", fmt_scoped!(arg));
+            println!("  say {}", arg);
         }
 
         SimpleIR::Return(arg) => {
-            println!("  return {}", fmt_scoped!(arg));
+            println!("  return {}", arg);
         }
 
         SimpleIR::ReturnDefault => {
@@ -147,33 +165,16 @@ fn dump_ir_op(scope_id: ScopeId, op: &SimpleIR) {
 
 /// Run some basic sanity checks on the IR.
 ///
-/// Currently this verifies that temporaries are (trivially) in SSA form,
-/// and that no unsupported cross-scope reads occur.
-fn verify_ir_func<'a>(scope_map: &ScopeMap,
-                      scope_id: ScopeId,
+/// Currently this verifies that static temporaries are (trivially) in SSA form.
+fn verify_ir_func<'a>(_scope_map: &ScopeMap,
+                      _scope_id: ScopeId,
                       ops: &'a[SimpleIR])
     -> Result<(), CompileError>
 {
     let mut vals_seen: HashSet<&'a IRLValue> = HashSet::new();
 
-    let handle_value = |v: &IRValue| -> Result<(), CompileError> {
-        match v {
-            IRValue::Variable(var, i, p) if *i != scope_id => {
-                let var_type = scope_map.get_variable_type(var, *i)
-                    .expect("get variable in owner");
-
-                if var_type.is_closure() {
-                    Err(CompileError::UnsupportedFeature {
-                        feature: format!("using non-local variable '{}'", var),
-                        has_interpreter_support: true,
-                        pos: Some(*p),
-                    })
-                } else {
-                    Ok(())
-                }
-            }
-            _ => Ok(())
-        }
+    let handle_value = |_: &IRValue| -> Result<(), CompileError> {
+        Ok(())
     };
 
     let handle_write = |vals_seen: &mut HashSet<_>, v: &'a IRLValue|
@@ -284,44 +285,27 @@ pub enum IRValue<'prog> {
     Literal(LiteralValue),
     LocalTemp(LocalTemp),
     LocalDynTemp(LocalDynTemp),
-    Variable(LangVariable<'prog>, ScopeId, Pos),
-}
-
-impl<'prog> IRValue<'prog> {
-    fn fmt_scope_relative<'a>(&'a self, ref_scope: ScopeId) -> IRValuePrinter<'a> {
-        IRValuePrinter {
-            ir_value: Cow::Borrowed(&self),
-            ref_scope: Some(ref_scope),
-        }
-    }
+    Variable(LangVariable<'prog>, VariableType, Pos),
 }
 
 impl<'prog> fmt::Display for IRValue<'prog> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        IRValuePrinter {
-            ir_value: Cow::Borrowed(self),
-            ref_scope: None,
-        }.fmt(f)
-    }
-}
-
-struct IRValuePrinter<'a> {
-    ir_value: Cow<'a, IRValue<'a>>,
-    ref_scope: Option<ScopeId>,
-}
-
-impl<'a> fmt::Display for IRValuePrinter<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.ir_value.as_ref() {
+        match self {
             IRValue::Literal(lit) => write!(f, "{}", lit.repr_format()),
             IRValue::LocalTemp(t) => write!(f, "{}", t),
             IRValue::LocalDynTemp(t) => write!(f, "{}", t),
-            IRValue::Variable(v, i, _pos) => {
-                let is_local = self.ref_scope.map_or(false, |r| r == *i);
-                if is_local {
-                    write!(f, "{}", v)
-                } else {
-                    write!(f, "{}<{}>", v, i)
+
+            IRValue::Variable(v, t, _pos) => {
+                match t {
+                    VariableType::Local(_) => {
+                        write!(f, "{}", v)
+                    }
+                    VariableType::Global => {
+                        write!(f, "{}<{}>", v, t.owner())
+                    }
+                    VariableType::Closure(_) => {
+                        write!(f, "closure.{}<{}>", v, t.owner())
+                    }
                 }
             }
         }
@@ -332,17 +316,7 @@ impl<'a> fmt::Display for IRValuePrinter<'a> {
 pub enum IRLValue<'prog> {
     LocalTemp(LocalTemp),
     LocalDynTemp(LocalDynTemp),
-    Variable(LangVariable<'prog>, ScopeId, Pos),
-}
-
-impl<'prog> IRLValue<'prog> {
-    fn fmt_scope_relative(&self, scope_id: ScopeId) -> IRValuePrinter {
-        let val = self.clone().into();
-        IRValuePrinter {
-            ir_value: Cow::Owned(val),
-            ref_scope: Some(scope_id),
-        }
-    }
+    Variable(LangVariable<'prog>, VariableType, Pos),
 }
 
 impl<'prog> fmt::Display for IRLValue<'prog> {
@@ -357,28 +331,51 @@ impl<'prog> Into<IRValue<'prog>> for IRLValue<'prog> {
         match self {
             IRLValue::LocalTemp(t) => IRValue::LocalTemp(t),
             IRLValue::LocalDynTemp(t) => IRValue::LocalDynTemp(t),
-            IRLValue::Variable(v, i, p) => IRValue::Variable(v, i, p),
+            IRLValue::Variable(v, t, p) => IRValue::Variable(v, t, p),
         }
     }
 }
 
 pub struct IRProgram<'prog> {
-    pub scope_map: &'prog ScopeMap<'prog>,
-    pub globals: Vec<(LangVariable<'prog>, ScopeId)>,
-    pub main: IRBody<'prog>,
-    pub funcs: Vec<(IRFunc<'prog>, IRBody<'prog>)>,
+    pub(super) scope_map: &'prog ScopeMap<'prog>,
+    pub(super) globals: Vec<(LangVariable<'prog>, ScopeId)>,
+    pub(super) main: IRMain<'prog>,
+    pub(super) funcs: Vec<IRFunc<'prog>>,
+}
+
+type IRMain<'prog> = IRSubRoutine<'prog, ()>;
+type IRFunc<'prog> = IRSubRoutine<'prog, IRFuncParams<'prog>>;
+
+pub struct IRSubRoutine<'prog, FP> {
+    pub scope_id: ScopeId,
+    pub dyn_temp_count: u64,
+    pub func_params: FP,
+    pub ops: Vec<SimpleIR<'prog>>,
+}
+
+pub (super) trait IRClosure<'prog> {
+    fn has_closure(&self) -> bool {
+        self.closure().is_some()
+    }
+
+    fn closure(&self) -> Option<&ClosureLayout<'prog>> {
+        None
+    }
+}
+
+impl<'prog> IRClosure<'prog> for IRMain<'prog> {}
+
+impl<'prog> IRClosure<'prog> for IRFunc<'prog> {
+    fn closure(&self) -> Option<&ClosureLayout<'prog>> {
+        self.func_params.closure.as_ref()
+    }
 }
 
 #[derive(Debug)]
-pub struct IRFunc<'prog> {
-    pub scope_id: ScopeId,
+pub (super) struct IRFuncParams<'prog> {
     pub initial_var: LangVariable<'prog>,
     pub args: Vec<IRLValue<'prog>>,
-}
-
-pub struct IRBody<'prog> {
-    pub dyn_temp_count: u64,
-    pub ops: Vec<SimpleIR<'prog>>,
+    pub closure: Option<ClosureLayout<'prog>>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -455,31 +452,27 @@ impl<'prog> IRBuilder<'prog> {
         }
     }
 
-    fn into_ir_body(self) -> IRBody<'prog> {
-        IRBody {
+    fn into_subroutine<FP>(self, func_params: FP) -> IRSubRoutine<'prog, FP> {
+        IRSubRoutine {
+            scope_id: self.ref_scope,
             dyn_temp_count: self.dyn_temp_id,
+            func_params,
             ops: self.ops,
         }
     }
 
-    // XXX inline this?
-    fn lookup_scope(&self, var: &LangVariable) -> ScopeId {
-        self.scope_map.get_variable_type(var, self.ref_scope)
-            .expect("variable scope lookup")
-            .owner()
-    }
-
     fn resolve_ast_variable(&self, var: &'prog ast::Variable) -> IRLValue<'prog> {
         let lang_var = var.to_lang_variable();
-        let scope_id = self.lookup_scope(&lang_var);
-        IRLValue::Variable(lang_var, scope_id, var.pos())
+        self.synthesize_ir_lval(lang_var, var.pos())
     }
 
-    fn synthesize_ir_lval(&self, var: &LangVariable<'prog>, pos: Pos)
+    fn synthesize_ir_lval(&self, var: LangVariable<'prog>, pos: Pos)
         -> IRLValue<'prog>
     {
-        let scope_id = self.lookup_scope(var);
-        IRLValue::Variable(var.clone(), scope_id, pos)
+        let var_type = self.scope_map.get_variable_type(&var, self.ref_scope)
+            .expect("variable scope lookup");
+
+        IRLValue::Variable(var, var_type, pos)
     }
 
     fn emit(&mut self, ir_entry: SimpleIR<'prog>) {
@@ -640,7 +633,8 @@ impl<'prog> IRBuilder<'prog> {
                 let need_final_assign;
                 let out;
                 match dst {
-                    Some(IRLValue::LocalDynTemp(_)) | Some(IRLValue::Variable(..)) => {
+                    Some(IRLValue::LocalDynTemp(_)) |
+                    Some(IRLValue::Variable(..)) => {
                         need_final_assign = None;
                         out = dst.unwrap();
                     }
@@ -796,7 +790,7 @@ impl<'prog> IRBuilder<'prog> {
             } else if var_type.is_global() {
                 globals.push((var.clone(), var_type.owner()));
             } else {
-                let ir_lval = self.synthesize_ir_lval(var, func_pos);
+                let ir_lval = self.synthesize_ir_lval(var.clone(), func_pos);
                 let initial_value = IRValue::Literal(LangValue::Mysterious);
                 self.emit(SimpleIR::Store(ir_lval, initial_value));
             }
@@ -810,13 +804,14 @@ impl<'prog> IRBuilder<'prog> {
 struct AstAdapter<'prog> {
     scope_map: &'prog ScopeMap<'prog>,
     globals: Vec<(LangVariable<'prog>, ScopeId)>,
-    func_bodies: Vec<(IRFunc<'prog>, IRBody<'prog>)>,
+    func_bodies: Vec<IRFunc<'prog>>,
 }
 
 impl<'prog> AstAdapter<'prog> {
-    fn adapt(program: &'prog [Statement], scope_map: &'prog ScopeMap<'prog>)
-        -> Result<IRProgram<'prog>, CompileError>
-    {
+    fn adapt(
+        program: &'prog [Statement],
+        scope_map: &'prog ScopeMap<'prog>,
+    ) -> Result<IRProgram<'prog>, CompileError> {
         let mut adapter = AstAdapter {
             scope_map,
             globals: Vec::new(),
@@ -830,16 +825,20 @@ impl<'prog> AstAdapter<'prog> {
         adapter.visit_function_body(&mut main_builder, Pos(0, 0), &[], program);
 
         verify_ir_func(scope_map, 0, &main_builder.ops)?;
-        for (func_def, body) in &adapter.func_bodies {
-            verify_ir_func(scope_map, func_def.scope_id, &body.ops)?;
+        for func_def in &adapter.func_bodies {
+            verify_ir_func(scope_map, func_def.scope_id, &func_def.ops)?;
         }
 
-        Ok(IRProgram {
+        let program = IRProgram {
             scope_map,
             globals: adapter.globals,
-            main: main_builder.into_ir_body(),
+            main: main_builder.into_subroutine(()),
             funcs: adapter.func_bodies,
-        })
+        };
+
+        assert_eq!(program.main.scope_id, 0);
+
+        Ok(program)
     }
 
     fn visit_function_body(&mut self,
@@ -936,7 +935,10 @@ impl<'prog> AstAdapter<'prog> {
 
                 let initial_var = var.to_lang_variable();
                 let args: Vec<_> = args.iter().map(|v| {
-                    IRLValue::Variable(v.to_lang_variable(), scope_id, v.pos())
+                    let var = v.to_lang_variable();
+                    let var_type = self.scope_map.get_variable_type(&var, scope_id)
+                        .expect("variable lookup");
+                    IRLValue::Variable(var, var_type, v.pos())
                 }).collect();
 
                 let ir_lval = ir_builder.resolve_ast_variable(&var);
@@ -948,9 +950,13 @@ impl<'prog> AstAdapter<'prog> {
                 let mut func_builder = IRBuilder::new(self.scope_map, scope_id);
                 self.visit_function_body(&mut func_builder, statement.pos, &args, body);
 
-                let func_def = IRFunc { initial_var, scope_id, args };
+                let params = IRFuncParams {
+                    initial_var,
+                    args,
+                    closure: None, // filled in later
+                };
 
-                self.func_bodies.push((func_def, func_builder.into_ir_body()));
+                self.func_bodies.push(func_builder.into_subroutine(params));
             }
         }
     }
