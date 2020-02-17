@@ -142,11 +142,16 @@ fn immediate_from_bits<'a>(bits: u64) -> RockstarValue<'a> {
 
 macro_rules! tag_to_ptr {
     ((const) $target_type:ty, $tag:expr, $bits:expr) => {
-        ($bits & !$tag) as *const $target_type
+        tag_to_ptr!(as *const $target_type, $tag, $bits)
     };
     ($target_type:ty, $tag:expr, $bits:expr) => {
-        ($bits & !$tag) as *mut $target_type
+        tag_to_ptr!(as *mut $target_type, $tag, $bits)
     };
+    (as $ptr_type:ty, $tag:expr, $bits:expr) => {{
+        let bits = $bits;
+        debug_assert_eq!(bits & TAG_MASK, $tag);
+        (bits & !TAG_MASK) as $ptr_type
+    }};
 }
 
 #[inline]
