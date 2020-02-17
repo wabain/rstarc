@@ -63,9 +63,10 @@ impl<'prog> StatementVisitor<'prog> for ControlFlowVerifier {
         match block_type {
             BlockType::LoopBlock => self.ctx_mut().loop_depth += 1,
             BlockType::FuncBodyBlock => {
-                let mut new_ctx = ExecutionContext::default();
-                new_ctx.is_func = true;
-                self.exec_ctxs.push(new_ctx);
+                self.exec_ctxs.push(ExecutionContext {
+                    is_func: true,
+                    ..ExecutionContext::default()
+                });
             }
             BlockType::IfBlock | BlockType::ElseBlock => {}
         }
