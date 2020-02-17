@@ -505,69 +505,87 @@ impl<'a> Interpreter<'a> {
     }
 }
 
+type VariableIndexLookup<'prog> = HashMap<&'prog LangVariable<'prog>, usize>;
+
 struct VariableLayout<'prog> {
     globals_count: usize,
     scope_layouts: Vec<ScopeLayout<'prog>>,
 }
 
 impl<'prog> VariableLayout<'prog> {
-    fn new(scope_map: &ScopeMap<'prog>) -> Self {
+    fn new(scope_map: &'prog ScopeMap<'prog>) -> Self {
         let mut scope_layouts = Vec::new();
         let mut globals = HashMap::new();
-        let mut closures: Vec<HashMap<&LangVariable<'prog>, usize>> = Vec::new();
+        let mut closures = Vec::new();
 
         for scope_id in scope_map.scopes() {
-            let mut layout = ScopeLayout::default();
-            let mut locals = HashMap::new();
-            let mut closure_vars = HashMap::new();
+            let (scope_layout, closure) = VariableLayout::build_scope(
+                scope_map,
+                scope_id,
+                &mut globals,
+                &closures,
+            );
 
-            for (var, var_type) in scope_map.get_used_vars_for_scope(scope_id) {
-                let storage_type = match var_type {
-                    VariableType::Global => {
-                        let globals_count = globals.len();
-                        let idx = *globals.entry(var).or_insert(globals_count);
-                        StorageType::Global(idx)
-                    }
-                    VariableType::Local(_) => {
-                        let idx = *locals.entry(var).or_insert_with(|| {
-                            let idx = layout.locals_count;
-                            layout.locals_count += 1;
-                            idx
-                        });
-                        StorageType::Local(idx)
-                    }
-                    VariableType::Closure(owner) => {
-                        let idx = *closure_vars.entry(var).or_insert_with(|| {
-                            let src = if owner == scope_id {
-                                ClosureSrc::Local
-                            } else {
-                                let parent_id = scope_map.get_parent_scope(scope_id)
-                                    .expect("Parent of scope with closure");
-
-                                let parent_idx = closures[parent_id as usize][var];
-                                ClosureSrc::Parent(parent_idx)
-                            };
-
-                            let idx = layout.closure_srcs.len();
-                            layout.closure_srcs.push(src);
-                            idx
-                        });
-
-                        StorageType::Closure(idx)
-                    }
-                };
-
-                layout.vars.insert(var.clone(), storage_type);
-            }
-
-            scope_layouts.push(layout);
-            closures.push(closure_vars);
+            scope_layouts.push(scope_layout);
+            closures.push(closure);
         }
 
         VariableLayout {
             globals_count: globals.len(),
             scope_layouts,
         }
+    }
+
+    fn build_scope(
+        scope_map: &'prog ScopeMap<'prog>,
+        scope_id: ScopeId,
+        globals: &mut VariableIndexLookup<'prog>,
+        closures: &[VariableIndexLookup<'prog>],
+    ) -> (ScopeLayout<'prog>, VariableIndexLookup<'prog>) {
+        let mut layout = ScopeLayout::default();
+        let mut locals = HashMap::new();
+        let mut closure_vars = HashMap::new();
+
+        for (var, var_type) in scope_map.get_used_vars_for_scope(scope_id) {
+            let storage_type = match var_type {
+                VariableType::Global => {
+                    let globals_count = globals.len();
+                    let idx = *globals.entry(var).or_insert(globals_count);
+                    StorageType::Global(idx)
+                }
+                VariableType::Local(_) => {
+                    let idx = *locals.entry(var).or_insert_with(|| {
+                        let idx = layout.locals_count;
+                        layout.locals_count += 1;
+                        idx
+                    });
+                    StorageType::Local(idx)
+                }
+                VariableType::Closure(owner) => {
+                    let idx = *closure_vars.entry(var).or_insert_with(|| {
+                        let src = if owner == scope_id {
+                            ClosureSrc::Local
+                        } else {
+                            let parent_id = scope_map.get_parent_scope(scope_id)
+                                .expect("Parent of scope with closure");
+
+                            let parent_idx = closures[parent_id as usize][var];
+                            ClosureSrc::Parent(parent_idx)
+                        };
+
+                        let idx = layout.closure_srcs.len();
+                        layout.closure_srcs.push(src);
+                        idx
+                    });
+
+                    StorageType::Closure(idx)
+                }
+            };
+
+            layout.vars.insert(var.clone(), storage_type);
+        }
+
+        (layout, closure_vars)
     }
 
     fn get_storage_type<'a>(&'a self, scope_id: ScopeId, var: &'a LangVariable)
