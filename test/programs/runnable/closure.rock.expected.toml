@@ -1,0 +1,33 @@
+[tests]
+enabled = ["ir", "run"]
+
+[ir]
+returncode = "1"
+stderr = """
+error: using non-local variable 'Value' in compiled code is not supported.
+
+Try executing your program using 'rstarc run --interpret <program>' instead
+
+4:              Put Value Into Ret
+                    ^^^^^
+"""
+
+["run.exec"]
+returncode = "1"
+stderr = """
+error: using non-local variable 'Value' in compiled code is not supported.
+
+Try executing your program using 'rstarc run --interpret <program>' instead
+
+4:              Put Value Into Ret
+                    ^^^^^
+"""
+
+["run.interpret"]
+returncode = "0"
+stdout = """
+a
+b
+[Function]
+100
+"""

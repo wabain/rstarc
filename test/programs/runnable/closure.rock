@@ -1,0 +1,27 @@
+MakeFnIndirect takes Value
+    MakeFn takes NoArg
+        Fn takes NewValue
+            Put Value Into Ret
+            Put NewValue Into Value
+            Give back Ret
+        (end function)
+        Give back Fn
+    (end function)
+    Put MakeFn taking nothing Into FnLocal
+    Give back FnLocal
+(end function)
+
+Put MakeFnIndirect taking "a" Into FnOne
+Put MakeFnIndirect taking "b" Into FnTwo
+
+Put FnOne taking 100 Into OutOne
+Say OutOne
+
+Put FnTwo taking FnOne Into OutTwo
+Say OutTwo
+
+Put FnTwo taking "x" Into OutTwo
+Say OutTwo
+
+Put FnOne taking 101 Into OutOne
+Say OutOne

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::collections::hash_map::{HashMap, Entry};
+use std::iter;
 
 use syntax::ast::{self, Statement, StatementKind, LValue};
 use lang_constructs::LangVariable;
@@ -103,6 +104,17 @@ impl<'prog> ScopeMap<'prog> {
 
     pub fn get_parent_scope(&self, scope_id: ScopeId) -> Option<ScopeId> {
         self.scope_data(scope_id).parent_id
+    }
+
+    pub fn get_ancestor_scopes(&self, scope_id: ScopeId) -> impl Iterator<Item=ScopeId> + '_ {
+        let mut scope_id = Some(scope_id);
+
+        iter::from_fn(move || {
+            if let Some(s) = scope_id {
+                scope_id = self.get_parent_scope(s);
+            }
+            scope_id
+        })
     }
 
     pub fn get_scope_for_func_declaration(&self, statement: &Statement) -> ScopeId {

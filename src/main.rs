@@ -7,6 +7,7 @@ extern crate regex;
 extern crate tempdir;
 extern crate void;
 #[cfg(unix)] extern crate libc;
+#[macro_use] extern crate smallvec;
 extern crate rstarc_types;
 
 mod base_analysis;
