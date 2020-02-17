@@ -526,21 +526,29 @@ impl<'prog> VariableLayout<'prog> {
 
         for scope_id in scope_map.scopes() {
             for (var, var_type) in scope_map.get_used_vars_for_scope(scope_id) {
-                let owner = match var_type {
-                    VariableType::Closure(owner) => owner,
-                    _ => continue,
-                };
-
-                VariableLayout::register_closure_var(
-                    scope_map, scope_id, owner, var, &mut closures, &mut scope_layouts
-                )
+                match var_type {
+                    VariableType::Closure(owner) => {
+                        VariableLayout::register_closure_var(
+                            scope_map,
+                            scope_id,
+                            owner,
+                            var,
+                            &mut closures,
+                            &mut scope_layouts,
+                        );
+                    }
+                    VariableType::Global => {
+                        let globals_count = globals.len();
+                        let idx = *globals.entry(var).or_insert(globals_count);
+                        let layout = &mut scope_layouts[scope_id as usize];
+                        layout.register_global_var(var, idx);
+                    }
+                    VariableType::Local(_) => {
+                        let layout = &mut scope_layouts[scope_id as usize];
+                        layout.register_local_var(var);
+                    }
+                }
             }
-        }
-
-        for scope_id in scope_map.scopes() {
-            VariableLayout::register_non_closure_vars(
-                scope_map, scope_id, &mut globals, &mut scope_layouts[scope_id as usize],
-            );
         }
 
         VariableLayout {
@@ -549,6 +557,9 @@ impl<'prog> VariableLayout<'prog> {
         }
     }
 
+    /// Register a closure variable. For a non-local closure access, the
+    /// variable must be registered in each scope between the accessing scope
+    /// and the owner.
     fn register_closure_var(
         scope_map: &'prog ScopeMap<'prog>,
         scope_id: ScopeId,
@@ -559,12 +570,7 @@ impl<'prog> VariableLayout<'prog> {
     ) {
         if owner == scope_id {
             let layout = &mut scope_layouts[scope_id as usize];
-
-            let idx = layout.closure_srcs.len();
-            layout.closure_srcs.push(ClosureSrc::Local);
-
-            layout.vars.insert(var.clone(), StorageType::Closure(idx));
-
+            let idx = layout.register_closure_var(var, ClosureSrc::Local);
             closures[scope_id as usize].insert(var, idx);
             return;
         }
@@ -578,7 +584,6 @@ impl<'prog> VariableLayout<'prog> {
 
         for required in resolution_chain.into_iter().rev() {
             let (prior_closures, next_closures) = closures.split_at_mut(required as usize);
-            let layout = &mut scope_layouts[required as usize];
 
             next_closures[0].entry(var).or_insert_with(|| {
                 let parent_id = scope_map.get_parent_scope(required)
@@ -586,43 +591,9 @@ impl<'prog> VariableLayout<'prog> {
 
                 let parent_idx = prior_closures[parent_id as usize][var];
 
-                let idx = layout.closure_srcs.len();
-                layout.closure_srcs.push(ClosureSrc::Parent(parent_idx));
-
-                layout.vars.insert(var.clone(), StorageType::Closure(idx));
-
-                idx
+                let layout = &mut scope_layouts[required as usize];
+                layout.register_closure_var(var, ClosureSrc::Parent(parent_idx))
             });
-        }
-    }
-
-    fn register_non_closure_vars(
-        scope_map: &'prog ScopeMap<'prog>,
-        scope_id: ScopeId,
-        globals: &mut VariableIndexLookup<'prog>,
-        layout: &mut ScopeLayout<'prog>,
-    ) {
-        let mut locals = HashMap::new();
-
-        for (var, var_type) in scope_map.get_used_vars_for_scope(scope_id) {
-            let storage_type = match var_type {
-                VariableType::Closure(..) => continue,
-                VariableType::Global => {
-                    let globals_count = globals.len();
-                    let idx = *globals.entry(var).or_insert(globals_count);
-                    StorageType::Global(idx)
-                }
-                VariableType::Local(_) => {
-                    let idx = *locals.entry(var).or_insert_with(|| {
-                        let idx = layout.locals_count;
-                        layout.locals_count += 1;
-                        idx
-                    });
-                    StorageType::Local(idx)
-                }
-            };
-
-            layout.vars.insert(var.clone(), storage_type);
         }
     }
 
@@ -653,6 +624,31 @@ struct ScopeLayout<'prog> {
     vars: HashMap<LangVariable<'prog>, StorageType>,
     locals_count: usize,
     closure_srcs: Vec<ClosureSrc>,
+}
+
+impl<'prog> ScopeLayout<'prog> {
+    fn register_global_var(&mut self, var: &LangVariable<'prog>, idx: usize) -> usize {
+        self.vars.insert(var.clone(), StorageType::Global(idx));
+        idx
+    }
+
+    fn register_local_var(&mut self, var: &LangVariable<'prog>) -> usize {
+        let idx = self.locals_count;
+        self.locals_count += 1;
+
+        self.vars.insert(var.clone(), StorageType::Local(idx));
+
+        idx
+    }
+
+    fn register_closure_var(&mut self, var: &LangVariable<'prog>, src: ClosureSrc) -> usize {
+        let idx = self.closure_srcs.len();
+        self.closure_srcs.push(src);
+
+        self.vars.insert(var.clone(), StorageType::Closure(idx));
+
+        idx
+    }
 }
 
 fn init_var_lookup<'a>(size: usize) -> Vec<InterpValue<'a>> {
