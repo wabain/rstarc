@@ -1,11 +1,14 @@
-use std::io::{self, Read};
-use std::error;
-use std::fmt;
+use std::{
+    io::{self, Read},
+    error,
+    fmt,
+    rc::Rc,
+};
 
 use regex::{RegexBuilder, Regex};
 
 use rstarc_types::{Value, RockstarNumber};
-use lang_constructs::{RockstarValue, RockstarString};
+use lang_constructs::RockstarValue;
 use syntax::source_loc::{SourceLocator, IntraLineSpan};
 
 #[derive(Debug, PartialEq)]
@@ -34,7 +37,7 @@ pub enum Token {
     CommonPrep(String),
 
     // Types
-    StringLiteral(RockstarString),
+    StringLiteral(Rc<String>),
     BooleanLiteral(bool),
     NumberLiteral(RockstarNumber),
     MysteriousLiteral,
@@ -137,7 +140,7 @@ impl Token {
 
     pub fn literal_value<F: fmt::Debug>(&self) -> Option<RockstarValue<F>> {
         let value = match *self {
-            Token::StringLiteral(ref s) => Value::String(s.clone()),
+            Token::StringLiteral(ref s) => Value::String(Rc::clone(s)),
             Token::BooleanLiteral(b) => Value::Boolean(b),
             Token::NumberLiteral(n) => Value::Number(n),
             Token::MysteriousLiteral => Value::Mysterious,
@@ -516,7 +519,7 @@ impl<'a> TokenStream<'a> {
 
         // Handle string literal
         if let Some((len, s)) = STRING.captures(self.rest()).map(|c| (c[0].len(), c[1].to_owned())) {
-            let tok = Token::StringLiteral(s);
+            let tok = Token::StringLiteral(Rc::new(s));
             return Ok(vec![
                 self.emit(len, tok, None)
             ]);
@@ -652,7 +655,7 @@ impl<'a> TokenStream<'a> {
 
                 let (end, tok) = {
                     let (content, end) = self.capture_to_end_of_line_from(skip);
-                    let tok = Token::StringLiteral(content.into());
+                    let tok = Token::StringLiteral(Rc::new(content.to_owned()));
                     (end, tok)
                 };
 
@@ -898,6 +901,7 @@ enum LexAction {
 
 #[cfg(test)]
 mod test {
+    use std::rc::Rc;
     use super::{LexicalError, Token, Tokenizer};
 
     fn toks<S>(input: S) -> Vec<(usize, Token, usize)>
@@ -957,7 +961,7 @@ mod test {
         //           0123456789012345678 90123 45678 9
         let t = toks(input);
         assert_eq!(&t[t.len() - 4..], &[
-            (23, Token::StringLiteral("okay".into()), 29),
+            (23, Token::StringLiteral(Rc::new("okay".to_owned())), 29),
             (29, Token::Newline, 29),
             (29, Token::Newline, 29),
             (29, Token::EOF, 29),
@@ -1032,7 +1036,7 @@ mod test {
         let base = vec![
             (0, Token::ProperVar("Johnny".into()), 6),
             (7, Token::Says, 11),
-            (12, Token::StringLiteral(" 忠犬ハチ公,,".into()), end),
+            (12, Token::StringLiteral(Rc::new(" 忠犬ハチ公,,".to_owned())), end),
         ];
 
         let expected = extend_vec!(base, vec![

@@ -69,6 +69,23 @@ pub mod value_constants {
 // Spec calls for DEC64
 pub type RockstarNumber = f64;
 
+pub trait RockstarString {
+    fn string_borrow(&self) -> &str;
+}
+
+impl<'a> RockstarString for &'a str {
+    fn string_borrow(&self) -> &str {
+        &self
+    }
+}
+
+#[cfg(feature = "std")]
+impl RockstarString for std::rc::Rc<std::string::String> {
+    fn string_borrow(&self) -> &str {
+        &self
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum Type {
     String,
@@ -82,7 +99,7 @@ pub enum Type {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value<S, F>
     where
-        S: AsRef<str> + fmt::Debug + PartialEq,
+        S: RockstarString + fmt::Debug + PartialEq,
         F: fmt::Debug
 {
     String(S),
@@ -95,7 +112,7 @@ pub enum Value<S, F>
 
 impl<S, F> Value<S, F>
     where
-        S: AsRef<str> + fmt::Debug + PartialEq,
+        S: RockstarString + fmt::Debug + PartialEq,
         F: fmt::Debug
 {
     pub fn value_type(&self) -> Type {
@@ -116,7 +133,7 @@ impl<S, F> Value<S, F>
     /// "Truthiness" coercion
     pub fn coerce_boolean(&self) -> bool {
         match *self {
-            Value::String(ref s) => string_to_bool(s.as_ref()).unwrap_or(false),
+            Value::String(ref s) => string_to_bool(s.string_borrow()).unwrap_or(false),
             Value::Number(n) => rockstar_number_to_bool(n),
             Value::Boolean(b) => b,
             Value::Function(_) => true,
@@ -129,7 +146,7 @@ impl<S, F> Value<S, F>
     /// String coercion, as performed by `plus` and `times`
     pub fn coerce_string(&self) -> Option<Cow<str>> {
         match self {
-            Value::String(s) => Some(Cow::Borrowed(s.as_ref())),
+            Value::String(s) => Some(Cow::Borrowed(s.string_borrow())),
             Value::Number(n) => Some(Cow::Owned(format!("{}", n))),
             Value::Boolean(b) => {
                 let s = if *b { "true" } else { "false" };
@@ -169,7 +186,7 @@ impl<S, F> Value<S, F>
 
         match (&v1, &v2) {
             (Value::String(s1), Value::String(s2)) => {
-                s1.as_ref().partial_cmp(s2.as_ref())
+                s1.string_borrow().partial_cmp(s2.string_borrow())
             }
             (Value::Number(n1), Value::Number(n2)) => n1.partial_cmp(n2),
             (Value::Boolean(b1), Value::Boolean(b2)) => b1.partial_cmp(b2),
@@ -209,19 +226,19 @@ impl<S, F> Value<S, F>
             Value::String(s1) => match v2 {
                 Value::String(_) => unreachable!("type precedence"),
                 Value::Number(_) => {
-                    if let Ok(n1) = s1.as_ref().parse() {
+                    if let Ok(n1) = s1.string_borrow().parse() {
                         Some((Value::Number(n1), v2))
                     } else {
                         None
                     }
                 }
                 Value::Boolean(_) => {
-                    string_to_bool(s1.as_ref())
+                    string_to_bool(s1.string_borrow())
                         .map(|b2| (Value::Boolean(b2), v2))
                 }
                 Value::Function(_) => None,
                 Value::Null => {
-                    if string_is_null_keyword(s1.as_ref()) {
+                    if string_is_null_keyword(s1.string_borrow()) {
                         Some((Value::Null, Value::Null))
                     } else {
                         None
@@ -274,7 +291,7 @@ impl<S, F> Value<S, F>
 // Equality comparisons require F: PartialEq.
 impl<S, F> Value<S, F>
     where
-        S: AsRef<str> + fmt::Debug + PartialEq,
+        S: RockstarString + fmt::Debug + PartialEq,
         F: fmt::Debug + PartialEq,
 {
     pub fn rstar_is(self, other: Self) -> bool {
@@ -295,7 +312,7 @@ impl<S, F> Value<S, F>
 // repr_format requires F: Display
 impl<S, F> Value<S, F>
     where
-        S: AsRef<str> + fmt::Debug + PartialEq,
+        S: RockstarString + fmt::Debug + PartialEq,
         F: fmt::Debug + fmt::Display,
 {
     pub fn repr_format(&self) -> ReprDisplay<S, F> {
@@ -305,7 +322,7 @@ impl<S, F> Value<S, F>
 
 pub struct UserDisplay<'a, S, F>
     where
-        S: AsRef<str> + fmt::Debug + PartialEq + 'a,
+        S: RockstarString + fmt::Debug + PartialEq + 'a,
         F: fmt::Debug + 'a,
 {
     value: &'a Value<S, F>,
@@ -313,12 +330,12 @@ pub struct UserDisplay<'a, S, F>
 
 impl<'a, S, F> fmt::Display for UserDisplay<'a, S, F>
     where
-        S: AsRef<str> + fmt::Debug + PartialEq + 'a,
+        S: RockstarString + fmt::Debug + PartialEq + 'a,
         F: fmt::Debug + 'a,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.value {
-            Value::String(s) => write!(f, "{}", s.as_ref()),
+            Value::String(s) => write!(f, "{}", s.string_borrow()),
             Value::Number(n) => write!(f, "{}", n),
             Value::Boolean(b) =>  write!(f, "{}", *b),
             Value::Function(..) => write!(f, "[Function]"),
@@ -330,7 +347,7 @@ impl<'a, S, F> fmt::Display for UserDisplay<'a, S, F>
 
 pub struct ReprDisplay<'a, S, F>
     where
-        S: AsRef<str> + fmt::Debug + PartialEq + 'a,
+        S: RockstarString + fmt::Debug + PartialEq + 'a,
         F: fmt::Debug + fmt::Display + 'a,
 {
     value: &'a Value<S, F>,
@@ -338,12 +355,12 @@ pub struct ReprDisplay<'a, S, F>
 
 impl<'a, S, F> fmt::Display for ReprDisplay<'a, S, F>
     where
-        S: AsRef<str> + fmt::Debug + PartialEq + 'a,
+        S: RockstarString + fmt::Debug + PartialEq + 'a,
         F: fmt::Debug + fmt::Display + 'a,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.value {
-            Value::String(s) => write!(f, "\"{}\"", s.as_ref()),
+            Value::String(s) => write!(f, "\"{}\"", s.string_borrow()),
             Value::Number(n) => write!(f, "{}", n),
             Value::Boolean(b) =>  write!(f, "{}", *b),
             Value::Function(func) => write!(f, "Function({})", func),

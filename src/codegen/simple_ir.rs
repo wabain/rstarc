@@ -190,7 +190,7 @@ fn verify_ir_func<'a>(_scope_map: &ScopeMap,
             IRLValue::LocalDynTemp(_) |
             IRLValue::Variable(..) => {
                 vals_seen.insert(v);
-                handle_value(&v.clone().into())?;
+                handle_value(&v.into())?;
             }
         }
         Ok(())
@@ -212,7 +212,7 @@ fn verify_ir_func<'a>(_scope_map: &ScopeMap,
                 handle_value(v2)?;
             }
             SimpleIR::InPlace(_, lval) => {
-                handle_value(&lval.clone().into())?;
+                handle_value(&lval.into())?;
                 handle_write(&mut vals_seen, lval)?;
             }
             SimpleIR::LoadArg(lval, _) => {
@@ -288,6 +288,14 @@ pub enum IRValue<'prog> {
     Variable(LangVariable<'prog>, VariableType, Pos),
 }
 
+impl<'prog> IRValue<'prog> {
+    /// Make a copy of the value. This is not done through the Copy trait to
+    /// prevent mistaken duplication.
+    pub fn copy(this: &Self) -> Self {
+        this.clone()
+    }
+}
+
 impl<'prog> fmt::Display for IRValue<'prog> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -319,16 +327,31 @@ pub enum IRLValue<'prog> {
     Variable(LangVariable<'prog>, VariableType, Pos),
 }
 
+impl<'prog> IRLValue<'prog> {
+    /// Make a copy of the value. This is not done through the Copy trait to
+    /// prevent mistaken duplication.
+    pub fn copy(this: &Self) -> Self {
+        this.clone()
+    }
+}
+
 impl<'prog> fmt::Display for IRLValue<'prog> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let val: IRValue = self.clone().into();
+        let val: IRValue = self.into();
         write!(f, "{}", val)
     }
 }
 
 impl<'prog> Into<IRValue<'prog>> for IRLValue<'prog> {
     fn into(self) -> IRValue<'prog> {
-        match self {
+        let borrow = &self;
+        borrow.into()
+    }
+}
+
+impl<'a, 'prog> Into<IRValue<'prog>> for &'a IRLValue<'prog> {
+    fn into(self) -> IRValue<'prog> {
+        match *self {
             IRLValue::LocalTemp(t) => IRValue::LocalTemp(t),
             IRLValue::LocalDynTemp(t) => IRValue::LocalDynTemp(t),
             IRLValue::Variable(v, t, p) => IRValue::Variable(v, t, p),
@@ -549,9 +572,12 @@ impl<'prog> IRBuilder<'prog> {
         self.emit(SimpleIR::Label(label));
     }
 
-    fn emit_expr(&mut self, dst: Option<IRLValue<'prog>>, expr: &'prog ast::Expr)
-        -> IRValue<'prog>
+    fn emit_expr<D>(&mut self, dst: D, expr: &'prog ast::Expr) -> IRValue<'prog>
+        where
+            D: Into<Option<IRLValue<'prog>>>,
     {
+        let dst = dst.into();
+
         match expr {
             Expr::LValue(lval) => {
                 let var = resolve_ast_lval(lval);
@@ -559,7 +585,7 @@ impl<'prog> IRBuilder<'prog> {
 
                 if let Some(ir_lval) = dst {
                     self.emit(SimpleIR::Store(
-                        ir_lval.clone(),
+                        IRLValue::copy(&ir_lval),
                         ir_val,
                     ));
 
@@ -573,10 +599,7 @@ impl<'prog> IRBuilder<'prog> {
                 let value = IRValue::Literal(value);
 
                 if let Some(dst) = dst {
-                    self.emit(SimpleIR::Store(
-                        dst.clone(),
-                        value,
-                    ));
+                    self.emit(SimpleIR::Store(IRLValue::copy(&dst), value));
                     dst.into()
                 } else {
                     value
@@ -592,7 +615,7 @@ impl<'prog> IRBuilder<'prog> {
                 let dst = dst.unwrap_or_else(|| self.temp());
 
                 self.emit(SimpleIR::Call(
-                    dst.clone(),
+                    IRLValue::copy(&dst),
                     f_var.into(),
                     args,
                 ));
@@ -619,7 +642,7 @@ impl<'prog> IRBuilder<'prog> {
 
                 self.emit(SimpleIR::Operate(
                     op,
-                    dst.clone(),
+                    IRLValue::copy(&dst),
                     a1.into(),
                     a2.into(),
                 ));
@@ -667,11 +690,11 @@ impl<'prog> IRBuilder<'prog> {
                         self.emit(SimpleIR::JumpIf(v, not_false_label, not_true_label));
 
                         self.emit_label(not_true_label);
-                        self.emit(SimpleIR::Store(out.clone(), IR_TRUE));
+                        self.emit(SimpleIR::Store(IRLValue::copy(&out), IR_TRUE));
                         self.emit(SimpleIR::Jump(not_end_label));
 
                         self.emit_label(not_false_label);
-                        self.emit(SimpleIR::Store(out.clone(), IR_FALSE));
+                        self.emit(SimpleIR::Store(IRLValue::copy(&out), IR_FALSE));
                         self.emit(SimpleIR::Jump(not_end_label));
 
                         self.emit_label(not_end_label);
@@ -680,11 +703,11 @@ impl<'prog> IRBuilder<'prog> {
                         let and_label = self.label("and");
                         let else_label = self.label("and_else");
 
-                        self.emit_expr(Some(out.clone()), c1);
-                        self.emit(SimpleIR::JumpIf(out.clone().into(), and_label, else_label));
+                        self.emit_expr(IRLValue::copy(&out), c1);
+                        self.emit(SimpleIR::JumpIf((&out).into(), and_label, else_label));
 
                         self.emit_label(and_label);
-                        self.emit_expr(Some(out.clone()), c2);
+                        self.emit_expr(IRLValue::copy(&out), c2);
 
                         self.emit_label(else_label);
                     }
@@ -692,11 +715,11 @@ impl<'prog> IRBuilder<'prog> {
                         let or_label = self.label("or");
                         let else_label = self.label("or_else");
 
-                        self.emit_expr(Some(out.clone()), c1);
-                        self.emit(SimpleIR::JumpIf(out.clone().into(), else_label, or_label));
+                        self.emit_expr(IRLValue::copy(&out), c1);
+                        self.emit(SimpleIR::JumpIf((&out).into(), else_label, or_label));
 
                         self.emit_label(or_label);
-                        self.emit_expr(Some(out.clone()), c2);
+                        self.emit_expr(IRLValue::copy(&out), c2);
 
                         self.emit_label(else_label);
                     }
@@ -720,11 +743,11 @@ impl<'prog> IRBuilder<'prog> {
                         self.emit(SimpleIR::JumpIf(v2, nor_false_label, nor_true_label));
 
                         self.emit_label(nor_true_label);
-                        self.emit(SimpleIR::Store(out.clone(), IR_TRUE));
+                        self.emit(SimpleIR::Store(IRLValue::copy(&out), IR_TRUE));
                         self.emit(SimpleIR::Jump(nor_end_label));
 
                         self.emit_label(nor_false_label);
-                        self.emit(SimpleIR::Store(out.clone(), IR_FALSE));
+                        self.emit(SimpleIR::Store(IRLValue::copy(&out), IR_FALSE));
                         self.emit(SimpleIR::Jump(nor_end_label));
 
                         self.emit_label(nor_end_label);
@@ -732,7 +755,7 @@ impl<'prog> IRBuilder<'prog> {
                 }
 
                 if let Some(dst) = need_final_assign {
-                    self.emit(SimpleIR::Store(dst.clone(), out.into()));
+                    self.emit(SimpleIR::Store(IRLValue::copy(&dst), out.into()));
                     dst.into()
                 } else {
                     out.into()
@@ -753,7 +776,7 @@ impl<'prog> IRBuilder<'prog> {
         let dst = dst.unwrap_or_else(|| self.temp());
         self.emit(SimpleIR::Operate(
             BinOp::Compare(comp),
-            dst.clone(),
+            IRLValue::copy(&dst),
             a1.into(),
             a2.into(),
         ));
@@ -786,11 +809,11 @@ impl<'prog> IRBuilder<'prog> {
             if let Some((idx, arg)) = args.iter().enumerate().find(|(_, v)| {
                 unwrap_variable(*v) == var
             }) {
-                self.emit(SimpleIR::LoadArg(arg.clone(), idx));
+                self.emit(SimpleIR::LoadArg(IRLValue::copy(arg), idx));
             } else if var_type.is_global() {
-                globals.push((var.clone(), var_type.owner()));
+                globals.push((*var, var_type.owner()));
             } else {
-                let ir_lval = self.synthesize_ir_lval(var.clone(), func_pos);
+                let ir_lval = self.synthesize_ir_lval(*var, func_pos);
                 let initial_value = IRValue::Literal(LangValue::Mysterious);
                 self.emit(SimpleIR::Store(ir_lval, initial_value));
             }
@@ -866,7 +889,7 @@ impl<'prog> AstAdapter<'prog> {
             StatementKind::Assign(lval, expr) => {
                 let var = resolve_ast_lval(lval);
                 let ir_lval = ir_builder.resolve_ast_variable(var);
-                ir_builder.emit_expr(Some(ir_lval), expr);
+                ir_builder.emit_expr(ir_lval, expr);
             }
             StatementKind::Incr(lval, count) | StatementKind::Decr(lval, count) => {
                 let var = resolve_ast_lval(lval);

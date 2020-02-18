@@ -22,7 +22,7 @@ use syntax::ast::{
     LValue,
 };
 
-pub fn interpret(program: &[Statement], scope_map: &ScopeMap)
+pub fn interpret<'prog>(program: &[Statement], scope_map: &ScopeMap<'prog>)
     -> Result<(), RuntimeError>
 {
     Interpreter::new(scope_map).run_program(program)?;
@@ -113,7 +113,9 @@ impl<'a> VariableScope<'a> {
             match *src {
                 ClosureSrc::Local => Rc::new(RefCell::new(Value::Mysterious)),
                 ClosureSrc::Parent(idx) => {
-                    parent.expect("closure scope parent").closure[idx].clone()
+                    Rc::clone(&parent
+                        .expect("closure scope parent")
+                        .closure[idx])
                 }
             }
         }).collect();
@@ -149,16 +151,16 @@ enum Flow<'a> {
 }
 
 /// A simple interpreter that reads off the AST
-pub struct Interpreter<'a> {
+pub struct Interpreter<'a, 'prog> {
     func_id: u64,
     scope: ScopeCell<'a>,
-    scope_map: &'a ScopeMap<'a>,
+    scope_map: &'a ScopeMap<'prog>,
     globals: Vec<InterpValue<'a>>,
     var_layout: VariableLayout<'a>,
 }
 
-impl<'a> Interpreter<'a> {
-    fn new(scope_map: &'a ScopeMap<'a>) -> Self {
+impl<'a, 'prog> Interpreter<'a, 'prog> {
+    fn new(scope_map: &'a ScopeMap<'prog>) -> Self {
         let var_layout = VariableLayout::new(scope_map);
         Interpreter {
             func_id: 0,
@@ -273,7 +275,7 @@ impl<'a> Interpreter<'a> {
                     static_scope_id: self.scope_map.get_scope_for_func_declaration(statement),
                     args: args.iter().map(|a| a.to_lang_variable()).collect(),
                     statements,
-                    parent_scope: self.scope.clone(),
+                    parent_scope: Rc::clone(&self.scope),
                 };
 
                 self.set_var(var.to_lang_variable(), Value::Function(func));
@@ -397,7 +399,7 @@ impl<'a> Interpreter<'a> {
                         let mut combined = String::with_capacity(size);
                         combined.push_str(&s1);
                         combined.push_str(&s2);
-                        Value::String(combined)
+                        Value::String(Rc::new(combined))
                     }
                     _ => return Err(InterpreterError::illegal_op("add", &v1, &v2)),
                 }
@@ -409,7 +411,7 @@ impl<'a> Interpreter<'a> {
                     return Err(InterpreterError::illegal_op("multiply", &v1, &v2));
                 }
                 let n = n.trunc() as usize;
-                Value::String(s.repeat(n))
+                Value::String(Rc::new(s.repeat(n)))
             }
 
             _ => {
@@ -459,7 +461,6 @@ impl<'a> Interpreter<'a> {
         let scope = self.scope.borrow();
         let scope_id = scope.static_scope_id;
 
-        // FIXME: Currently this entails string cloning
         match *self.var_layout.get_storage_type(scope_id, var) {
             StorageType::Global(idx) => self.globals[idx].clone(),
             StorageType::Local(idx) => scope.local[idx].clone(),
@@ -516,7 +517,7 @@ struct VariableLayout<'prog> {
 }
 
 impl<'prog> VariableLayout<'prog> {
-    fn new(scope_map: &'prog ScopeMap<'prog>) -> Self {
+    fn new(scope_map: &'prog ScopeMap) -> Self {
         let mut globals = HashMap::new();
 
         let mut scope_layouts: Vec<_> =
@@ -561,7 +562,7 @@ impl<'prog> VariableLayout<'prog> {
     /// variable must be registered in each scope between the accessing scope
     /// and the owner.
     fn register_closure_var(
-        scope_map: &'prog ScopeMap<'prog>,
+        scope_map: &'prog ScopeMap,
         scope_id: ScopeId,
         owner: ScopeId,
         var: &'prog LangVariable<'prog>,
@@ -621,31 +622,31 @@ enum ClosureSrc {
 
 #[derive(Default, Debug)]
 struct ScopeLayout<'prog> {
-    vars: HashMap<LangVariable<'prog>, StorageType>,
+    vars: HashMap<&'prog LangVariable<'prog>, StorageType>,
     locals_count: usize,
     closure_srcs: Vec<ClosureSrc>,
 }
 
 impl<'prog> ScopeLayout<'prog> {
-    fn register_global_var(&mut self, var: &LangVariable<'prog>, idx: usize) -> usize {
-        self.vars.insert(var.clone(), StorageType::Global(idx));
+    fn register_global_var(&mut self, var: &'prog LangVariable<'prog>, idx: usize) -> usize {
+        self.vars.insert(var, StorageType::Global(idx));
         idx
     }
 
-    fn register_local_var(&mut self, var: &LangVariable<'prog>) -> usize {
+    fn register_local_var(&mut self, var: &'prog LangVariable<'prog>) -> usize {
         let idx = self.locals_count;
         self.locals_count += 1;
 
-        self.vars.insert(var.clone(), StorageType::Local(idx));
+        self.vars.insert(var, StorageType::Local(idx));
 
         idx
     }
 
-    fn register_closure_var(&mut self, var: &LangVariable<'prog>, src: ClosureSrc) -> usize {
+    fn register_closure_var(&mut self, var: &'prog LangVariable<'prog>, src: ClosureSrc) -> usize {
         let idx = self.closure_srcs.len();
         self.closure_srcs.push(src);
 
-        self.vars.insert(var.clone(), StorageType::Closure(idx));
+        self.vars.insert(var, StorageType::Closure(idx));
 
         idx
     }

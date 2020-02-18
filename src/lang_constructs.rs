@@ -1,14 +1,13 @@
-use std::fmt;
+use std::{fmt, rc::Rc};
 use rstarc_types::Value;
 
-// Spec calls for UTF-16 but I don't know that the difference
-// is actually visible
-pub type RockstarString = String;
+/// Compiler and interpreter's view of a Rockstar value
+///
+/// Spec calls for UTF-16 but I don't know that the difference
+/// is actually visible
+pub type RockstarValue<F> = Value<Rc<String>, F>;
 
-/// Compiler's view of a Rockstar value
-pub type RockstarValue<F> = Value<RockstarString, F>;
-
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub enum LangVariable<'a> {
     Common(&'a str, &'a str),
     Proper(&'a str),

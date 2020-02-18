@@ -131,8 +131,9 @@ impl<'prog> ScopeMap<'prog> {
                              referencing_scope: ScopeId) -> Option<VariableType>
     {
         self.scope_data(referencing_scope)
-            .used_variables.get(var)
-            .cloned()
+            .used_variables
+            .get(var)
+            .copied()
     }
 
     pub fn get_used_vars_for_scope(&self, scope_id: ScopeId)
@@ -187,7 +188,7 @@ impl<'prog> ScopeMapBuilder<'prog> {
             for (scope, var_type) in owner_for_scope {
                 scope_data.get_mut(scope as usize)
                     .expect("scope data update")
-                    .used_variables.insert(var.clone(), var_type);
+                    .used_variables.insert(var, var_type);
             }
         }
 
@@ -204,7 +205,7 @@ impl<'prog> ScopeMapBuilder<'prog> {
         let mut var_instances = vec![];
         let mut owner_for_scope: HashMap<ScopeId, usize> = HashMap::with_capacity(var_users.len());
 
-        let mut used_scopes: Vec<_> = var_users.keys().cloned().collect();
+        let mut used_scopes: Vec<_> = var_users.keys().copied().collect();
         used_scopes.sort();
 
         let first_scope_with_var = used_scopes[0];
@@ -368,7 +369,7 @@ impl<'prog> ScopeMapBuilder<'prog> {
 
     fn exit_scope(&mut self) {
         self.scope_stack.pop().expect("ScopeBuilder::exit_scope");
-        self.current_scope = self.scope_stack.last().cloned().unwrap_or(0);
+        self.current_scope = self.scope_stack.last().copied().unwrap_or(0);
     }
 }
 

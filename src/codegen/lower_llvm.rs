@@ -2,6 +2,7 @@ use std::{
     collections::hash_map::{HashMap, Entry},
     iter,
     ptr::NonNull,
+    rc::Rc,
 };
 
 use rstarc_types::{Value, value_constants::*};
@@ -271,7 +272,7 @@ fn lower_function<'a, 'prog: 'a, FP>(
                     llh.build_call_builtin2(builtin, arg1, arg2, name)
                 });
             }
-            SimpleIR::InPlace(op, out) => {
+            SimpleIR::InPlace(op, ref out) => {
                 let (builtin, count) = match *op {
                     InPlaceOp::Incr(count) => ("roll_incr", count),
                     InPlaceOp::Decr(count) => ("roll_decr", count),
@@ -282,7 +283,7 @@ fn lower_function<'a, 'prog: 'a, FP>(
                     _ => panic!("Unexpected incr/decr target: {:?}", out),
                 };
 
-                let in_val = vmgr.val_to_llvm(llh, &out.clone().into());
+                let in_val = vmgr.val_to_llvm(llh, &out.into());
                 let count_val = llh.const_uint(int32_type(), count as u64);
 
                 vmgr.store(llh, out, "inplace_out", |llh, name| {
@@ -435,7 +436,7 @@ fn build_call_branch(llh: &mut LLVMHandle,
         let mysterious_value = llh.const_uint(i64t, MYSTERIOUS_BITS);
 
         extended_args = args.iter()
-            .cloned()
+            .copied()
             .chain((args.len()..arg_count).map(|_| mysterious_value))
             .collect::<Vec<_>>();
 
@@ -558,7 +559,7 @@ where
     /// Cache of strings used in scope
     /// FIXME: This should be program-wide, and should probably be done
     /// in an interning pass when converting to IR
-    string_cache: HashMap<String, LLVMValueRef>,
+    string_cache: HashMap<Rc<String>, LLVMValueRef>,
 }
 
 impl<'a, 'prog: 'a, FP> ValueTracker<'a, 'prog, FP>
@@ -691,7 +692,7 @@ where
                 };
                 let global = global.unwrap_or_else(|| {
                     let g = llh.build_const_string_ptr(s, "string_ptr");
-                    self.string_cache.insert(s.to_string(), g);
+                    self.string_cache.insert(Rc::clone(s), g);
                     g
                 });
 
@@ -825,7 +826,7 @@ where
             }
             VariableType::Local(_) => {
                 let alloca = llh.build_alloca(int64_type(), &format!("{}", &var));
-                self.allocas.insert(var.clone(), alloca);
+                self.allocas.insert(*var, alloca);
             }
         }
     }
