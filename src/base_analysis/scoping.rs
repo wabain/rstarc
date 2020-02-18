@@ -1,6 +1,10 @@
-use std::collections::BTreeMap;
-use std::collections::hash_map::{HashMap, Entry};
-use std::iter;
+use std::{
+    collections::{
+        BTreeMap,
+        hash_map::{HashMap, Entry},
+    },
+    iter,
+};
 
 use syntax::ast::{self, Statement, StatementKind, LValue};
 use lang_constructs::LangVariable;
@@ -82,9 +86,6 @@ impl UseType {
 
 #[derive(Default, Debug, Clone)]
 struct ScopeData<'prog> {
-    /// Id of this scope's parent
-    parent_id: Option<ScopeId>,
-
     // Use a binary tree to get a stable iteration order. Ideally we'd
     // probably use insertion order, but that would also push extra
     // requirements into the the scope analysis pass.
@@ -94,6 +95,7 @@ struct ScopeData<'prog> {
 #[derive(Default)]
 pub struct ScopeMap<'prog> {
     block_scopes: HashMap<SrcPos, ScopeId>,
+    scope_parents: ScopeParents,
     scope_data: Vec<ScopeData<'prog>>
 }
 
@@ -107,7 +109,7 @@ impl<'prog> ScopeMap<'prog> {
     }
 
     pub fn get_parent_scope(&self, scope_id: ScopeId) -> Option<ScopeId> {
-        self.scope_data(scope_id).parent_id
+        self.scope_parents.get_parent(scope_id)
     }
 
     pub fn get_ancestor_scopes(&self, scope_id: ScopeId) -> impl Iterator<Item=ScopeId> + '_ {
@@ -160,27 +162,49 @@ impl<'prog> ScopeMap<'prog> {
     }
 }
 
+#[derive(Default, Debug, Clone)]
+struct ScopeParents {
+    parent_ids: Vec<ScopeId>,
+}
+
+impl ScopeParents {
+    fn scope_count(&self) -> usize {
+        self.parent_ids.len() + 1
+    }
+
+    fn add_scope(&mut self, parent_id: ScopeId) -> ScopeId {
+        self.parent_ids.push(parent_id);
+        // Return the value one past the new index
+        self.parent_ids.len() as ScopeId
+    }
+
+    fn get_parent(&self, scope_id: ScopeId) -> Option<ScopeId> {
+        if scope_id == 0 {
+            None
+        } else {
+            Some(self.parent_ids[scope_id as usize - 1])
+        }
+    }
+}
+
 #[derive(Default)]
 struct ScopeMapBuilder<'prog> {
     current_scope: ScopeId,
     scope_stack: Vec<ScopeId>,
-    scope_parents: Vec<Option<ScopeId>>,
+    scope_parents: ScopeParents,
     block_scopes: HashMap<SrcPos, ScopeId>,
     var_uses: HashMap<LangVariable<'prog>, HashMap<ScopeId, UseType>>,
 }
 
 impl<'prog> ScopeMapBuilder<'prog> {
     fn new() -> Self {
-        ScopeMapBuilder {
-            scope_parents: vec![None],
-            ..Self::default()
-        }
+        Self::default()
     }
 
     fn to_scope_map(self) -> ScopeMap<'prog> {
-        let mut scope_data: Vec<ScopeData> = self.scope_parents.iter()
-            .map(|&parent_id| ScopeData { parent_id, ..Default::default() })
-            .collect();
+        let scope_count = self.scope_parents.scope_count();
+
+        let mut scope_data = vec![ScopeData::default(); scope_count];
 
         for (var, var_users) in self.var_uses {
             let owner_for_scope = ScopeMapBuilder::analyze_use(&self.scope_parents, var_users);
@@ -194,11 +218,12 @@ impl<'prog> ScopeMapBuilder<'prog> {
 
         ScopeMap {
             block_scopes: self.block_scopes,
+            scope_parents: self.scope_parents,
             scope_data,
         }
     }
 
-    fn analyze_use(scope_parents: &[Option<ScopeId>],
+    fn analyze_use(scope_parents: &ScopeParents,
                    var_users: HashMap<ScopeId, UseType>)
         -> HashMap<ScopeId, VariableType>
     {
@@ -217,7 +242,7 @@ impl<'prog> ScopeMapBuilder<'prog> {
                 let mut current_scope = scope_id;
 
                 while current_scope > first_scope_with_var {
-                    current_scope = match scope_parents[current_scope as usize] {
+                    current_scope = match scope_parents.get_parent(current_scope) {
                         Some(s) => s,
                         None => break,
                     };
@@ -352,8 +377,7 @@ impl<'prog> ScopeMapBuilder<'prog> {
     }
 
     fn enter_scope(&mut self, pos: SrcPos) {
-        let new_scope = self.scope_parents.len() as ScopeId;
-        self.scope_parents.push(Some(self.current_scope));
+        let new_scope = self.scope_parents.add_scope(self.current_scope);
         self.scope_stack.push(new_scope);
         self.current_scope = new_scope;
 
