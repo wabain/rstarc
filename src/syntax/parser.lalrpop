@@ -140,8 +140,8 @@ PreConjunctionNotExpr: ast::Expr<'input> = {
 
 FuncCallExpr: ast::Expr<'input> = {
     <f:SimpleExpr> "Taking" <a:(SimpleExpr FuncArgSep)*> <an:SimpleExpr> => {
-        let mut args: Vec<_> = a.into_iter().map(|(e, _)| Box::new(e)).collect();
-        args.push(Box::new(an));
+        let mut args: Vec<_> = a.into_iter().map(|(e, _)| e).collect();
+        args.push(an);
         ast::Expr::FuncCall(Box::new(f), args)
     },
     SimpleExpr => <>,

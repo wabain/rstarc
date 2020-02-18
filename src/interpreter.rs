@@ -349,7 +349,7 @@ impl<'a, 'prog> Interpreter<'a, 'prog> {
 
     fn exec_func_call(&mut self,
                       func_value: InterpValue<'a>,
-                      arg_exprs: &'a [Box<Expr<'a>>])
+                      arg_exprs: &'a [Expr<'a>])
         -> InterpResult<InterpValue<'a>>
     {
         let func = match func_value {
@@ -484,7 +484,7 @@ impl<'a, 'prog> Interpreter<'a, 'prog> {
 
     fn init_function_scope(&mut self,
                            func: &InterpFunc<'a>,
-                           arg_exprs: &'a [Box<Expr<'a>>])
+                           arg_exprs: &'a [Expr<'a>])
         -> InterpResult<VariableScope<'a>>
     {
         let scope_id = func.static_scope_id;

@@ -33,7 +33,7 @@ pub enum Expr<'a> {
     LValue(LValue<'a>),
     Literal(Token<'a>),
     Compare(Box<Comparison<'a>>),
-    FuncCall(Box<Expr<'a>>, Vec<Box<Expr<'a>>>),
+    FuncCall(Box<Expr<'a>>, Vec<Expr<'a>>),
 
     Add(Box<Expr<'a>>, Box<Expr<'a>>),
     Sub(Box<Expr<'a>>, Box<Expr<'a>>),
