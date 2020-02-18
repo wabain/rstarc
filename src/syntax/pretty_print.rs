@@ -41,7 +41,7 @@ pub trait PrettyPrint {
     fn pretty_print<W>(&self, &mut W) -> io::Result<()> where W: io::Write;
 }
 
-impl PrettyPrint for Statement {
+impl<'input> PrettyPrint for Statement<'input> {
     fn pretty_print<W>(&self, out: &mut W) -> io::Result<()> where W: io::Write {
         match &self.kind {
             StatementKind::Assign(lval, e) => {
@@ -102,7 +102,7 @@ impl PrettyPrint for Statement {
     }
 }
 
-impl PrettyPrint for Expr {
+impl<'input> PrettyPrint for Expr<'input> {
     fn pretty_print<W>(&self, out: &mut W) -> io::Result<()> where W: io::Write {
         match *self {
             Expr::LValue(ref lval) => lval.pretty_print(out)?,
@@ -133,7 +133,7 @@ impl PrettyPrint for Expr {
     }
 }
 
-impl PrettyPrint for Logical {
+impl<'input> PrettyPrint for Logical<'input> {
     fn pretty_print<W>(&self, out: &mut W) -> io::Result<()> where W: io::Write {
         match *self {
             Logical::Not(ref cond) => pp!(out, "not ", pp cond),
@@ -146,7 +146,7 @@ impl PrettyPrint for Logical {
     }
 }
 
-impl PrettyPrint for Comparison {
+impl<'input> PrettyPrint for Comparison<'input> {
     fn pretty_print<W>(&self, out: &mut W) -> io::Result<()> where W: io::Write {
         let Comparison(ref e1, comparator, ref e2) = *self;
 
@@ -165,7 +165,7 @@ impl PrettyPrint for Comparison {
     }
 }
 
-impl PrettyPrint for LValue {
+impl<'input> PrettyPrint for LValue<'input> {
     fn pretty_print<W>(&self, out: &mut W) -> io::Result<()> where W: io::Write {
         match *self {
             LValue::Pronoun(ref p) => write!(out, "{}", p),
@@ -174,7 +174,7 @@ impl PrettyPrint for LValue {
     }
 }
 
-impl PrettyPrint for Variable {
+impl<'input> PrettyPrint for Variable<'input> {
     fn pretty_print<W>(&self, out: &mut W) -> io::Result<()> where W: io::Write {
         match *self {
             Variable::CommonVar(ref prep, ref var, _pos) => {

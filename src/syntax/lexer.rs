@@ -3,6 +3,7 @@ use std::{
     error,
     fmt,
     rc::Rc,
+    borrow::Cow,
 };
 
 use regex::{RegexBuilder, Regex};
@@ -29,7 +30,7 @@ impl fmt::Display for LexicalError {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Token {
+pub enum Token<'input> {
     // Variables and friends
     ProperVar(String),
     CommonVar(String),
@@ -37,17 +38,21 @@ pub enum Token {
     CommonPrep(String),
 
     // Types
-    StringLiteral(Rc<String>),
+    StringLiteral(Rc<Cow<'input, str>>),
     BooleanLiteral(bool),
     NumberLiteral(RockstarNumber),
     MysteriousLiteral,
     NullLiteral,
 
-    // Punctuation
+    // Punctuation and keywords
     Newline,
     Comma,
+    Keyword(Keyword),
+    EOF,
+}
 
-    // Other keywords
+#[derive(Debug, PartialEq, Clone)]
+pub enum Keyword {
     Is,
     Was,
     Not,
@@ -87,34 +92,41 @@ pub enum Token {
     And,
     Or,
     Nor,
-
-    EOF,
 }
 
-impl Token {
+impl<'input> Token<'input> {
+    pub fn make_owned(self) -> Token<'static> {
+        match self {
+            Token::StringLiteral(s) => {
+                let string: String = match Rc::try_unwrap(s) {
+                    Ok(cow) => cow.to_string(),
+                    Err(rc) => rc.as_ref().to_string(),
+                };
+                Token::StringLiteral(Rc::new(Cow::Owned(string)))
+            },
+
+            Token::ProperVar(s) => Token::ProperVar(s),
+            Token::CommonVar(s) => Token::CommonVar(s),
+            Token::Pronoun(s) => Token::Pronoun(s),
+            Token::CommonPrep(s) => Token::CommonPrep(s),
+
+            Token::BooleanLiteral(b) => Token::BooleanLiteral(b),
+            Token::NumberLiteral(n) => Token::NumberLiteral(n),
+            Token::MysteriousLiteral => Token::MysteriousLiteral,
+            Token::NullLiteral => Token::NullLiteral,
+
+            Token::Newline => Token::Newline,
+            Token::Comma => Token::Comma,
+            Token::Keyword(kw) => Token::Keyword(kw),
+            Token::EOF => Token::EOF,
+        }
+    }
+
     fn is_keyword(&self) -> bool {
-        use self::Token::*;
-
+        // FIXME: determine if it matters that EOF is treated as a keyword here
         match *self {
-            // Variables etc.
-            ProperVar(_) |
-            CommonVar(_) |
-            Pronoun(_) |
-            CommonPrep(_) => false,
-
-            // Type literals and constants
-            StringLiteral(_) |
-            NumberLiteral(_) |
-            BooleanLiteral(_) |
-            MysteriousLiteral |
-            NullLiteral => false,
-
-            // Punctuation
-            Newline |
-            Comma => false,
-
-            // Keywords
-            _ => true,
+            Token::Keyword(_) | Token::EOF => true,
+            _ => false,
         }
     }
 
@@ -130,9 +142,14 @@ impl Token {
     }
 
     fn opens_block(&self) -> bool {
-        use self::Token::*;
+        use self::Keyword::*;
 
-        match *self {
+        let keyword = match self {
+            Token::Keyword(kw) => kw,
+            _ => return false,
+        };
+
+        match keyword {
             If | Else | While | Until | Takes => true,
             _ => false,
         }
@@ -175,8 +192,11 @@ impl Token {
     }
 }
 
-impl fmt::Display for Token {
+impl<'input> fmt::Display for Token<'input> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::Token::Keyword as Kw;
+        use self::Keyword::*;
+
         match *self {
             Token::ProperVar(ref s) |
             Token::CommonVar(ref s) |
@@ -196,45 +216,45 @@ impl fmt::Display for Token {
             Token::Newline => write!(f, "⏎"),
             Token::Comma => write!(f, ","),
 
-            Token::Is => write!(f, "is"),
-            Token::Was => write!(f, "was"),
-            Token::Not => write!(f, "not"),
-            Token::Isnt => write!(f, "isn't"),
-            Token::Than => write!(f, "than"),
-            Token::As => write!(f, "as"),
-            Token::Greater => write!(f, "greater"),
-            Token::Less => write!(f, "less"),
-            Token::Great => write!(f, "great"),
-            Token::Little => write!(f, "little"),
-            Token::Put => write!(f, "put"),
-            Token::Into => write!(f, "into"),
-            Token::Build => write!(f, "build"),
-            Token::Up => write!(f, "up"),
-            Token::Knock => write!(f, "knock"),
-            Token::Down => write!(f, "down"),
-            Token::Plus => write!(f, "plus"),
-            Token::Minus => write!(f, "minus"),
-            Token::Times => write!(f, "times"),
-            Token::Over => write!(f, "over"),
-            Token::Listen => write!(f, "listen"),
-            Token::To => write!(f, "to"),
-            Token::Say => write!(f, "say"),
-            Token::Says => write!(f, "says"),
-            Token::If => write!(f, "if"),
-            Token::Else => write!(f, "else"),
-            Token::While => write!(f, "while"),
-            Token::Until => write!(f, "until"),
-            Token::Continue => write!(f, "continue"),
-            Token::Break => write!(f, "break"),
-            Token::Takes => write!(f, "takes"),
-            Token::Taking => write!(f, "taking"),
-            Token::Take => write!(f, "take"),
-            Token::From => write!(f, "from"),
-            Token::Give => write!(f, "give"),
-            Token::Back => write!(f, "back"),
-            Token::And => write!(f, "and"),
-            Token::Or => write!(f, "or"),
-            Token::Nor => write!(f, "nor"),
+            Kw(Is) => write!(f, "is"),
+            Kw(Was) => write!(f, "was"),
+            Kw(Not) => write!(f, "not"),
+            Kw(Isnt) => write!(f, "isn't"),
+            Kw(Than) => write!(f, "than"),
+            Kw(As) => write!(f, "as"),
+            Kw(Greater) => write!(f, "greater"),
+            Kw(Less) => write!(f, "less"),
+            Kw(Great) => write!(f, "great"),
+            Kw(Little) => write!(f, "little"),
+            Kw(Put) => write!(f, "put"),
+            Kw(Into) => write!(f, "into"),
+            Kw(Build) => write!(f, "build"),
+            Kw(Up) => write!(f, "up"),
+            Kw(Knock) => write!(f, "knock"),
+            Kw(Down) => write!(f, "down"),
+            Kw(Plus) => write!(f, "plus"),
+            Kw(Minus) => write!(f, "minus"),
+            Kw(Times) => write!(f, "times"),
+            Kw(Over) => write!(f, "over"),
+            Kw(Listen) => write!(f, "listen"),
+            Kw(To) => write!(f, "to"),
+            Kw(Say) => write!(f, "say"),
+            Kw(Says) => write!(f, "says"),
+            Kw(If) => write!(f, "if"),
+            Kw(Else) => write!(f, "else"),
+            Kw(While) => write!(f, "while"),
+            Kw(Until) => write!(f, "until"),
+            Kw(Continue) => write!(f, "continue"),
+            Kw(Break) => write!(f, "break"),
+            Kw(Takes) => write!(f, "takes"),
+            Kw(Taking) => write!(f, "taking"),
+            Kw(Take) => write!(f, "take"),
+            Kw(From) => write!(f, "from"),
+            Kw(Give) => write!(f, "give"),
+            Kw(Back) => write!(f, "back"),
+            Kw(And) => write!(f, "and"),
+            Kw(Or) => write!(f, "or"),
+            Kw(Nor) => write!(f, "nor"),
 
             Token::EOF => write!(f, "<eof>"),
         }
@@ -315,7 +335,7 @@ impl Tokenizer {
         self.source_locator.get_line_span(&self.content, start, end)
     }
 
-    pub fn tokenize(&self) -> TokenIterator {
+    pub fn tokenize<'input>(&'input self) -> TokenIterator<'input> {
         TokenIterator::new(&self)
     }
 }
@@ -324,14 +344,14 @@ impl Tokenizer {
 /// commas occurring before EOL. This can't easily be handled in parsing
 /// without ambiguity and putting it directly in the lexing code would
 /// be complicated.
-pub struct TokenIterator<'a> {
-    stream: TokenStream<'a>,
+pub struct TokenIterator<'input> {
+    stream: TokenStream<'input>,
     has_error: bool,
-    buf: Vec<(usize, Token, usize)>,
+    buf: Vec<(usize, Token<'input>, usize)>,
 }
 
-impl<'a> TokenIterator<'a> {
-    fn new(tokenizer: &'a Tokenizer) -> Self {
+impl<'input> TokenIterator<'input> {
+    fn new(tokenizer: &'input Tokenizer) -> Self {
         TokenIterator {
             stream: TokenStream::new(tokenizer),
             has_error: false,
@@ -344,8 +364,8 @@ impl<'a> TokenIterator<'a> {
     }
 }
 
-impl<'a> ::std::iter::Iterator for TokenIterator<'a> {
-    type Item = Result<(usize, Token, usize), LexicalError>;
+impl<'input> Iterator for TokenIterator<'input> {
+    type Item = Result<(usize, Token<'input>, usize), LexicalError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.has_error {
@@ -390,16 +410,16 @@ impl<'a> ::std::iter::Iterator for TokenIterator<'a> {
     }
 }
 
-struct TokenStream<'a> {
-    tokenizer: &'a Tokenizer,
+struct TokenStream<'input> {
+    tokenizer: &'input Tokenizer,
     idx: usize,
     ctx: TCtx,
     line_begins_with_keyword: bool,
     open_blocks: usize,
 }
 
-impl<'a> TokenStream<'a> {
-    fn new(tokenizer: &'a Tokenizer) -> Self {
+impl<'input> TokenStream<'input> {
+    fn new(tokenizer: &'input Tokenizer) -> Self {
         let mut ctx = TCtx::default();
         ctx.at_start = true;
         TokenStream {
@@ -411,8 +431,8 @@ impl<'a> TokenStream<'a> {
         }
     }
 
-    fn emit(&mut self, length: usize, tok: Token, ctx: Option<TCtx>)
-        -> (usize, Token, usize)
+    fn emit(&mut self, length: usize, tok: Token<'input>, ctx: Option<TCtx>)
+        -> (usize, Token<'input>, usize)
     {
         let new_ctx = ctx.unwrap_or_default();
 
@@ -435,7 +455,7 @@ impl<'a> TokenStream<'a> {
         (start, tok, end)
     }
 
-    fn emit_eof(&mut self) -> Vec<(usize, Token, usize)> {
+    fn emit_eof(&mut self) -> Vec<(usize, Token<'input>, usize)> {
         let mut toks = vec![];
 
         if !self.ctx.prev_was_eol {
@@ -459,7 +479,7 @@ impl<'a> TokenStream<'a> {
         !self.ctx.eof_reached
     }
 
-    fn rest(&self) -> &str {
+    fn rest(&self) -> &'input str {
         &self.tokenizer.content[self.idx..]
     }
 
@@ -467,7 +487,7 @@ impl<'a> TokenStream<'a> {
         self.rest().chars().next()
     }
 
-    fn take_more(&mut self) -> Result<Vec<(usize, Token, usize)>, LexicalError> {
+    fn take_more(&mut self) -> Result<Vec<(usize, Token<'input>, usize)>, LexicalError> {
         // General guidelines: any mutation of the tokenization should
         // occur from this function or the emit functions.
 
@@ -490,7 +510,9 @@ impl<'a> TokenStream<'a> {
                     LexAction::NoAction
                 };
 
-                return self.emit_and_handle_lex_action(end, Some(Token::Is), action);
+                return self.emit_and_handle_lex_action(
+                    end, Some(Token::Keyword(Keyword::Is)), action
+                );
             }
 
             if let Some(end) = APOS.find(self.rest()).map(|m| m.end()) {
@@ -518,8 +540,12 @@ impl<'a> TokenStream<'a> {
         }
 
         // Handle string literal
-        if let Some((len, s)) = STRING.captures(self.rest()).map(|c| (c[0].len(), c[1].to_owned())) {
-            let tok = Token::StringLiteral(Rc::new(s));
+        if let Some(captures) = STRING.captures(self.rest()) {
+            let len = captures[0].len();
+
+            let value = captures.get(1).expect("string capture").as_str();
+            let tok = Token::StringLiteral(Rc::new(Cow::Borrowed(value)));
+
             return Ok(vec![
                 self.emit(len, tok, None)
             ]);
@@ -543,14 +569,14 @@ impl<'a> TokenStream<'a> {
         // Handle "take it to the top" for continue
         if let Some(end) = TAKE_IT_TO_THE_TOP.find(self.rest()).map(|m| m.end()) {
             return Ok(vec![
-                self.emit(end, Token::Continue, None)
+                self.emit(end, Token::Keyword(Keyword::Continue), None)
             ]);
         }
 
         // Handle "break it down" for break
         if let Some(end) = BREAK_IT_DOWN.find(self.rest()).map(|m| m.end()) {
             return Ok(vec![
-                self.emit(end, Token::Break, None)
+                self.emit(end, Token::Keyword(Keyword::Break), None)
             ]);
         }
 
@@ -570,9 +596,12 @@ impl<'a> TokenStream<'a> {
     /// Parse a keyword or variable and handle any contextually-triggered
     /// actions (e.g., poetic variables which break the normal lexing
     /// rules)
-    fn emit_and_handle_lex_action(&mut self, word_len: usize, tok: Option<Token>, action: LexAction)
-        -> Result<Vec<(usize, Token, usize)>, LexicalError>
-    {
+    fn emit_and_handle_lex_action(
+        &mut self,
+        word_len: usize,
+        tok: Option<Token<'input>>,
+        action: LexAction,
+    ) -> Result<Vec<(usize, Token<'input>, usize)>, LexicalError> {
         let mut to_emit = vec![];
 
         if let Some(tok) = tok {
@@ -599,22 +628,23 @@ impl<'a> TokenStream<'a> {
             .map(|m| m.end())
     }
 
-    fn handle_word(&self, word: String) -> Result<(Option<Token>, LexAction), LexicalError> {
+    fn handle_word(&self, word: String) -> Result<(Option<Token<'input>>, LexAction), LexicalError> {
         if let Some(token) = self.match_keyword_or_constant(&word) {
             if self.ctx.poetic_number_or_keyword && !(token.is_keyword() || token.is_constant()) {
                 return Ok((None, LexAction::TakePoeticNumber));
             }
 
+            use self::Keyword::{Says, Was, Is};
             let action;
 
             match token {
-                Token::Says => {
+                Token::Keyword(Says) => {
                     action = LexAction::TakePoeticString;
                 }
-                Token::Was => {
+                Token::Keyword(Was) => {
                     action = LexAction::TakePoeticNumber;
                 }
-                Token::Is if self.line_is_poetic_string_candidate() => {
+                Token::Keyword(Is) if self.line_is_poetic_string_candidate() => {
                     action = LexAction::CheckKeywordOrPoeticString;
                 }
                 _ => {
@@ -638,7 +668,7 @@ impl<'a> TokenStream<'a> {
     }
 
     fn handle_action(&self, action: LexAction)
-        -> Result<Option<(usize, usize, Token, Option<TCtx>)>, LexicalError>
+        -> Result<Option<(usize, usize, Token<'input>, Option<TCtx>)>, LexicalError>
     {
         match action {
             LexAction::NoAction | LexAction::CheckKeywordOrPoeticString => Ok(None),
@@ -655,7 +685,7 @@ impl<'a> TokenStream<'a> {
 
                 let (end, tok) = {
                     let (content, end) = self.capture_to_end_of_line_from(skip);
-                    let tok = Token::StringLiteral(Rc::new(content.to_owned()));
+                    let tok = Token::StringLiteral(Rc::new(Cow::Borrowed(content)));
                     (end, tok)
                 };
 
@@ -709,7 +739,9 @@ impl<'a> TokenStream<'a> {
         }
     }
 
-    fn match_keyword_or_constant(&self, word: &str) -> Option<Token> {
+    fn match_keyword_or_constant(&self, word: &str) -> Option<Token<'input>> {
+        use self::Keyword::*;
+
         let lower = word.to_lowercase();
 
         // Restrict value keywords to be lowercase
@@ -742,60 +774,60 @@ impl<'a> TokenStream<'a> {
                 Token::BooleanLiteral(false)
             },
 
-            "is" => Token::Is,
-            "was" | "were" => Token::Was,
-            "not" => Token::Not,
-            "isnt" | "aint" => Token::Isnt,
+            "is" => Token::Keyword(Is),
+            "was" | "were" => Token::Keyword(Was),
+            "not" => Token::Keyword(Not),
+            "isnt" | "aint" => Token::Keyword(Isnt),
 
-            "as" => Token::As,
-            "than" => Token::Than,
+            "as" => Token::Keyword(As),
+            "than" => Token::Keyword(Than),
 
-            "higher" | "greater" | "bigger" | "stronger" => Token::Greater,
-            "lower" | "less" | "smaller" | "weaker" => Token::Less,
+            "higher" | "greater" | "bigger" | "stronger" => Token::Keyword(Greater),
+            "lower" | "less" | "smaller" | "weaker" => Token::Keyword(Less),
 
-            "high" | "great" | "big" | "strong" => Token::Great,
-            "low" | "little" | "small" | "weak" => Token::Little,
+            "high" | "great" | "big" | "strong" => Token::Keyword(Great),
+            "low" | "little" | "small" | "weak" => Token::Keyword(Little),
 
-            "put" => Token::Put,
-            "into" => Token::Into,
+            "put" => Token::Keyword(Put),
+            "into" => Token::Keyword(Into),
 
-            "build" => Token::Build,
-            "up" => Token::Up,
+            "build" => Token::Keyword(Build),
+            "up" => Token::Keyword(Up),
 
-            "knock" => Token::Knock,
-            "down" => Token::Down,
+            "knock" => Token::Keyword(Knock),
+            "down" => Token::Keyword(Down),
 
-            "plus" | "with" => Token::Plus,
-            "minus" | "without" => Token::Minus,
-            "times" | "of" => Token::Times,
-            "over" => Token::Over,
+            "plus" | "with" => Token::Keyword(Plus),
+            "minus" | "without" => Token::Keyword(Minus),
+            "times" | "of" => Token::Keyword(Times),
+            "over" => Token::Keyword(Over),
 
-            "listen" => Token::Listen,
-            "to" => Token::To,
+            "listen" => Token::Keyword(Listen),
+            "to" => Token::Keyword(To),
 
-            "say" | "shout" | "whisper" | "scream" => Token::Say,
-            "says" => Token::Says,
+            "say" | "shout" | "whisper" | "scream" => Token::Keyword(Say),
+            "says" => Token::Keyword(Says),
 
-            "if" => Token::If,
-            "else" => Token::Else,
-            "while" => Token::While,
-            "until" => Token::Until,
+            "if" => Token::Keyword(If),
+            "else" => Token::Keyword(Else),
+            "while" => Token::Keyword(While),
+            "until" => Token::Keyword(Until),
 
-            "continue" => Token::Continue,
-            "break" => Token::Break,
+            "continue" => Token::Keyword(Continue),
+            "break" => Token::Keyword(Break),
 
-            "takes" => Token::Takes,
-            "taking" => Token::Taking,
+            "takes" => Token::Keyword(Takes),
+            "taking" => Token::Keyword(Taking),
 
-            "take" => Token::Take,
-            "from" => Token::From,
+            "take" => Token::Keyword(Take),
+            "from" => Token::Keyword(From),
 
-            "give" => Token::Give,
-            "back" => Token::Back,
+            "give" => Token::Keyword(Give),
+            "back" => Token::Keyword(Back),
 
-            "and" => Token::And,
-            "or" => Token::Or,
-            "nor" => Token::Nor,
+            "and" => Token::Keyword(And),
+            "or" => Token::Keyword(Or),
+            "nor" => Token::Keyword(Nor),
 
             _ => return None,
         };
@@ -875,7 +907,7 @@ impl<'a> TokenStream<'a> {
         self.capture_to_end_of_line_from(0)
     }
 
-    fn capture_to_end_of_line_from(&self, idx: usize) -> (&str, usize) {
+    fn capture_to_end_of_line_from(&self, idx: usize) -> (&'input str, usize) {
         let slice = &self.rest()[idx..];
 
         match NEWLINE_SEARCH.find(slice) {
@@ -901,14 +933,21 @@ enum LexAction {
 
 #[cfg(test)]
 mod test {
-    use std::rc::Rc;
-    use super::{LexicalError, Token, Tokenizer};
+    use std::{
+        borrow::Cow,
+        rc::Rc,
+    };
+    use super::{LexicalError, Token, Keyword, Tokenizer};
 
-    fn toks<S>(input: S) -> Vec<(usize, Token, usize)>
-        where S: Into<String>
+    fn toks<S, F>(input: S, f: F)
+        where
+            S: Into<String>,
+            F: for<'input> FnOnce(Vec<(usize, Token<'input>, usize)>),
     {
         let tokenizer = Tokenizer::new(input.into());
-        tokenizer.tokenize().collect::<Result<Vec<_>, _>>().unwrap()
+        let tokens = tokenizer.tokenize().collect::<Result<Vec<_>, _>>().unwrap();
+
+        f(tokens);
     }
 
     fn tok_err<S>(input: S) -> LexicalError
@@ -916,6 +955,18 @@ mod test {
     {
         let tokenizer = Tokenizer::new(input.into());
         tokenizer.tokenize().collect::<Result<Vec<_>, _>>().unwrap_err()
+    }
+
+    macro_rules! assert_toks {
+        ($input:expr, $($x:tt)*) => {
+            toks($input, |out| assert_eq!(out, $($x)*));
+        };
+    }
+
+    macro_rules! assert_first_tok {
+        ($input:expr, $($x:tt)*) => {
+            toks($input, |out| assert_eq!(out[0], $($x)*));
+        };
     }
 
     macro_rules! extend_vec {
@@ -936,7 +987,7 @@ mod test {
             (8, Token::EOF, 8),
         ];
 
-        assert_eq!(toks(input), expected);
+        assert_toks!(input, expected);
     }
 
     #[test]
@@ -952,20 +1003,22 @@ mod test {
             (7, Token::EOF, 7),
         ];
 
-        assert_eq!(toks(input), expected);
+        assert_toks!(input, expected);
     }
 
     #[test]
     fn insert_block_terminations_at_eof() {
         let input = "while true is true\nSay \"okay\"";
         //           0123456789012345678 90123 45678 9
-        let t = toks(input);
-        assert_eq!(&t[t.len() - 4..], &[
-            (23, Token::StringLiteral(Rc::new("okay".to_owned())), 29),
-            (29, Token::Newline, 29),
-            (29, Token::Newline, 29),
-            (29, Token::EOF, 29),
-        ]);
+
+        toks(input, |t| {
+            assert_eq!(&t[t.len() - 4..], &[
+                (23, Token::StringLiteral(Rc::new(Cow::Owned("okay".to_owned()))), 29),
+                (29, Token::Newline, 29),
+                (29, Token::Newline, 29),
+                (29, Token::EOF, 29),
+            ]);
+        });
     }
 
     #[test]
@@ -973,7 +1026,7 @@ mod test {
         let input = "its very,,,\n,,\ninteresting, indeed,";
         //           012345678901 234 56789012345678901234
 
-        assert_eq!(toks(input), vec![
+        assert_toks!(input, vec![
             (0, Token::CommonVar("its".into()), 3),
             (4, Token::CommonVar("very".into()), 8),
             (11, Token::Newline, 12),
@@ -992,10 +1045,10 @@ mod test {
         //           0123456789012345 6789012345678901234567890123
         //           0         1          2         3         4
 
-        assert_eq!(toks(input), &[
-            (0, Token::If, 2),
+        assert_toks!(input, &[
+            (0, Token::Keyword(Keyword::If), 2),
             (35, Token::ProperVar("X".into()), 36),
-            (37, Token::Is, 39),
+            (37, Token::Keyword(Keyword::Is), 39),
             (40, Token::BooleanLiteral(true), 44),
             (44, Token::Newline, 44),
             (44, Token::Newline, 44),
@@ -1018,12 +1071,12 @@ mod test {
         //           01234567890123456789012
 
         let expected = &[
-            (0, Token::If, 2),
+            (0, Token::Keyword(Keyword::If), 2),
             (3, Token::ProperVar("Johnny B Goode".into()), 17),
-            (18, Token::Great, 23),
+            (18, Token::Keyword(Keyword::Great), 23),
         ];
 
-        assert_eq!(&toks(input)[..3], expected);
+        toks(input, |t| assert_eq!(&t[..3], expected));
     }
 
     #[test]
@@ -1035,8 +1088,8 @@ mod test {
 
         let base = vec![
             (0, Token::ProperVar("Johnny".into()), 6),
-            (7, Token::Says, 11),
-            (12, Token::StringLiteral(Rc::new(" 忠犬ハチ公,,".to_owned())), end),
+            (7, Token::Keyword(Keyword::Says), 11),
+            (12, Token::StringLiteral(Rc::new(Cow::Owned(" 忠犬ハチ公,,".to_owned()))), end),
         ];
 
         let expected = extend_vec!(base, vec![
@@ -1044,14 +1097,14 @@ mod test {
             (end, Token::EOF, end),
         ]);
 
-        assert_eq!(toks(input), expected, "no EOL");
+        assert_toks!(input, expected, "no EOL");
 
         let expected = extend_vec!(base, vec![
             (end, Token::Newline, end + 1),
             (end + 1, Token::EOF, end + 1),
         ]);
 
-        assert_eq!(toks(input.to_owned() + "\n"), expected, "with EOL");
+        assert_toks!(input.to_owned() + "\n", expected, "with EOL");
     }
 
     #[test]
@@ -1065,7 +1118,7 @@ mod test {
         let base = vec![
             (0, Token::CommonPrep("my".into()), 2),
             (3, Token::CommonVar("dreams".into()), 9),
-            (10, Token::Was, 14),
+            (10, Token::Keyword(Keyword::Was), 14),
             (18, Token::NumberLiteral(334.0), end),
         ];
 
@@ -1074,14 +1127,14 @@ mod test {
             (end, Token::EOF, end),
         ]);
 
-        assert_eq!(toks(input), expected, "no EOL");
+        assert_toks!(input, expected, "no EOL");
 
         let expected = extend_vec!(base, vec![
             (end, Token::Newline, end + 1),
             (end + 1, Token::EOF, end + 1),
         ]);
 
-        assert_eq!(toks(input.to_owned() + "\n"), expected, "with EOL");
+        assert_toks!(input.to_owned() + "\n", expected, "with EOL");
     }
 
     #[test]
@@ -1094,7 +1147,7 @@ mod test {
         let base = vec![
             (0, Token::CommonPrep("my".into()), 2),
             (3, Token::CommonVar("dreams".into()), 9),
-            (10, Token::Was, 14),
+            (10, Token::Keyword(Keyword::Was), 14),
             (19, Token::NumberLiteral(3.1415926535), end),
         ];
 
@@ -1103,27 +1156,27 @@ mod test {
             (end, Token::EOF, end),
         ]);
 
-        assert_eq!(toks(input), expected, "no EOL");
+        assert_toks!(input, expected, "no EOL");
 
         let expected = extend_vec!(base, vec![
             (end, Token::Newline, end + 1),
             (end + 1, Token::EOF, end + 1),
         ]);
 
-        assert_eq!(toks(input.to_owned() + "\n"), expected, "with EOL");
+        assert_toks!(input.to_owned() + "\n", expected, "with EOL");
     }
 
     #[test]
     fn parse_literal_number() {
-        assert_eq!(toks("0.2")[0], (0, Token::NumberLiteral(0.2), 3));
-        assert_eq!(toks(".2")[0], (0, Token::NumberLiteral(0.2), 2));
-        assert_eq!(toks("100")[0], (0, Token::NumberLiteral(100.0), 3));
+        assert_first_tok!("0.2", (0, Token::NumberLiteral(0.2), 3));
+        assert_first_tok!(".2", (0, Token::NumberLiteral(0.2), 2));
+        assert_first_tok!("100", (0, Token::NumberLiteral(100.0), 3));
     }
 
     #[test]
     fn parse_long_loop_controls() {
-        assert_eq!(toks("Take it to the top")[0], (0, Token::Continue, 18));
-        assert_eq!(toks("Break it down")[0], (0, Token::Break, 13));
+        assert_first_tok!("Take it to the top", (0, Token::Keyword(Keyword::Continue), 18));
+        assert_first_tok!("Break it down", (0, Token::Keyword(Keyword::Break), 13));
     }
 
     #[test]
@@ -1131,9 +1184,9 @@ mod test {
         let input = "Union's been on strike";
         //           0123456789012345678901
         //           0         1         2
-        assert_eq!(toks(input), vec![
+        assert_toks!(input, vec![
             (0, Token::ProperVar("Union".into()), 5),
-            (5, Token::Is, 7),
+            (5, Token::Keyword(Keyword::Is), 7),
             (8, Token::NumberLiteral(426.0), 22),
             (22, Token::Newline, 22),
             (22, Token::EOF, 22),
@@ -1145,9 +1198,9 @@ mod test {
         let input = "Union 's been on strike";
         //           01234567890123456789012
         //           0         1         2
-        assert_eq!(toks(input), vec![
+        assert_toks!(input, vec![
             (0, Token::ProperVar("Union".into()), 5),
-            (6, Token::Is, 8),
+            (6, Token::Keyword(Keyword::Is), 8),
             (9, Token::NumberLiteral(426.0), 23),
             (23, Token::Newline, 23),
             (23, Token::EOF, 23),
@@ -1159,7 +1212,7 @@ mod test {
         let input = "a '''' wakin'up Sleepin' I''n";
         //           012345678901234567890123456789
         //           0         1         2
-        assert_eq!(toks(input), vec![
+        assert_toks!(input, vec![
             (0, Token::CommonPrep("a".into()), 1),
             (7, Token::CommonVar("wakinup".into()), 15),
             (16, Token::ProperVar("Sleepin In".into()), 29),
@@ -1172,9 +1225,9 @@ mod test {
     fn parse_aint() {
         let input = "It ain't nothing";
         //           0123456789012345
-        assert_eq!(toks(input), vec![
+        assert_toks!(input, vec![
             (0, Token::Pronoun("It".into()), 2),
-            (3, Token::Isnt, 8),
+            (3, Token::Keyword(Keyword::Isnt), 8),
             (9, Token::NullLiteral, 16),
             (16, Token::Newline, 16),
             (16, Token::EOF, 16),

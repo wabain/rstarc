@@ -34,22 +34,33 @@ pub(crate) const BINARY_NAME: &str = "rstarc";
 fn main() {
     let action = build_action(&build_cli().get_matches());
 
-    let (tokenizer, res) = match load_source(&action.source) {
-        Ok(tokenizer) => {
-            let res = run(&action, &tokenizer);
-            (Some(tokenizer), res)
-        }
-        Err(e) => (None, Err(e.into())),
-    };
+    let res = load_source(&action.source)
+        .map_err(|e| (e.into(), None))
+        .and_then(|tokenizer| {
+            run(&action, &tokenizer).map_err(|e| match e {
+                MainError::Runtime(err) => (err, Some(tokenizer)),
+                MainError::TokenizerOverride(err, tok) => (err, Some(tok)),
+            })
+        });
 
     match res {
-        Err(err) => report_error_and_exit(err, &tokenizer),
-        Ok(Some(code)) => process::exit(code),
-        Ok(None) => {}
+        Ok(code) => process::exit(code.unwrap_or(0)),
+        Err((err, toks)) => report_error_and_exit(err, toks.as_ref()),
     }
 }
 
-fn report_error_and_exit(err: RuntimeError, tokenizer: &Option<Tokenizer>) -> ! {
+enum MainError {
+    Runtime(RuntimeError),
+    TokenizerOverride(RuntimeError, Tokenizer),
+}
+
+impl<T> From<T> for MainError where T: Into<RuntimeError> {
+    fn from(err: T) -> Self {
+        MainError::Runtime(err.into())
+    }
+}
+
+fn report_error_and_exit(err: RuntimeError, tokenizer: Option<&Tokenizer>) -> ! {
     eprintln!("{}", err);
 
     if let Some((start, end)) = err.span() {
@@ -380,7 +391,7 @@ fn load_source(source: &str) -> io::Result<Tokenizer> {
     Ok(Tokenizer::from_file(&mut src_buf)?)
 }
 
-fn run(action: &Action, tokenizer: &Tokenizer) -> Result<Option<i32>, RuntimeError> {
+fn run(action: &Action, tokenizer: &Tokenizer) -> Result<Option<i32>, MainError> {
     let Action {
         ref source,
         execution_mode,
@@ -408,16 +419,11 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<Option<i32>, RuntimeErr
     }
 
     match debug_output {
-        Some(DebugOutputFormat::Pretty { iterated }) => {
-            let pretty_tree;
-            let out_tree = if !iterated {
-                &tree
-            } else {
-                pretty_tree = reparse_pretty_tree_or_exit(&tree)?;
-                &pretty_tree
-            };
-
-            syntax::pretty_print::pretty_print_program(io::stdout(), out_tree)?;
+        Some(DebugOutputFormat::Pretty { iterated: false }) => {
+            syntax::pretty_print::pretty_print_program(io::stdout(), &tree)?;
+        }
+        Some(DebugOutputFormat::Pretty { iterated: true }) => {
+            output_iterated_pretty_print(&tree)?;
         }
         Some(DebugOutputFormat::AST) => {
             syntax::ast_print::ast_print_program(io::stdout(), &tree)?;
@@ -491,14 +497,7 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<Option<i32>, RuntimeErr
     Ok(None)
 }
 
-/// Capture the output of the pretty printer and reparse it, outputting the
-/// reparsed AST to be pretty-printed again. This function exits on failure to
-/// reparse so that it can display syntax errors using the right tokenizer.
-/// This is a bit hacky but this functionality is only really intended for
-/// testing the compiler anyway.
-fn reparse_pretty_tree_or_exit(tree: &[syntax::ast::Statement])
-    -> Result<Vec<syntax::ast::Statement>, RuntimeError>
-{
+fn output_iterated_pretty_print(tree: &[syntax::ast::Statement]) -> Result<(), MainError> {
     use bytes::BufMut;
     let mut buf_stream = Vec::new().writer();
 
@@ -509,13 +508,16 @@ fn reparse_pretty_tree_or_exit(tree: &[syntax::ast::Statement])
 
     let tokenizer = Tokenizer::new(pretty_src);
 
-    match syntax::parser::ProgramParser::new().parse(tokenizer.tokenize()) {
-        Ok(tree) => Ok(tree),
-        Err(e) => {
+    syntax::parser::ProgramParser::new().parse(tokenizer.tokenize())
+        .map_err(|err| -> RuntimeError { err.into() })
+        .and_then(|pretty_tree| {
+            syntax::pretty_print::pretty_print_program(io::stdout(), &pretty_tree)
+                .map_err(|err| err.into())
+        })
+        .map_err(|err| {
             eprintln!("Failed to reparse pretty printed output:");
-            report_error_and_exit(e.into(), &Some(tokenizer))
-        }
-    }
+            MainError::TokenizerOverride(err, tokenizer)
+        })
 }
 
 // FIXME: For now, hardcode a recursion into the runtime release target

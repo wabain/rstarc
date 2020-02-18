@@ -6,55 +6,55 @@ use syntax::lexer::Token;
 pub struct Pos(pub usize, pub usize);
 
 #[derive(Debug)]
-pub struct Statement {
-    pub kind: StatementKind,
+pub struct Statement<'a> {
+    pub kind: StatementKind<'a>,
     pub pos: Pos,
 }
 
 #[derive(Debug)]
-pub enum StatementKind {
-    Assign(LValue, Expr),
-    Incr(LValue, u32),
-    Decr(LValue, u32),
-    Say(Expr),
+pub enum StatementKind<'a> {
+    Assign(LValue<'a>, Expr<'a>),
+    Incr(LValue<'a>, u32),
+    Decr(LValue<'a>, u32),
+    Say(Expr<'a>),
 
     Continue,
     Break,
-    Return(Expr),
+    Return(Expr<'a>),
 
-    Condition(Expr, Vec<Statement>, Vec<Statement>),
-    While(Expr, Vec<Statement>),
-    Until(Expr, Vec<Statement>),
-    FuncDef(Variable, Vec<Variable>, Vec<Statement>),
+    Condition(Expr<'a>, Vec<Statement<'a>>, Vec<Statement<'a>>),
+    While(Expr<'a>, Vec<Statement<'a>>),
+    Until(Expr<'a>, Vec<Statement<'a>>),
+    FuncDef(Variable<'a>, Vec<Variable<'a>>, Vec<Statement<'a>>),
 }
 
 #[derive(Debug)]
-pub enum Expr {
-    LValue(LValue),
-    Literal(Token),
-    Compare(Box<Comparison>),
-    FuncCall(Box<Expr>, Vec<Box<Expr>>),
+pub enum Expr<'a> {
+    LValue(LValue<'a>),
+    Literal(Token<'a>),
+    Compare(Box<Comparison<'a>>),
+    FuncCall(Box<Expr<'a>>, Vec<Box<Expr<'a>>>),
 
-    Add(Box<Expr>, Box<Expr>),
-    Sub(Box<Expr>, Box<Expr>),
-    Mul(Box<Expr>, Box<Expr>),
-    Div(Box<Expr>, Box<Expr>),
+    Add(Box<Expr<'a>>, Box<Expr<'a>>),
+    Sub(Box<Expr<'a>>, Box<Expr<'a>>),
+    Mul(Box<Expr<'a>>, Box<Expr<'a>>),
+    Div(Box<Expr<'a>>, Box<Expr<'a>>),
 
-    Logical(Box<Logical>),
+    Logical(Box<Logical<'a>>),
 }
 
-impl Expr {
-    pub fn compare(comparison: Comparison) -> Self {
+impl<'a> Expr<'a> {
+    pub fn compare(comparison: Comparison<'a>) -> Self {
         Expr::Compare(Box::new(comparison))
     }
 
-    pub fn logical(logical: Logical) -> Self {
+    pub fn logical(logical: Logical<'a>) -> Self {
         Expr::Logical(Box::new(logical))
     }
 }
 
 #[derive(Debug)]
-pub struct Comparison(pub Expr, pub Comparator, pub Expr);
+pub struct Comparison<'a>(pub Expr<'a>, pub Comparator, pub Expr<'a>);
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Comparator {
@@ -67,19 +67,19 @@ pub enum Comparator {
 }
 
 #[derive(Debug)]
-pub enum Logical {
-    Not(Expr),
-    And(Expr, Expr),
-    Or(Expr, Expr),
-    Nor(Expr, Expr),
+pub enum Logical<'a> {
+    Not(Expr<'a>),
+    And(Expr<'a>, Expr<'a>),
+    Or(Expr<'a>, Expr<'a>),
+    Nor(Expr<'a>, Expr<'a>),
 }
 
-pub enum LValue {
-    Variable(Variable),
-    Pronoun(Token),
+pub enum LValue<'a> {
+    Variable(Variable<'a>),
+    Pronoun(Token<'a>),
 }
 
-impl fmt::Debug for LValue {
+impl<'a> fmt::Debug for LValue<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             LValue::Variable(Variable::ProperVar(p, pos)) => write!(f, "ProperVar({} [{:?}])", p, pos),
@@ -90,13 +90,13 @@ impl fmt::Debug for LValue {
 }
 
 #[derive(Debug)]
-pub enum Variable {
-    ProperVar(Token, Pos),
-    CommonVar(Token, Token, Pos),
+pub enum Variable<'a> {
+    ProperVar(Token<'a>, Pos),
+    CommonVar(Token<'a>, Token<'a>, Pos),
 }
 
-impl Variable {
-    pub fn to_lang_variable<'a>(&'a self) -> LangVariable<'a> {
+impl<'a> Variable<'a> {
+    pub fn to_lang_variable<'b>(&'b self) -> LangVariable<'b> {
         match self {
             Variable::CommonVar(prep, common, _pos) => {
                 LangVariable::Common(

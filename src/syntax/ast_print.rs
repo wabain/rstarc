@@ -70,7 +70,7 @@ pub trait AstPrint {
     fn ast_print<W>(&self, &mut W, indent: usize) -> io::Result<()> where W: io::Write;
 }
 
-impl AstPrint for Statement {
+impl<'input> AstPrint for Statement<'input> {
     fn ast_print<W>(&self, out: &mut W, indent: usize) -> io::Result<()> where W: io::Write {
         match &self.kind {
             StatementKind::Assign(lval, e) => {
@@ -112,7 +112,7 @@ impl AstPrint for Statement {
     }
 }
 
-impl AstPrint for Expr {
+impl<'input> AstPrint for Expr<'input> {
     fn ast_print<W>(&self, out: &mut W, indent: usize) -> io::Result<()> where W: io::Write {
         match *self {
             Expr::LValue(ref lval) => lval.ast_print(out, indent)?,
@@ -135,7 +135,7 @@ impl AstPrint for Expr {
     }
 }
 
-impl AstPrint for Logical {
+impl<'input> AstPrint for Logical<'input> {
     fn ast_print<W>(&self, out: &mut W, indent: usize) -> io::Result<()> where W: io::Write {
         match *self {
             Logical::Not(ref cond) => node!(out, indent, "Not", cond),
@@ -148,7 +148,7 @@ impl AstPrint for Logical {
     }
 }
 
-impl AstPrint for Comparison {
+impl<'input> AstPrint for Comparison<'input> {
     fn ast_print<W>(&self, out: &mut W, indent: usize) -> io::Result<()> where W: io::Write {
         let Comparison(ref e1, comparator, ref e2) = *self;
         let cmp = format!("{:?}", comparator);
@@ -157,7 +157,7 @@ impl AstPrint for Comparison {
     }
 }
 
-impl AstPrint for LValue {
+impl<'input> AstPrint for LValue<'input> {
     fn ast_print<W>(&self, out: &mut W, indent: usize) -> io::Result<()> where W: io::Write {
         match *self {
             LValue::Pronoun(ref p) => term!(out, indent, p),
@@ -167,7 +167,7 @@ impl AstPrint for LValue {
     }
 }
 
-impl AstPrint for Variable {
+impl<'input> AstPrint for Variable<'input> {
     fn ast_print<W>(&self, out: &mut W, indent: usize) -> io::Result<()> where W: io::Write {
         match *self {
             Variable::CommonVar(ref prep, ref var, _pos) => {

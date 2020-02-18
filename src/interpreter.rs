@@ -5,6 +5,7 @@ use std::mem;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::borrow::Cow;
 
 use smallvec::SmallVec;
 
@@ -69,7 +70,7 @@ impl fmt::Display for InterpreterError {
 
 type InterpResult<T> = Result<T, InterpreterError>;
 
-type InterpValue<'a> = BaseValue<InterpFunc<'a>>;
+type InterpValue<'a> = BaseValue<'a, InterpFunc<'a>>;
 type ValueCell<'a> = Rc<RefCell<InterpValue<'a>>>;
 type ScopeCell<'a> = Rc<RefCell<VariableScope<'a>>>;
 
@@ -78,7 +79,7 @@ struct InterpFunc<'a> {
     id: u64,
     static_scope_id: ScopeId,
     args: Vec<LangVariable<'a>>,
-    statements: &'a [Statement],
+    statements: &'a [Statement<'a>],
     parent_scope: ScopeCell<'a>,
 }
 
@@ -285,7 +286,7 @@ impl<'a, 'prog> Interpreter<'a, 'prog> {
         Ok(Flow::Next)
     }
 
-    fn eval_expr(&mut self, expr: &Expr) -> InterpResult<InterpValue<'a>> {
+    fn eval_expr(&mut self, expr: &'a Expr<'a>) -> InterpResult<InterpValue<'a>> {
         let value = match expr {
             Expr::LValue(lval) => {
                 let var = self.lval_to_var(lval);
@@ -348,7 +349,7 @@ impl<'a, 'prog> Interpreter<'a, 'prog> {
 
     fn exec_func_call(&mut self,
                       func_value: InterpValue<'a>,
-                      arg_exprs: &[Box<Expr>])
+                      arg_exprs: &'a [Box<Expr<'a>>])
         -> InterpResult<InterpValue<'a>>
     {
         let func = match func_value {
@@ -376,7 +377,7 @@ impl<'a, 'prog> Interpreter<'a, 'prog> {
         }
     }
 
-    fn eval_binary_op(&self, expr: &Expr, v1: InterpValue, v2: InterpValue)
+    fn eval_binary_op(&self, expr: &'a Expr<'a>, v1: InterpValue, v2: InterpValue)
         -> InterpResult<InterpValue<'a>>
     {
         let value = match (expr, &v1, &v2) {
@@ -399,7 +400,7 @@ impl<'a, 'prog> Interpreter<'a, 'prog> {
                         let mut combined = String::with_capacity(size);
                         combined.push_str(&s1);
                         combined.push_str(&s2);
-                        Value::String(Rc::new(combined))
+                        Value::String(Rc::new(Cow::Owned(combined)))
                     }
                     _ => return Err(InterpreterError::illegal_op("add", &v1, &v2)),
                 }
@@ -411,7 +412,7 @@ impl<'a, 'prog> Interpreter<'a, 'prog> {
                     return Err(InterpreterError::illegal_op("multiply", &v1, &v2));
                 }
                 let n = n.trunc() as usize;
-                Value::String(Rc::new(s.repeat(n)))
+                Value::String(Rc::new(Cow::Owned(s.repeat(n))))
             }
 
             _ => {
@@ -428,12 +429,12 @@ impl<'a, 'prog> Interpreter<'a, 'prog> {
         Ok(value)
     }
 
-    fn eval_cond(&mut self, cond: &Expr) -> InterpResult<bool> {
+    fn eval_cond(&mut self, cond: &'a Expr<'a>) -> InterpResult<bool> {
         let val = self.eval_expr(cond)?;
         Ok(val.coerce_boolean())
     }
 
-    fn eval_comparison(&mut self, comparison: &Comparison) -> InterpResult<bool> {
+    fn eval_comparison(&mut self, comparison: &'a Comparison<'a>) -> InterpResult<bool> {
         let Comparison(ref e1, comp, ref e2) = *comparison;
         let v1 = self.eval_expr(e1)?;
         let v2 = self.eval_expr(e2)?;
@@ -483,7 +484,7 @@ impl<'a, 'prog> Interpreter<'a, 'prog> {
 
     fn init_function_scope(&mut self,
                            func: &InterpFunc<'a>,
-                           arg_exprs: &[Box<Expr>])
+                           arg_exprs: &'a [Box<Expr<'a>>])
         -> InterpResult<VariableScope<'a>>
     {
         let scope_id = func.static_scope_id;

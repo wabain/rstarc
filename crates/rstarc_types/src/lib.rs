@@ -80,7 +80,7 @@ impl<'a> RockstarString for &'a str {
 }
 
 #[cfg(feature = "std")]
-impl RockstarString for std::rc::Rc<std::string::String> {
+impl<'a> RockstarString for std::rc::Rc<Cow<'a, str>> {
     fn string_borrow(&self) -> &str {
         &self
     }

@@ -14,7 +14,7 @@ pub type SrcPos = usize;
 
 /// A collector does a pass over the AST and notes all the variables
 /// assigned and read to in different scopes.
-pub fn identify_variable_scopes(program: &[Statement]) -> ScopeMap {
+pub fn identify_variable_scopes<'prog>(program: &'prog [Statement]) -> ScopeMap<'prog> {
     let mut builder = ScopeMapBuilder::new();
     builder.walk_tree(program);
     builder.to_scope_map()
@@ -397,7 +397,7 @@ impl<'prog> ScopeMapBuilder<'prog> {
     }
 }
 
-fn lval_to_lang_var(lval: &ast::LValue) -> LangVariable {
+fn lval_to_lang_var<'a>(lval: &'a ast::LValue) -> LangVariable<'a> {
     match lval {
         LValue::Variable(v) => v.to_lang_variable(),
         LValue::Pronoun(..) => unimplemented!("{:?}", lval),

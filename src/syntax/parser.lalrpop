@@ -1,19 +1,19 @@
-use syntax::lexer;
+use syntax::lexer::{self, Token};
 use syntax::ast;
 
-grammar;
+grammar<'input>();
 
-pub Program: Vec<ast::Statement> = {
+pub Program: Vec<ast::Statement<'input>> = {
     "\n"* <t:(TermStatement "\n"*)*> EOF =>
         t.into_iter().map(|(s, _)| s).collect::<Vec<_>>(),
 }
 
-TermStatement: ast::Statement = {
+TermStatement: ast::Statement<'input> = {
     <start:@L> <s:Statement> <end:@R> "\n" =>
         ast::Statement { kind: s, pos: ast::Pos(start, end) },
 }
 
-Statement: ast::StatementKind = {
+Statement: ast::StatementKind<'input> = {
     "Put" <e:Expr> "Into" <v:LValue> => ast::StatementKind::Assign(v, e),
 
     // The spec talks about "Literal Words" being allowed here without defining
@@ -53,7 +53,7 @@ DecrCount: u32 = {
     "Down" <c:DecrCount> => c + 1,
 }
 
-FuncDecArgs: Vec<ast::Variable> = {
+FuncDecArgs: Vec<ast::Variable<'input>> = {
     <v:(Variable FuncDecSep)*> <e:Variable?> => {
         let mut vars: Vec<_> = v.into_iter().map(|(var, _)| var).collect();
         if let Some(e) = e {
@@ -68,12 +68,12 @@ FuncDecSep: () = {
     "," => (),
 }
 
-Block: Vec<ast::Statement> = {
+Block: Vec<ast::Statement<'input>> = {
     <b:TermStatement*> => b
 }
 
 // Function calls are not allowed before "and" comparisons to prevent ambiguity
-Expr: ast::Expr = {
+Expr: ast::Expr<'input> = {
     <e1:PreConjunctionComparisonExpr> "And" <e2:Expr> =>
         ast::Expr::logical(ast::Logical::And(e1, e2)),
     <e1:ComparisonExpr> "Or" <e2:Expr> =>
@@ -83,13 +83,13 @@ Expr: ast::Expr = {
     ComparisonExpr => <>,
 }
 
-ComparisonExpr: ast::Expr = {
+ComparisonExpr: ast::Expr<'input> = {
     <a:AddExpr> <cmp:Comparator> <b:ComparisonExpr> =>
         ast::Expr::compare(ast::Comparison(a, cmp, b)),
     AddExpr => <>,
 }
 
-PreConjunctionComparisonExpr: ast::Expr = {
+PreConjunctionComparisonExpr: ast::Expr<'input> = {
     <a:AddExpr> <cmp:Comparator> <b:PreConjunctionComparisonExpr> =>
         ast::Expr::compare(ast::Comparison(a, cmp, b)),
     PreConjunctionAddExpr => <>,
@@ -104,41 +104,41 @@ Comparator: ast::Comparator = {
     "Is" "As" "Little" "As" => ast::Comparator::IsAsLittleAs,
 }
 
-AddExpr: ast::Expr = {
+AddExpr: ast::Expr<'input> = {
     MultExpr => <>,
     <e1:MultExpr> "Plus" <e2:AddExpr> => ast::Expr::Add(Box::new(e1), Box::new(e2)),
     <e1:MultExpr> "Minus" <e2:AddExpr> => ast::Expr::Sub(Box::new(e1), Box::new(e2)),
 }
 
-PreConjunctionAddExpr: ast::Expr = {
+PreConjunctionAddExpr: ast::Expr<'input> = {
     PreConjunctionMultExpr => <>,
     <e1:MultExpr> "Plus" <e2:PreConjunctionAddExpr> => ast::Expr::Add(Box::new(e1), Box::new(e2)),
     <e1:MultExpr> "Minus" <e2:PreConjunctionAddExpr> => ast::Expr::Sub(Box::new(e1), Box::new(e2)),
 }
 
-MultExpr: ast::Expr = {
+MultExpr: ast::Expr<'input> = {
     NotExpr => <>,
     <e1:NotExpr> "Times" <e2:MultExpr> => ast::Expr::Mul(Box::new(e1), Box::new(e2)),
     <e1:NotExpr> "Over" <e2:MultExpr> => ast::Expr::Div(Box::new(e1), Box::new(e2)),
 }
 
-PreConjunctionMultExpr: ast::Expr = {
+PreConjunctionMultExpr: ast::Expr<'input> = {
     PreConjunctionNotExpr => <>,
     <e1:NotExpr> "Times" <e2:PreConjunctionMultExpr> => ast::Expr::Mul(Box::new(e1), Box::new(e2)),
     <e1:NotExpr> "Over" <e2:PreConjunctionMultExpr> => ast::Expr::Div(Box::new(e1), Box::new(e2)),
 }
 
-NotExpr: ast::Expr = {
+NotExpr: ast::Expr<'input> = {
     "Not" <e:FuncCallExpr> => ast::Expr::logical(ast::Logical::Not(e)),
     FuncCallExpr => <>,
 }
 
-PreConjunctionNotExpr: ast::Expr = {
+PreConjunctionNotExpr: ast::Expr<'input> = {
     "Not" <e:SimpleExpr> => ast::Expr::logical(ast::Logical::Not(e)),
     SimpleExpr => <>,
 }
 
-FuncCallExpr: ast::Expr = {
+FuncCallExpr: ast::Expr<'input> = {
     <f:SimpleExpr> "Taking" <a:(SimpleExpr FuncArgSep)*> <an:SimpleExpr> => {
         let mut args: Vec<_> = a.into_iter().map(|(e, _)| Box::new(e)).collect();
         args.push(Box::new(an));
@@ -152,12 +152,12 @@ FuncArgSep: () = {
     "And" => (),
 }
 
-SimpleExpr: ast::Expr = {
+SimpleExpr: ast::Expr<'input> = {
     LValue => ast::Expr::LValue(<>),
     Literal => <>,
 }
 
-Literal: ast::Expr = {
+Literal: ast::Expr<'input> = {
     TStringLiteral => ast::Expr::Literal(<>),
     TBooleanLiteral => ast::Expr::Literal(<>),
     TNumberLiteral => ast::Expr::Literal(<>),
@@ -165,12 +165,12 @@ Literal: ast::Expr = {
     TNullLiteral => ast::Expr::Literal(<>),
 }
 
-LValue: ast::LValue = {
+LValue: ast::LValue<'input> = {
     Variable => ast::LValue::Variable(<>),
     TPronoun => ast::LValue::Pronoun(<>),
 }
 
-Variable: ast::Variable = {
+Variable: ast::Variable<'input> = {
     <start:@L> <v:TProperVar> <end:@R> =>
         ast::Variable::ProperVar(v, ast::Pos(start, end)),
     <start:@L> <p:TCommonPrep> <v:TCommonVar> <end:@R> =>
@@ -181,64 +181,64 @@ extern {
     type Location = usize;
     type Error = lexer::LexicalError;
 
-    enum lexer::Token {
+    enum Token<'input> {
         // Variables and friends
-        TProperVar => lexer::Token::ProperVar(_),
-        TCommonVar => lexer::Token::CommonVar(_),
-        TPronoun => lexer::Token::Pronoun(_),
-        TCommonPrep => lexer::Token::CommonPrep(_),
+        TProperVar => Token::ProperVar(_),
+        TCommonVar => Token::CommonVar(_),
+        TPronoun => Token::Pronoun(_),
+        TCommonPrep => Token::CommonPrep(_),
 
         // Types
-        TStringLiteral => lexer::Token::StringLiteral(_),
-        TBooleanLiteral => lexer::Token::BooleanLiteral(_),
-        TNumberLiteral => lexer::Token::NumberLiteral(_),
-        TMysteriousLiteral => lexer::Token::MysteriousLiteral,
-        TNullLiteral => lexer::Token::NullLiteral,
+        TStringLiteral => Token::StringLiteral(_),
+        TBooleanLiteral => Token::BooleanLiteral(_),
+        TNumberLiteral => Token::NumberLiteral(_),
+        TMysteriousLiteral => Token::MysteriousLiteral,
+        TNullLiteral => Token::NullLiteral,
 
         // Punctuation
-        "\n" => lexer::Token::Newline,
-        "," => lexer::Token::Comma,
+        "\n" => Token::Newline,
+        "," => Token::Comma,
 
         // Other keywords
-        "Is" => lexer::Token::Is,
-        "Was" => lexer::Token::Was,
-        "Not" => lexer::Token::Not,
-        "Isn't" => lexer::Token::Isnt,
-        "Than" => lexer::Token::Than,
-        "As" => lexer::Token::As,
-        "Greater" => lexer::Token::Greater,
-        "Less" => lexer::Token::Less,
-        "Great" => lexer::Token::Great,
-        "Little" => lexer::Token::Little,
-        "Put" => lexer::Token::Put,
-        "Into" => lexer::Token::Into,
-        "Build" => lexer::Token::Build,
-        "Up" => lexer::Token::Up,
-        "Knock" => lexer::Token::Knock,
-        "Down" => lexer::Token::Down,
-        "Plus" => lexer::Token::Plus,
-        "Minus" => lexer::Token::Minus,
-        "Times" => lexer::Token::Times,
-        "Over" => lexer::Token::Over,
-        "Listen" => lexer::Token::Listen,
-        "To" => lexer::Token::To,
-        "Say" => lexer::Token::Say,
-        "If" => lexer::Token::If,
-        "Else" => lexer::Token::Else,
-        "While" => lexer::Token::While,
-        "Until" => lexer::Token::Until,
-        "Continue" => lexer::Token::Continue,
-        "Break" => lexer::Token::Break,
-        "Takes" => lexer::Token::Takes,
-        "Taking" => lexer::Token::Taking,
-        "Take" => lexer::Token::Take,
-        "From" => lexer::Token::From,
-        "Give" => lexer::Token::Give,
-        "Back" => lexer::Token::Back,
-        "And" => lexer::Token::And,
-        "Or" => lexer::Token::Or,
-        "Nor" => lexer::Token::Nor,
+        "Is" => Token::Keyword(lexer::Keyword::Is),
+        "Was" => Token::Keyword(lexer::Keyword::Was),
+        "Not" => Token::Keyword(lexer::Keyword::Not),
+        "Isn't" => Token::Keyword(lexer::Keyword::Isnt),
+        "Than" => Token::Keyword(lexer::Keyword::Than),
+        "As" => Token::Keyword(lexer::Keyword::As),
+        "Greater" => Token::Keyword(lexer::Keyword::Greater),
+        "Less" => Token::Keyword(lexer::Keyword::Less),
+        "Great" => Token::Keyword(lexer::Keyword::Great),
+        "Little" => Token::Keyword(lexer::Keyword::Little),
+        "Put" => Token::Keyword(lexer::Keyword::Put),
+        "Into" => Token::Keyword(lexer::Keyword::Into),
+        "Build" => Token::Keyword(lexer::Keyword::Build),
+        "Up" => Token::Keyword(lexer::Keyword::Up),
+        "Knock" => Token::Keyword(lexer::Keyword::Knock),
+        "Down" => Token::Keyword(lexer::Keyword::Down),
+        "Plus" => Token::Keyword(lexer::Keyword::Plus),
+        "Minus" => Token::Keyword(lexer::Keyword::Minus),
+        "Times" => Token::Keyword(lexer::Keyword::Times),
+        "Over" => Token::Keyword(lexer::Keyword::Over),
+        "Listen" => Token::Keyword(lexer::Keyword::Listen),
+        "To" => Token::Keyword(lexer::Keyword::To),
+        "Say" => Token::Keyword(lexer::Keyword::Say),
+        "If" => Token::Keyword(lexer::Keyword::If),
+        "Else" => Token::Keyword(lexer::Keyword::Else),
+        "While" => Token::Keyword(lexer::Keyword::While),
+        "Until" => Token::Keyword(lexer::Keyword::Until),
+        "Continue" => Token::Keyword(lexer::Keyword::Continue),
+        "Break" => Token::Keyword(lexer::Keyword::Break),
+        "Takes" => Token::Keyword(lexer::Keyword::Takes),
+        "Taking" => Token::Keyword(lexer::Keyword::Taking),
+        "Take" => Token::Keyword(lexer::Keyword::Take),
+        "From" => Token::Keyword(lexer::Keyword::From),
+        "Give" => Token::Keyword(lexer::Keyword::Give),
+        "Back" => Token::Keyword(lexer::Keyword::Back),
+        "And" => Token::Keyword(lexer::Keyword::And),
+        "Or" => Token::Keyword(lexer::Keyword::Or),
+        "Nor" => Token::Keyword(lexer::Keyword::Nor),
 
-        EOF => lexer::Token::EOF,
+        EOF => Token::EOF,
     }
 }

@@ -3,6 +3,7 @@ use std::{
     iter,
     ptr::NonNull,
     rc::Rc,
+    borrow::Cow,
 };
 
 use rstarc_types::{Value, value_constants::*};
@@ -559,7 +560,7 @@ where
     /// Cache of strings used in scope
     /// FIXME: This should be program-wide, and should probably be done
     /// in an interning pass when converting to IR
-    string_cache: HashMap<Rc<String>, LLVMValueRef>,
+    string_cache: HashMap<Rc<Cow<'prog, str>>, LLVMValueRef>,
 }
 
 impl<'a, 'prog: 'a, FP> ValueTracker<'a, 'prog, FP>

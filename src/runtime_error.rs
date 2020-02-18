@@ -14,7 +14,7 @@ use syntax::lexer::{LexicalError, Token};
 pub enum RuntimeError {
     Io(io::Error),
     Lexer(LexicalError),
-    Parser(ParseError<usize, Token, Void>),
+    Parser(ParseError<usize, Token<'static>, Void>),
     Compile(CompileError),
     Codegen(CodegenError),
     Interpreter(InterpreterError),
@@ -127,17 +127,17 @@ from_variant!(CompileError, RuntimeError::Compile);
 from_variant!(CodegenError, RuntimeError::Codegen);
 from_variant!(InterpreterError, RuntimeError::Interpreter);
 
-impl From<ParseError<usize, Token, LexicalError>> for RuntimeError {
-    fn from(e: ParseError<usize, Token, LexicalError>) -> Self {
+impl<'input> From<ParseError<usize, Token<'input>, LexicalError>> for RuntimeError {
+    fn from(e: ParseError<usize, Token<'input>, LexicalError>) -> Self {
         let parse_err = match e {
             ParseError::InvalidToken { location } => {
                 ParseError::InvalidToken { location }
             }
             ParseError::UnrecognizedToken { token, expected } => {
-                ParseError::UnrecognizedToken { token, expected }
+                ParseError::UnrecognizedToken { token: token.map(own_tok), expected }
             }
             ParseError::ExtraToken { token } => {
-                ParseError::ExtraToken { token }
+                ParseError::ExtraToken { token: own_tok(token) }
             },
             ParseError::User { error: lex_err } => {
                 return RuntimeError::Lexer(lex_err);
@@ -146,4 +146,8 @@ impl From<ParseError<usize, Token, LexicalError>> for RuntimeError {
 
         RuntimeError::Parser(parse_err)
     }
+}
+
+fn own_tok<'a>((i, tok, j): (usize, Token<'a>, usize)) -> (usize, Token<'static>, usize) {
+    (i, tok.make_owned(), j)
 }

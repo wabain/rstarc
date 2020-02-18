@@ -254,7 +254,7 @@ impl Label {
     }
 }
 
-type LiteralValue = BaseValue<ScopeId>;
+type LiteralValue<'a> = BaseValue<'a, ScopeId>;
 
 #[derive(Debug, Hash, PartialEq, Eq, Copy, Clone)]
 pub struct LocalTemp(u64);
@@ -282,7 +282,7 @@ impl fmt::Display for LocalDynTemp {
 
 #[derive(Debug, Clone)]
 pub enum IRValue<'prog> {
-    Literal(LiteralValue),
+    Literal(LiteralValue<'prog>),
     LocalTemp(LocalTemp),
     LocalDynTemp(LocalDynTemp),
     Variable(LangVariable<'prog>, VariableType, Pos),
@@ -572,7 +572,7 @@ impl<'prog> IRBuilder<'prog> {
         self.emit(SimpleIR::Label(label));
     }
 
-    fn emit_expr<D>(&mut self, dst: D, expr: &'prog ast::Expr) -> IRValue<'prog>
+    fn emit_expr<D>(&mut self, dst: D, expr: &'prog ast::Expr<'prog>) -> IRValue<'prog>
         where
             D: Into<Option<IRLValue<'prog>>>,
     {
@@ -1012,7 +1012,7 @@ impl<'prog> AstAdapter<'prog> {
     }
 }
 
-fn resolve_ast_lval<'prog>(lval: &'prog ast::LValue) -> &'prog ast::Variable {
+fn resolve_ast_lval<'prog>(lval: &'prog ast::LValue<'prog>) -> &'prog ast::Variable<'prog> {
     match lval {
         ast::LValue::Pronoun(..) => unreachable!(),
         ast::LValue::Variable(var) => var,
