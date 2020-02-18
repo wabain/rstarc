@@ -32,10 +32,10 @@ impl fmt::Display for LexicalError {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token<'input> {
     // Variables and friends
-    ProperVar(String),
-    CommonVar(String),
-    Pronoun(String),
-    CommonPrep(String),
+    ProperVar(Cow<'input, str>),
+    CommonVar(Cow<'input, str>),
+    Pronoun(Cow<'input, str>),
+    CommonPrep(Cow<'input, str>),
 
     // Types
     StringLiteral(Rc<Cow<'input, str>>),
@@ -105,10 +105,10 @@ impl<'input> Token<'input> {
                 Token::StringLiteral(Rc::new(Cow::Owned(string)))
             },
 
-            Token::ProperVar(s) => Token::ProperVar(s),
-            Token::CommonVar(s) => Token::CommonVar(s),
-            Token::Pronoun(s) => Token::Pronoun(s),
-            Token::CommonPrep(s) => Token::CommonPrep(s),
+            Token::ProperVar(s) => Token::ProperVar(Cow::Owned(s.to_string())),
+            Token::CommonVar(s) => Token::CommonVar(Cow::Owned(s.to_string())),
+            Token::Pronoun(s) => Token::Pronoun(Cow::Owned(s.to_string())),
+            Token::CommonPrep(s) => Token::CommonPrep(Cow::Owned(s.to_string())),
 
             Token::BooleanLiteral(b) => Token::BooleanLiteral(b),
             Token::NumberLiteral(n) => Token::NumberLiteral(n),
@@ -628,8 +628,12 @@ impl<'input> TokenStream<'input> {
             .map(|m| m.end())
     }
 
-    fn handle_word(&self, word: String) -> Result<(Option<Token<'input>>, LexAction), LexicalError> {
-        if let Some(token) = self.match_keyword_or_constant(&word) {
+    fn handle_word(&self, word: Cow<'input, str>)
+        -> Result<(Option<Token<'input>>, LexAction), LexicalError>
+    {
+        let kw_or_const = self.match_keyword_or_constant(word);
+
+        if let Ok(token) = kw_or_const {
             if self.ctx.poetic_number_or_keyword && !(token.is_keyword() || token.is_constant()) {
                 return Ok((None, LexAction::TakePoeticNumber));
             }
@@ -654,6 +658,8 @@ impl<'input> TokenStream<'input> {
 
             return Ok((Some(token), action));
         }
+
+        let word = kw_or_const.expect_err("recover word");
 
         if self.ctx.poetic_number_or_keyword {
             Ok((None, LexAction::TakePoeticNumber))
@@ -698,7 +704,7 @@ impl<'input> TokenStream<'input> {
                 Ok(Some((skip, end - skip, Token::NumberLiteral(number), None)))
             }
             LexAction::TakeProperVar => {
-                let mut normalized_var = String::new();
+                let mut normalized_var = None;
                 let mut var_end = 0;
 
                 for iter in 0.. {
@@ -717,45 +723,74 @@ impl<'input> TokenStream<'input> {
                     };
 
                     // Each word must also start with an uppercase
-                    let (next_word, next_end) = match self.find_word(&more[skip..], &PROPER_VAR_WORD) {
+                    let next = match self.find_word(&more[skip..], &PROPER_VAR_WORD) {
                         Some((word, end)) => (word, skip + end),
                         None => break,
                     };
 
-                    if self.match_keyword_or_constant(&next_word).is_some() {
-                        break;
-                    }
+                    let (next_word, next_end) = next;
 
-                    if !normalized_var.is_empty() {
-                        normalized_var += " ";
+                    // If the next word is a keyword, we're done
+                    let next_word = match self.match_keyword_or_constant(next_word) {
+                        Ok(_) => break,
+                        Err(w) => w,
+                    };
+
+                    // If next_word is an owned string (meaning it's been
+                    // normalized), or if we have previously started normalizing
+                    // this var, we need to append the word to the normalized form.
+                    match (&mut normalized_var, next_word) {
+                        (None, Cow::Borrowed(_)) => {},
+                        (None, Cow::Owned(next_word)) => {
+                            normalized_var = if var_end == 0 {
+                                Some(next_word)
+                            } else {
+                                let mut norm = self.rest()[..var_end + 1].to_owned();
+                                norm += &next_word;
+                                Some(norm)
+                            };
+                        }
+                        (Some(ref mut norm), ref next_word) => {
+                            norm.push_str(" ");
+                            norm.push_str(next_word);
+                        }
                     }
-                    normalized_var += &next_word;
 
                     var_end += next_end;
                 }
 
-                Ok(Some((0, var_end, Token::ProperVar(normalized_var), None)))
+                let payload = match normalized_var {
+                    Some(norm) => Cow::Owned(norm),
+                    None => Cow::Borrowed(&self.rest()[..var_end]),
+                };
+                Ok(Some((0, var_end, Token::ProperVar(payload), None)))
             }
         }
     }
 
-    fn match_keyword_or_constant(&self, word: &str) -> Option<Token<'input>> {
+    fn match_keyword_or_constant(&self, word: Cow<'input, str>) -> Result<Token<'input>, Cow<'input, str>> {
         use self::Keyword::*;
 
         let lower = word.to_lowercase();
 
         // Restrict value keywords to be lowercase
-        let initially_lower = lower == word;
+        let initially_lower = lower == word.as_ref();
 
         let tok = match lower.as_str() {
 
             // Prepositions take a consistent case
             "a" | "an" | "the" | "my" | "your" => {
-                Token::CommonPrep(lower)
+                let normalized = if initially_lower {
+                    word
+                } else {
+                    Cow::Owned(lower)
+                };
+
+                Token::CommonPrep(normalized)
             }
             "it" | "he" | "she" | "him" | "her" | "they" | "them" |
             "ze" | "hir" | "zie" | "zir" | "xe" | "xem" | "ve" | "ver" => {
-                Token::Pronoun(word.into())
+                Token::Pronoun(word)
             }
 
             "mysterious" if initially_lower => Token::MysteriousLiteral,
@@ -829,12 +864,12 @@ impl<'input> TokenStream<'input> {
             "or" => Token::Keyword(Or),
             "nor" => Token::Keyword(Nor),
 
-            _ => return None,
+            _ => return Err(word),
         };
-        Some(tok)
+        Ok(tok)
     }
 
-    fn find_word(&self, src: &str, pattern: &Regex) -> Option<(String, usize)> {
+    fn find_word(&self, src: &'input str, pattern: &Regex) -> Option<(Cow<'input, str>, usize)> {
         pattern.find(src).map(|m| {
             let end = m.end();
             // Special case: leave a 's to be processed later
@@ -845,7 +880,11 @@ impl<'input> TokenStream<'input> {
                 end
             }
         }).map(|end| {
-            (src[..end].replace("'", ""), end)
+            if src[..end].contains('\'') {
+                (src[..end].replace("'", "").into(), end)
+            } else {
+                (Cow::Borrowed(&src[..end]), end)
+            }
         })
     }
 
