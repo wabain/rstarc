@@ -45,7 +45,7 @@ impl RuntimeError {
 }
 
 impl error::Error for RuntimeError {
-    fn cause(&self) -> Option<&error::Error> {
+    fn cause(&self) -> Option<&dyn error::Error> {
         match self {
             RuntimeError::Io(e) => Some(e),
             RuntimeError::Lexer(e) => Some(e),

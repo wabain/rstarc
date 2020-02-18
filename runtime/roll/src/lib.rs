@@ -21,7 +21,7 @@ type RockstarValue<'a> = rstarc_types::Value<&'a str, *const VoidPtr>;
 macro_rules! fatal {
     ($msg:expr, $($arg:expr),*) => {{
         let mut stderr = io::FDWrite::stderr();
-        writeln!(stderr, concat!("error: ", $msg), $($arg),*);
+        let _ = writeln!(stderr, concat!("error: ", $msg), $($arg),*);
         unsafe {
             libc::exit(1);
         }
