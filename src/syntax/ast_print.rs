@@ -39,17 +39,25 @@ macro_rules! node_arg {
         writeln!($out, "{}],", indented(indent))?;
         node_arg!($out, indent, $($toks)*);
     }};
-    ($out:ident, $indent:expr, term $term:expr, $($toks:tt)*) => {{
+    ($out:ident, $indent:expr, term=>($fmt:literal), $($toks:tt)*) => {{
         let indent = $indent;
-        term!($out, indent, $term);
+        term!($out, indent, $fmt);
+        node_arg!($out, indent, $($toks)*);
+    }};
+    ($out:ident, $indent:expr, term=>($fmt:literal, $($term:expr),*), $($toks:tt)*) => {{
+        let indent = $indent;
+        term!($out, indent, $fmt, $($term),*);
         node_arg!($out, indent, $($toks)*);
     }};
     ($out:ident, $indent:expr, ) => {};
 }
 
 macro_rules! term {
-    ($out:ident, $indent:expr, $e:expr) => {{
+    ($out:ident, $indent:expr, $e:literal) => {{
         writeln!($out, "{}{},", indented($indent), $e)?;
+    }};
+    ($out:ident, $indent:expr, $fmt:literal, $($e:expr),*) => {{
+        writeln!($out, concat!("{}", $fmt, ","), indented($indent), $($e),*)?;
     }};
 }
 
@@ -77,10 +85,10 @@ impl<'input> AstPrint for Statement<'input> {
                 node!(out, indent, "Assign", lval, e)
             }
             StatementKind::Incr(lval, count) => {
-                node!(out, indent, "Incr", lval, term count)
+                node!(out, indent, "Incr", lval, term=>("{}", count))
             }
             StatementKind::Decr(lval, count) => {
-                node!(out, indent, "Decr", lval, term count)
+                node!(out, indent, "Decr", lval, term=>("{}", count))
             }
             StatementKind::Say(e) => {
                 node!(out, indent, "Say", e)
@@ -116,7 +124,7 @@ impl<'input> AstPrint for Expr<'input> {
     fn ast_print<W>(&self, out: &mut W, indent: usize) -> io::Result<()> where W: io::Write {
         match *self {
             Expr::LValue(ref lval) => lval.ast_print(out, indent)?,
-            Expr::Literal(ref literal) => term!(out, indent, literal),
+            Expr::Literal(ref literal) => term!(out, indent, "{:?}", literal),
             Expr::Compare(ref comp) => comp.ast_print(out, indent)?,
 
             Expr::FuncCall(ref fname, ref args) => {
@@ -151,8 +159,7 @@ impl<'input> AstPrint for Logical<'input> {
 impl<'input> AstPrint for Comparison<'input> {
     fn ast_print<W>(&self, out: &mut W, indent: usize) -> io::Result<()> where W: io::Write {
         let Comparison(ref e1, comparator, ref e2) = *self;
-        let cmp = format!("{:?}", comparator);
-        node!(out, indent, "Comparison", e1, term cmp, e2);
+        node!(out, indent, "Comparison", e1, term=>("{:?}", comparator), e2);
         Ok(())
     }
 }
@@ -160,7 +167,7 @@ impl<'input> AstPrint for Comparison<'input> {
 impl<'input> AstPrint for LValue<'input> {
     fn ast_print<W>(&self, out: &mut W, indent: usize) -> io::Result<()> where W: io::Write {
         match *self {
-            LValue::Pronoun(ref p) => term!(out, indent, p),
+            LValue::Pronoun(ref p) => term!(out, indent, "{:?}", p),
             LValue::Variable(ref v) => v.ast_print(out, indent)?,
         }
         Ok(())
@@ -171,10 +178,10 @@ impl<'input> AstPrint for Variable<'input> {
     fn ast_print<W>(&self, out: &mut W, indent: usize) -> io::Result<()> where W: io::Write {
         match *self {
             Variable::CommonVar(ref prep, ref var, _pos) => {
-                term!(out, indent, format!("{} {}", prep, var))
+                term!(out, indent, "{:?} {:?}", prep, var)
             }
             Variable::ProperVar(ref var, _pos) => {
-                term!(out, indent, var)
+                term!(out, indent, "{:?}", var)
             }
         }
         Ok(())

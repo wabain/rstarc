@@ -5,82 +5,82 @@ enabled = ["ast"]
 returncode = "0"
 stdout = """
 Assign(
-  U,
-  0,
+  ProperVar("U" borrowed),
+  NumberLiteral(0.0),
 ),
 Assign(
-  V,
-  0,
+  ProperVar("V" borrowed),
+  NumberLiteral(0.0),
 ),
 Assign(
-  W,
-  0,
+  ProperVar("W" borrowed),
+  NumberLiteral(0.0),
 ),
 Assign(
-  X,
-  0,
+  ProperVar("X" borrowed),
+  NumberLiteral(0.0),
 ),
 Assign(
-  Y,
-  0,
+  ProperVar("Y" borrowed),
+  NumberLiteral(0.0),
 ),
 Assign(
-  Z,
-  0,
+  ProperVar("Z" borrowed),
+  NumberLiteral(0.0),
 ),
 Assign(
-  Dummy,
+  ProperVar("Dummy" borrowed),
   Add(
     Mul(
       Not(
         FuncCall(
-          X,
+          ProperVar("X" borrowed),
           [
-            Y,
-            Z,
+            ProperVar("Y" borrowed),
+            ProperVar("Z" borrowed),
           ],
         ),
       ),
-      U,
+      ProperVar("U" borrowed),
     ),
-    V,
+    ProperVar("V" borrowed),
   ),
 ),
 Assign(
-  Dummy,
+  ProperVar("Dummy" borrowed),
   Add(
-    X,
+    ProperVar("X" borrowed),
     Sub(
-      Y,
-      Z,
+      ProperVar("Y" borrowed),
+      ProperVar("Z" borrowed),
     ),
   ),
 ),
 Assign(
-  Dummy,
+  ProperVar("Dummy" borrowed),
   Mul(
-    X,
+    ProperVar("X" borrowed),
     Div(
-      Y,
-      Z,
+      ProperVar("Y" borrowed),
+      ProperVar("Z" borrowed),
     ),
   ),
 ),
 If(
   Comparison(
     Mul(
-      X,
-      Y,
+      ProperVar("X" borrowed),
+      ProperVar("Y" borrowed),
     ),
     Is,
     Add(
-      Z,
-      U,
+      ProperVar("Z" borrowed),
+      ProperVar("U" borrowed),
     ),
   ),
   [
     Say(
-      null,
+      NullLiteral,
     ),
   ],
   [
@@ -89,32 +89,32 @@ If(
 If(
   And(
     Comparison(
-      U,
+      ProperVar("U" borrowed),
       Is,
       Comparison(
         Mul(
-          V,
+          ProperVar("V" borrowed),
           FuncCall(
-            X,
+            ProperVar("X" borrowed),
             [
-              Y,
-              Z,
+              ProperVar("Y" borrowed),
+              ProperVar("Z" borrowed),
             ],
           ),
         ),
         Is,
-        V,
+        ProperVar("V" borrowed),
       ),
     ),
     Comparison(
-      W,
+      ProperVar("W" borrowed),
       Is,
-      X,
+      ProperVar("X" borrowed),
     ),
   ),
   [
     Say(
-      null,
+      NullLiteral,
     ),
   ],
   [

@@ -92,7 +92,7 @@ struct ScopeData<'prog> {
     used_variables: BTreeMap<LangVariable<'prog>, VariableType>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ScopeMap<'prog> {
     block_scopes: HashMap<SrcPos, ScopeId>,
     scope_parents: ScopeParents,

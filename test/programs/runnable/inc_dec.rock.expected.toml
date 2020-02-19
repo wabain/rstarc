@@ -5,54 +5,54 @@ enabled = ["ast", "pretty", "ir", "run"]
 returncode = "0"
 stdout = """
 Assign(
-  X,
-  10,
+  ProperVar("X" borrowed),
+  NumberLiteral(10.0),
 ),
 Incr(
-  X,
+  ProperVar("X" borrowed),
   3,
 ),
 Say(
-  X,
+  ProperVar("X" borrowed),
 ),
 Decr(
-  X,
+  ProperVar("X" borrowed),
   3,
 ),
 Say(
-  X,
+  ProperVar("X" borrowed),
 ),
 Assign(
-  Y,
-  false,
+  ProperVar("Y" borrowed),
+  BooleanLiteral(false),
 ),
 Incr(
-  Y,
+  ProperVar("Y" borrowed),
   2,
 ),
 Say(
-  Y,
+  ProperVar("Y" borrowed),
 ),
 Decr(
-  Y,
+  ProperVar("Y" borrowed),
   2,
 ),
 Say(
-  Y,
+  ProperVar("Y" borrowed),
 ),
 Incr(
-  Y,
+  ProperVar("Y" borrowed),
   3,
 ),
 Say(
-  Y,
+  ProperVar("Y" borrowed),
 ),
 Decr(
-  Y,
+  ProperVar("Y" borrowed),
   3,
 ),
 Say(
-  Y,
+  ProperVar("Y" borrowed),
 ),
 """
 

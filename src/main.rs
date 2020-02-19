@@ -127,7 +127,15 @@ fn build_cli() -> clap::App<'static, 'static> {
             .about("Internal debugging utilities.")
             .args(&[arg_source, arg_opt_level])
             .arg(clap::Arg::from_usage("-d, --debug-print <FORMAT> 'Print debug output.'")
-                .possible_values(&["tokens", "pretty", "pretty-iterated", "ast", "ir", "llvm"]))
+                .possible_values(&[
+                    "tokens",
+                    "pretty",
+                    "pretty-iterated",
+                    "ast",
+                    "ir",
+                    "ir-repr",
+                    "llvm",
+                ]))
         )
 }
 
@@ -167,14 +175,34 @@ struct Action {
 }
 
 impl Action {
+    fn interpret_or_compile(&self) -> bool {
+        self.execution_mode.is_some() || self.compile_options.is_some()
+    }
+
     fn needs_ast_pass(&self) -> bool {
-        if self.execution_mode.is_some() || self.compile_options.is_some() {
+        if self.interpret_or_compile() {
             return true;
         }
 
         match self.debug_output {
             Some(DebugOutputFormat::Tokens) | None => false,
             Some(_) => true,
+        }
+    }
+
+    fn needs_scope_analysis_pass(&self) -> bool {
+        if !self.needs_ast_pass() {
+            return false;
+        }
+
+        if self.interpret_or_compile() {
+            return true;
+        }
+
+        match self.debug_output {
+            Some(DebugOutputFormat::Pretty { .. }) |
+            Some(DebugOutputFormat::AST) => false,
+            _ => true,
         }
     }
 
@@ -228,6 +256,7 @@ enum DebugOutputFormat {
     Pretty { iterated: bool },
     AST,
     IR,
+    IRRepr,
     LLVM,
 }
 
@@ -281,6 +310,7 @@ fn build_action(matches: &clap::ArgMatches) -> Action {
                 Some("pretty-iterated") => Some(DebugOutputFormat::Pretty { iterated: true }),
                 Some("ast") => Some(DebugOutputFormat::AST),
                 Some("ir") => Some(DebugOutputFormat::IR),
+                Some("ir-repr") => Some(DebugOutputFormat::IRRepr),
                 Some("llvm") => Some(DebugOutputFormat::LLVM),
                 Some(v) => unreachable!("debug-print format {:?}", v),
                 None => unreachable!("no debug-print format"),
@@ -409,14 +439,6 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<Option<i32>, MainError>
 
     let tree = syntax::parser::ProgramParser::new().parse(tokenizer.tokenize())?;
     base_analysis::verify_control_flow(&tree)?;
-    let scope_map = base_analysis::identify_variable_scopes(&tree);
-
-    // If interpreting, allow compile options to be passed but ignore
-    // them
-    if execution_mode == Some(ExecutionMode::Interpret) {
-        interpreter::interpret(&tree, &scope_map)?;
-        return Ok(None);
-    }
 
     match debug_output {
         Some(DebugOutputFormat::Pretty { iterated: false }) => {
@@ -428,12 +450,36 @@ fn run(action: &Action, tokenizer: &Tokenizer) -> Result<Option<i32>, MainError>
         Some(DebugOutputFormat::AST) => {
             syntax::ast_print::ast_print_program(io::stdout(), &tree)?;
         }
+        _ => {}
+    }
+
+    if !action.needs_scope_analysis_pass() {
+        return Ok(None);
+    }
+
+    let scope_map = base_analysis::identify_variable_scopes(&tree);
+
+    // If interpreting, allow compile options to be passed but ignore
+    // them
+    if execution_mode == Some(ExecutionMode::Interpret) {
+        interpreter::interpret(&tree, &scope_map)?;
+        return Ok(None);
+    }
+
+    match debug_output {
         Some(DebugOutputFormat::IR) => {
             let ir = codegen::build_ir(&tree, &scope_map)?;
             codegen::dump_ir(&ir);
         }
-        Some(DebugOutputFormat::LLVM) |
+        Some(DebugOutputFormat::IRRepr) => {
+            let ir = codegen::build_ir(&tree, &scope_map)?;
+            println!("{:?}", &ir);
+        }
+        // Other debug formats are addressed above or below
         Some(DebugOutputFormat::Tokens) |
+        Some(DebugOutputFormat::Pretty { .. }) |
+        Some(DebugOutputFormat::AST) |
+        Some(DebugOutputFormat::LLVM) |
         None => {}
     }
 

@@ -1,0 +1,71 @@
+[tests]
+enabled = ["tokens", "ast"]
+
+[tokens]
+returncode = "0"
+stdout = """
+1    ( Test some more complex cases for owned vs borrowed values )⏎
+
+    61..62 ⏎
+
+2    Union's been on strike⏎
+
+    62..67 "Union" borrowed ProperVar
+    67..69 is
+    70..84 426.0 NumberLiteral
+    84..85 ⏎
+
+3    Union 's been on strike⏎
+
+    85..90 "Union" borrowed ProperVar
+    91..93 is
+   94..108 426.0 NumberLiteral
+  108..109 ⏎
+
+4    A '''' wakin'up is Sleepin' I''n⏎
+
+  109..110 "a" owned CommonPrep
+  116..124 "wakinup" owned CommonVar
+  125..127 is
+  128..141 72.0 NumberLiteral
+  141..142 ⏎
+
+5    Until It ain't nothing⏎
+
+  142..147 until
+  148..150 "It" borrowed Pronoun
+  151..156 isn't
+  157..164 null
+  164..165 ⏎
+
+6    ⏎
+
+  165..165 ⏎
+  165..165 <eof>
+"""
+
+[ast]
+returncode = "0"
+stdout = """
+Assign(
+  ProperVar("Union" borrowed),
+  NumberLiteral(426.0),
+),
+Assign(
+  ProperVar("Union" borrowed),
+  NumberLiteral(426.0),
+),
+Assign(
+  CommonPrep("a" owned) CommonVar("wakinup" owned),
+  NumberLiteral(72.0),
+),
+Until(
+  Comparison(
+    Pronoun("It" borrowed),
+    IsNot,
+    NullLiteral,
+  ),
+  [
+  ],
+),
+"""

@@ -359,6 +359,7 @@ impl<'a, 'prog> Into<IRValue<'prog>> for &'a IRLValue<'prog> {
     }
 }
 
+#[derive(Debug)]
 pub struct IRProgram<'prog> {
     pub(super) scope_map: &'prog ScopeMap<'prog>,
     pub(super) globals: Vec<(LangVariable<'prog>, ScopeId)>,
@@ -369,6 +370,7 @@ pub struct IRProgram<'prog> {
 type IRMain<'prog> = IRSubRoutine<'prog, ()>;
 type IRFunc<'prog> = IRSubRoutine<'prog, IRFuncParams<'prog>>;
 
+#[derive(Debug)]
 pub struct IRSubRoutine<'prog, FP> {
     pub scope_id: ScopeId,
     pub dyn_temp_count: u64,
