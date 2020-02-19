@@ -593,8 +593,34 @@ fn handle_irregular_child_exit(status: &process::ExitStatus) -> i32 {
 
 fn output_tokens(tokenizer: &Tokenizer) -> Result<(), LexicalError> {
     let tokens = tokenizer.tokenize().collect::<Result<Vec<_>, _>>()?;
-    for (start, ref token, end) in &tokens {
-        println!("{}..{} {}", start, end, token);
+
+    let mut lineno = 0;
+
+    for &(start, ref token, end) in &tokens {
+        let next_lineno = tokenizer.get_line_for_point(start);
+        if lineno != next_lineno {
+            if lineno > 0 {
+                println!("");
+            }
+
+            for lineno in lineno + 1..=next_lineno {
+                let line_content = tokenizer.get_line_with_number(lineno);
+                println!("{:<4} {}⏎", lineno, line_content);
+            }
+
+            println!("");
+            lineno = next_lineno;
+        }
+
+        let range = format!("{}..{}", start, end);
+
+        let payload = format!("{:?}", token.repr_payload());
+
+        if payload.is_empty() {
+            println!("{:>10} {}", range, token);
+        } else {
+            println!("{:>10} {} {}", range, payload, token.variant_name());
+        }
     }
     Ok(())
 }

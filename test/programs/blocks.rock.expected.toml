@@ -4,47 +4,82 @@ enabled = ["tokens", "pretty"]
 [tokens]
 returncode = "0"
 stdout = """
-0..1 ⏎
-1..7 Fernpl
-8..13 takes
-14..15 X
-16..19 and
-20..21 Y
-21..22 ⏎
-22..26 give
-27..31 back
-32..33 X
-33..34 ⏎
-34..35 ⏎
-35..36 ⏎
-36..41 while
-42..46 true
-47..49 is
-50..54 true
-54..55 ⏎
-55..60 until
-61..66 false
-67..69 is
-70..75 false
-75..76 ⏎
-76..78 if
-79..83 true
-84..86 is
-87..91 true
-91..92 ⏎
-92..95 say
-96..102 "yeah"
-102..103 ⏎
-103..107 else
-107..108 ⏎
-108..111 say
-112..117 "nah"
-117..118 ⏎
-118..118 ⏎
-118..118 ⏎
-118..118 ⏎
-118..118 ⏎
-118..118 <eof>
+1    ⏎
+
+      0..1 ⏎
+
+2    Fernpl takes X and Y⏎
+
+      1..7 "Fernpl" borrowed ProperVar
+     8..13 takes
+    14..15 "X" borrowed ProperVar
+    16..19 and
+    20..21 "Y" borrowed ProperVar
+    21..22 ⏎
+
+3    Give back X⏎
+
+    22..26 give
+    27..31 back
+    32..33 "X" borrowed ProperVar
+    33..34 ⏎
+
+4    ⏎
+
+    34..35 ⏎
+
+5    ⏎
+
+    35..36 ⏎
+
+6    While true is true⏎
+
+    36..41 while
+    42..46 true BooleanLiteral
+    47..49 is
+    50..54 true BooleanLiteral
+    54..55 ⏎
+
+7    Until false is false⏎
+
+    55..60 until
+    61..66 false BooleanLiteral
+    67..69 is
+    70..75 false BooleanLiteral
+    75..76 ⏎
+
+8    If true is true⏎
+
+    76..78 if
+    79..83 true BooleanLiteral
+    84..86 is
+    87..91 true BooleanLiteral
+    91..92 ⏎
+
+9    Say "yeah"⏎
+
+    92..95 say
+   96..102 "yeah" borrowed *[rc 1/0 weak] StringLiteral
+  102..103 ⏎
+
+10   Else⏎
+
+  103..107 else
+  107..108 ⏎
+
+11   Say "nah"⏎
+
+  108..111 say
+  112..117 "nah" borrowed *[rc 1/0 weak] StringLiteral
+  117..118 ⏎
+
+12   ⏎
+
+  118..118 ⏎
+  118..118 ⏎
+  118..118 ⏎
+  118..118 ⏎
+  118..118 <eof>
 """
 
 [pretty]

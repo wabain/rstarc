@@ -3,7 +3,7 @@ use std::{
     error,
     fmt,
     rc::Rc,
-    borrow::Cow,
+    borrow::{Cow, ToOwned},
 };
 
 use regex::{RegexBuilder, Regex};
@@ -29,7 +29,7 @@ impl fmt::Display for LexicalError {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub enum Token<'input> {
     // Variables and friends
     ProperVar(Cow<'input, str>),
@@ -51,7 +51,7 @@ pub enum Token<'input> {
     EOF,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Keyword {
     Is,
     Was,
@@ -190,6 +190,28 @@ impl<'input> Token<'input> {
             panic!("Expected CommonPrep, got {:?}", self);
         }
     }
+
+    pub fn variant_name(&self) -> &'static str {
+        match self {
+            Token::ProperVar(_) => "ProperVar",
+            Token::CommonVar(_) => "CommonVar",
+            Token::Pronoun(_) => "Pronoun",
+            Token::CommonPrep(_) => "CommonPrep",
+            Token::StringLiteral(_) => "StringLiteral",
+            Token::BooleanLiteral(_) => "BooleanLiteral",
+            Token::NumberLiteral(_) => "NumberLiteral",
+            Token::MysteriousLiteral => "MysteriousLiteral",
+            Token::NullLiteral => "NullLiteral",
+            Token::Newline => "Newline",
+            Token::Comma => "Comma",
+            Token::Keyword(_) => "Keyword",
+            Token::EOF => "EOF",
+        }
+    }
+
+    pub fn repr_payload(&self) -> PayloadRepr {
+        PayloadRepr(self)
+    }
 }
 
 impl<'input> fmt::Display for Token<'input> {
@@ -261,6 +283,55 @@ impl<'input> fmt::Display for Token<'input> {
     }
 }
 
+impl<'input> fmt::Debug for Token<'input> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Token::Keyword(kw) = self {
+            return write!(f, "{:?}", kw);
+        }
+
+        let payload = format!("{:?}", self.repr_payload());
+
+        if payload.is_empty() {
+            write!(f, "{}", self.variant_name())
+        } else {
+            write!(f, "{}({})", self.variant_name(), payload)
+        }
+    }
+}
+
+pub struct PayloadRepr<'a>(&'a Token<'a>);
+
+impl<'a> fmt::Debug for PayloadRepr<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.0 {
+            Token::ProperVar(ref s) |
+            Token::CommonVar(ref s) |
+            Token::Pronoun(ref s) |
+            Token::CommonPrep(ref s) => write!(f, "{:?} {}", s, cow_type(s)),
+
+            Token::StringLiteral(ref s) => {
+                write!(
+                    f,
+                    "{:?} {} *[rc {}/{} weak]",
+                    s, cow_type(s.as_ref()), Rc::strong_count(s), Rc::weak_count(s),
+                )
+            },
+
+            Token::BooleanLiteral(b) => write!(f, "{:?}", b),
+            Token::NumberLiteral(n) => write!(f, "{:?}", n),
+
+            _ => Ok(()),
+        }
+    }
+}
+
+fn cow_type<T: ToOwned + ?Sized>(cow: &Cow<T>) -> &'static str {
+    match &cow {
+        Cow::Owned(_) => "owned",
+        Cow::Borrowed(_) => "borrowed",
+    }
+}
+
 struct TCtx {
     poetic_number_or_keyword: bool,
     prev_was_eol: bool,
@@ -329,6 +400,14 @@ impl Tokenizer {
         let mut content = String::new();
         source.read_to_string(&mut content)?;
         Ok(Self::new(content))
+    }
+
+    pub fn get_line_for_point(&self, point: usize) -> usize {
+        self.source_locator.get_line_idx(point) + 1
+    }
+
+    pub fn get_line_with_number(&self, lineno: usize) -> &str {
+        self.source_locator.get_line_at_idx(&self.content, lineno - 1)
     }
 
     pub fn get_line_span(&self, start: usize, end: usize) -> IntraLineSpan {

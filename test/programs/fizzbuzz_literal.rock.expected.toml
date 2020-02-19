@@ -4,116 +4,196 @@ enabled = ["tokens", "pretty", "ir"]
 [tokens]
 returncode = "0"
 stdout = """
-0..7 Modulus
-8..13 takes
-14..20 Number
-21..24 and
-25..32 Divisor
-32..33 ⏎
-33..38 while
-39..45 Number
-46..48 is
-49..51 as
-52..56 great
-57..59 as
-60..67 Divisor
-67..68 ⏎
-68..71 put
-72..78 Number
-79..84 minus
-85..92 Divisor
-93..97 into
-98..104 Number
-104..105 ⏎
-105..106 ⏎
-106..110 give
-111..115 back
-116..122 Number
-122..123 ⏎
-123..124 ⏎
-124..129 Limit
-130..132 is
-133..138 "100"
-138..139 ⏎
-139..146 Counter
-147..149 is
-150..153 "0"
-153..154 ⏎
-154..158 Fizz
-159..161 is
-162..165 "3"
-165..166 ⏎
-166..170 Buzz
-171..173 is
-174..177 "5"
-177..178 ⏎
-178..183 until
-184..191 Counter
-192..194 is
-195..200 Limit
-200..201 ⏎
-201..206 build
-207..214 Counter
-215..217 up
-217..218 ⏎
-218..220 if
-221..228 Modulus
-229..235 taking
-236..243 Counter
-243..244 ,
-245..249 Fizz
-250..252 is
-253..256 "0"
-257..260 and
-261..268 Modulus
-269..275 taking
-276..283 Counter
-283..284 ,
-285..289 Buzz
-290..292 is
-293..296 "0"
-296..297 ⏎
-297..300 say
-301..312 "FizzBuzz!"
-312..313 ⏎
-313..321 continue
-321..322 ⏎
-322..323 ⏎
-323..325 if
-326..333 Modulus
-334..340 taking
-341..348 Counter
-348..349 ,
-350..354 Fizz
-355..357 is
-358..361 "0"
-361..362 ⏎
-362..365 say
-366..373 "Fizz!"
-373..374 ⏎
-374..382 continue
-382..383 ⏎
-383..384 ⏎
-384..386 if
-387..394 Modulus
-395..401 taking
-402..409 Counter
-409..410 ,
-411..415 Buzz
-416..418 is
-419..422 "0"
-422..423 ⏎
-423..426 say
-427..434 "Buzz!"
-434..435 ⏎
-435..443 continue
-443..444 ⏎
-444..445 ⏎
-445..448 say
-449..456 Counter
-456..457 ⏎
-457..458 ⏎
-458..458 <eof>
+1    Modulus takes Number and Divisor⏎
+
+      0..7 "Modulus" borrowed ProperVar
+     8..13 takes
+    14..20 "Number" borrowed ProperVar
+    21..24 and
+    25..32 "Divisor" borrowed ProperVar
+    32..33 ⏎
+
+2    While Number is as high as Divisor⏎
+
+    33..38 while
+    39..45 "Number" borrowed ProperVar
+    46..48 is
+    49..51 as
+    52..56 great
+    57..59 as
+    60..67 "Divisor" borrowed ProperVar
+    67..68 ⏎
+
+3    Put Number minus Divisor into Number⏎
+
+    68..71 put
+    72..78 "Number" borrowed ProperVar
+    79..84 minus
+    85..92 "Divisor" borrowed ProperVar
+    93..97 into
+   98..104 "Number" borrowed ProperVar
+  104..105 ⏎
+
+4    ⏎
+
+  105..106 ⏎
+
+5    Give back Number⏎
+
+  106..110 give
+  111..115 back
+  116..122 "Number" borrowed ProperVar
+  122..123 ⏎
+
+6    ⏎
+
+  123..124 ⏎
+
+7    Limit is "100"⏎
+
+  124..129 "Limit" borrowed ProperVar
+  130..132 is
+  133..138 "100" borrowed *[rc 1/0 weak] StringLiteral
+  138..139 ⏎
+
+8    Counter is "0"⏎
+
+  139..146 "Counter" borrowed ProperVar
+  147..149 is
+  150..153 "0" borrowed *[rc 1/0 weak] StringLiteral
+  153..154 ⏎
+
+9    Fizz is "3"⏎
+
+  154..158 "Fizz" borrowed ProperVar
+  159..161 is
+  162..165 "3" borrowed *[rc 1/0 weak] StringLiteral
+  165..166 ⏎
+
+10   Buzz is "5"⏎
+
+  166..170 "Buzz" borrowed ProperVar
+  171..173 is
+  174..177 "5" borrowed *[rc 1/0 weak] StringLiteral
+  177..178 ⏎
+
+11   Until Counter is Limit⏎
+
+  178..183 until
+  184..191 "Counter" borrowed ProperVar
+  192..194 is
+  195..200 "Limit" borrowed ProperVar
+  200..201 ⏎
+
+12   Build Counter up⏎
+
+  201..206 build
+  207..214 "Counter" borrowed ProperVar
+  215..217 up
+  217..218 ⏎
+
+13   If Modulus taking Counter, Fizz is "0" and Modulus taking Counter, Buzz is "0"⏎
+
+  218..220 if
+  221..228 "Modulus" borrowed ProperVar
+  229..235 taking
+  236..243 "Counter" borrowed ProperVar
+  243..244 ,
+  245..249 "Fizz" borrowed ProperVar
+  250..252 is
+  253..256 "0" borrowed *[rc 1/0 weak] StringLiteral
+  257..260 and
+  261..268 "Modulus" borrowed ProperVar
+  269..275 taking
+  276..283 "Counter" borrowed ProperVar
+  283..284 ,
+  285..289 "Buzz" borrowed ProperVar
+  290..292 is
+  293..296 "0" borrowed *[rc 1/0 weak] StringLiteral
+  296..297 ⏎
+
+14   Say "FizzBuzz!"⏎
+
+  297..300 say
+  301..312 "FizzBuzz!" borrowed *[rc 1/0 weak] StringLiteral
+  312..313 ⏎
+
+15   Continue⏎
+
+  313..321 continue
+  321..322 ⏎
+
+16   ⏎
+
+  322..323 ⏎
+
+17   If Modulus taking Counter, Fizz is "0"⏎
+
+  323..325 if
+  326..333 "Modulus" borrowed ProperVar
+  334..340 taking
+  341..348 "Counter" borrowed ProperVar
+  348..349 ,
+  350..354 "Fizz" borrowed ProperVar
+  355..357 is
+  358..361 "0" borrowed *[rc 1/0 weak] StringLiteral
+  361..362 ⏎
+
+18   Say "Fizz!"⏎
+
+  362..365 say
+  366..373 "Fizz!" borrowed *[rc 1/0 weak] StringLiteral
+  373..374 ⏎
+
+19   Continue⏎
+
+  374..382 continue
+  382..383 ⏎
+
+20   ⏎
+
+  383..384 ⏎
+
+21   If Modulus taking Counter, Buzz is "0"⏎
+
+  384..386 if
+  387..394 "Modulus" borrowed ProperVar
+  395..401 taking
+  402..409 "Counter" borrowed ProperVar
+  409..410 ,
+  411..415 "Buzz" borrowed ProperVar
+  416..418 is
+  419..422 "0" borrowed *[rc 1/0 weak] StringLiteral
+  422..423 ⏎
+
+22   Say "Buzz!"⏎
+
+  423..426 say
+  427..434 "Buzz!" borrowed *[rc 1/0 weak] StringLiteral
+  434..435 ⏎
+
+23   Continue⏎
+
+  435..443 continue
+  443..444 ⏎
+
+24   ⏎
+
+  444..445 ⏎
+
+25   Say Counter⏎
+
+  445..448 say
+  449..456 "Counter" borrowed ProperVar
+  456..457 ⏎
+
+26   ⏎
+
+  457..458 ⏎
+
+27   ⏎
+
+  458..458 <eof>
 """
 
 [pretty]

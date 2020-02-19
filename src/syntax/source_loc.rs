@@ -21,12 +21,12 @@ impl<'a> IntraLineSpan<'a> {
     }
 }
 
-pub struct SourceLocator {
+pub(super) struct SourceLocator {
     line_locations: Vec<(usize, usize)>,
 }
 
 impl SourceLocator {
-    pub fn new(content: &str) -> Self {
+    pub(super) fn new(content: &str) -> Self {
         let mut start = 0;
         let mut locs = Vec::new();
         for m in NEWLINE_SEARCH.find_iter(content) {
@@ -41,26 +41,34 @@ impl SourceLocator {
         }
     }
 
-    pub fn get_line_span<'a>(&self, content: &'a str, start: usize, end: usize)
-        -> IntraLineSpan<'a>
-    {
-        let searcher = |&(a, b)| if a <= start && start <= b {
+    pub(super) fn get_line_at_idx<'a>(&self, content: &'a str, idx: usize) -> &'a str {
+        let (line_start, line_end) = self.line_locations[idx];
+        &content[line_start..line_end]
+    }
+
+    pub(super) fn get_line_idx(&self, point: usize) -> usize {
+        let searcher = |&(a, b)| if a <= point && point <= b {
             Ordering::Equal
-        } else if start < a {
+        } else if point < a {
             Ordering::Greater
         } else {
             Ordering::Less
         };
 
-        let line_idx = match self.line_locations.binary_search_by(searcher) {
+        match self.line_locations.binary_search_by(searcher) {
             Ok(i) => i,
             Err(i) => if i < self.line_locations.len() {
                 i
             } else {
                 self.line_locations.len() - 1
             },
-        };
+        }
+    }
 
+    pub(super) fn get_line_span<'a>(&self, content: &'a str, start: usize, end: usize)
+        -> IntraLineSpan<'a>
+    {
+        let line_idx = self.get_line_idx(start);
         let (line_start, line_end) = self.line_locations[line_idx];
 
         let mut char_start = start;
@@ -84,7 +92,7 @@ impl SourceLocator {
         }
 
         IntraLineSpan {
-            line: &content[line_start..line_end],
+            line: self.get_line_at_idx(content, line_idx),
             lineno: line_idx + 1,
             start: char_start - line_start,
             end: char_end - line_start,
