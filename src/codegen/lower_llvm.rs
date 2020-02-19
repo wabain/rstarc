@@ -53,6 +53,7 @@ pub fn lower_ir<'a, 'prog: 'a>(program: &'a IRProgram<'prog>, opts: &CodegenOpti
             int32_type(),
             None,
             None,
+            &[],
         );
 
         func_decs.insert(0, llvm_func);
@@ -76,6 +77,7 @@ pub fn lower_ir<'a, 'prog: 'a>(program: &'a IRProgram<'prog>, opts: &CodegenOpti
             i64t,
             Some(LLVMLinkage::LLVMPrivateLinkage),
             None,
+            &[],
         );
 
         func_decs.insert(def.scope_id, llvm_func);
@@ -171,15 +173,22 @@ fn declare_builtin_functions(llh: &mut LLVMHandle) {
     let i64t = int64_type();
     let void = void_type();
 
-    llh.declare_builtin_function("llvm.trap", &mut [], void);
+    let readonly = (LLVMAttributeFunctionIndex, llh.attr("readonly"));
 
-    llh.declare_builtin_function("roll_say", &mut [i64t], void);
-    llh.declare_builtin_function("roll_alloc", &mut [i64t], ptr_type(i8t));
-    llh.declare_builtin_function("roll_mk_number", &mut [f64t], i64t);
-    llh.declare_builtin_function("roll_trap_bad_call", &mut [i64t], void);
-    llh.declare_builtin_function("roll_coerce_boolean", &mut [i64t], i8t);
-    llh.declare_builtin_function("roll_incr", &mut [i64t, i32t], i64t);
-    llh.declare_builtin_function("roll_decr", &mut [i64t, i32t], i64t);
+    let inaccessiblememonly =
+        (LLVMAttributeFunctionIndex, llh.attr("inaccessiblememonly"));
+
+    let noreturn = (LLVMAttributeFunctionIndex, llh.attr("noreturn"));
+
+    llh.declare_builtin_function("llvm.trap", &mut [], void, &[]);
+
+    llh.declare_builtin_function("roll_say", &mut [i64t], void, &[readonly]);
+    llh.declare_builtin_function("roll_alloc", &mut [i64t], ptr_type(i8t), &[inaccessiblememonly]);
+    llh.declare_builtin_function("roll_mk_number", &mut [f64t], i64t, &[inaccessiblememonly]);
+    llh.declare_builtin_function("roll_trap_bad_call", &mut [i64t], void, &[readonly, noreturn]);
+    llh.declare_builtin_function("roll_coerce_boolean", &mut [i64t], i8t, &[readonly]);
+    llh.declare_builtin_function("roll_incr", &mut [i64t, i32t], i64t, &[]);
+    llh.declare_builtin_function("roll_decr", &mut [i64t, i32t], i64t, &[]);
 
     // Binary operations
     let bin_ops = &[
@@ -198,7 +207,7 @@ fn declare_builtin_functions(llh: &mut LLVMHandle) {
     ];
 
     for op in bin_ops {
-        llh.declare_builtin_function(op, &mut [i64t, i64t], i64t);
+        llh.declare_builtin_function(op, &mut [i64t, i64t], i64t, &[]);
     }
 }
 

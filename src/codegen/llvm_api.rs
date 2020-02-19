@@ -4,16 +4,34 @@ use llvm::core::*;
 use llvm::prelude::*;
 use llvm::target::*;
 use llvm::target_machine::*;
-use llvm::{LLVMModule, LLVMBuilder};
+use llvm::{
+    LLVMModule,
+    LLVMBuilder,
+    LLVMAttributeIndex,
+};
 // Reexports
-pub use llvm::{LLVMLinkage, LLVMType, LLVMValue, LLVMBasicBlock, LLVMIntPredicate::*};
-pub use llvm::prelude::{LLVMTypeRef, LLVMValueRef, LLVMBasicBlockRef};
+pub use llvm::{
+    LLVMLinkage,
+    LLVMType,
+    LLVMValue,
+    LLVMBasicBlock,
+    LLVMAttributeFunctionIndex,
+    LLVMAttributeReturnIndex,
+    LLVMIntPredicate::*,
+    prelude::{
+        LLVMTypeRef,
+        LLVMValueRef,
+        LLVMBasicBlockRef,
+    },
+};
 
 use std::collections::hash_map::{HashMap, Entry};
 use std::marker::PhantomData;
 use std::ffi::{CStr, CString};
 
 use codegen::CodegenError;
+
+pub type FuncDecAttribute = (LLVMAttributeIndex, LLVMAttributeRef);
 
 const DEFAULT_ADDRESS_SPACE: u32 = 0;
 
@@ -84,6 +102,7 @@ pub struct LLVMHandle {
     cpu_features: LLVMString,
     owned_strings: Vec<CString>,
     builtins: HashMap<&'static str, LLVMValueRef>,
+    attributes: HashMap<&'static str, LLVMAttributeRef>,
 }
 
 impl LLVMHandle {
@@ -97,6 +116,7 @@ impl LLVMHandle {
             cpu_features: LLVMString::new(),
             owned_strings: Vec::new(),
             builtins: HashMap::new(),
+            attributes: HashMap::new(),
         };
 
         unsafe {
@@ -118,13 +138,18 @@ impl LLVMHandle {
                         args: &mut [LLVMTypeRef],
                         ret: LLVMTypeRef,
                         linkage: Option<LLVMLinkage>,
-                        alignment: Option<u32>)
+                        alignment: Option<u32>,
+                        attributes: &[FuncDecAttribute])
                         -> FunctionHandle
     {
         let func;
         unsafe {
             let fn_type = func_type(args, ret);
             func = LLVMAddFunction(self.module, self.new_cstr(name), fn_type);
+
+            for &(idx, attr) in attributes {
+                LLVMAddAttributeAtIndex(func, idx, attr);
+            }
 
             if let Some(linkage) = linkage {
                 LLVMSetLinkage(func, linkage);
@@ -138,13 +163,38 @@ impl LLVMHandle {
         FunctionHandle { func }
     }
 
-    // TODO: Any extra declarations here?
+    pub fn attr(&mut self, name: &'static str) -> LLVMAttributeRef {
+        if let Some(&attr) = self.attributes.get(name) {
+            return attr;
+        }
+
+        let cname = CString::new(name).expect("attribute name");
+        let len = name.len();
+
+        let kind = unsafe {
+            LLVMGetEnumAttributeKindForName(cname.as_c_str().as_ptr(), len)
+        };
+
+        if kind == 0 {
+            panic!("unknown LLVM enum attribute: {}", name)
+        }
+
+        let attr = unsafe {
+            let ctx = LLVMGetGlobalContext();
+            LLVMCreateEnumAttribute(ctx, kind, 0)
+        };
+
+        self.attributes.insert(name, attr);
+        attr
+    }
+
     pub fn declare_builtin_function(&mut self,
                                     name: &'static str,
                                     args: &mut [LLVMTypeRef],
-                                    ret: LLVMTypeRef)
+                                    ret: LLVMTypeRef,
+                                    attrs: &[FuncDecAttribute])
     {
-        let f = self.add_function(name, args, ret, None, None).func;
+        let f = self.add_function(name, args, ret, None, None, attrs).func;
         match self.builtins.entry(name) {
             Entry::Occupied(_) => panic!("Duplicate builtin function {}", name),
             Entry::Vacant(e) => { e.insert(f); }
