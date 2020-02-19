@@ -858,14 +858,17 @@ where
         self.local_closure_value = Some(NonNull::new(closure_value).expect("closure value"));
     }
 
-    fn prepare_closure_capture(&mut self, _llh: &mut LLVMHandle) {
-        if self.captured_closure_type.is_none() {
-            return;
-        }
+    fn prepare_closure_capture(&mut self, llh: &mut LLVMHandle) {
+        let closure_type = match self.captured_closure_type {
+            Some(t) => t.as_ptr(),
+            None => return,
+        };
 
-        // TODO: should spill to alloca here
-        self.captured_closure_value = Some(NonNull::new(self.func_hdl.param(0))
-            .expect("capture func param"));
+        let alloca = llh.build_alloca(closure_type, "closure_captures");
+        let load = llh.build_load(self.func_hdl.param(0), "closure_captures.load");
+        llh.build_store(load, alloca);
+
+        self.captured_closure_value = Some(NonNull::new(alloca).expect("capture alloca"));
     }
 
     fn get_memory_target(&mut self, var: &LangVariable<'prog>, var_type: &VariableType)
