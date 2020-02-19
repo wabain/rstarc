@@ -11,22 +11,24 @@ use lang_constructs::LangVariable;
 use syntax::ast::Comparator;
 use base_analysis::{ScopeId, VariableType};
 
-use codegen::CodegenError;
-use codegen::simple_ir::{
-    IRProgram,
-    SimpleIR,
-    IRSubRoutine,
-    IRClosure,
-    IRFuncParams,
-    IRValue,
-    IRLValue,
-    BinOp,
-    InPlaceOp,
-    LocalTemp,
-    LocalDynTemp,
+use codegen::{
+    CodegenError,
+    simple_ir::{
+        IRProgram,
+        SimpleIR,
+        IRSubRoutine,
+        IRClosure,
+        IRFuncParams,
+        IRValue,
+        IRLValue,
+        BinOp,
+        InPlaceOp,
+        LocalTemp,
+        LocalDynTemp,
+    },
+    closure_layout::ClosureLayout,
+    llvm_api::*,
 };
-use codegen::closure_layout::ClosureLayout;
-use codegen::llvm_api::*;
 
 const MAX_SUPPORTED_ARITY: usize = 5;
 
