@@ -6,7 +6,7 @@ use llvm::target::*;
 use llvm::target_machine::*;
 use llvm::{LLVMModule, LLVMBuilder};
 // Reexports
-pub use llvm::{LLVMLinkage, LLVMType, LLVMValue, LLVMBasicBlock};
+pub use llvm::{LLVMLinkage, LLVMType, LLVMValue, LLVMBasicBlock, LLVMIntPredicate::*};
 pub use llvm::prelude::{LLVMTypeRef, LLVMValueRef, LLVMBasicBlockRef};
 
 use std::collections::hash_map::{HashMap, Entry};
@@ -224,6 +224,15 @@ impl LLVMHandle {
         }
     }
 
+    pub fn build_and(&mut self, lhs: LLVMValueRef, rhs: LLVMValueRef, name: &str)
+        -> LLVMValueRef
+    {
+        unsafe {
+            let name = self.new_cstr(name);
+            LLVMBuildAnd(self.builder, lhs, rhs, name)
+        }
+    }
+
     pub fn build_bitcast(&mut self,
                          value: LLVMValueRef,
                          ty: LLVMTypeRef,
@@ -271,13 +280,6 @@ impl LLVMHandle {
     pub fn build_call_say(&mut self, arg: LLVMValueRef) {
         let fn_val = self.builtin_ptr("roll_say");
         self.build_call(fn_val, &mut [arg], "");
-    }
-
-    pub fn build_call_coerce_function(&mut self, arg: LLVMValueRef, name: &str)
-        -> LLVMValueRef
-    {
-        let fn_val = self.builtin_ptr("roll_coerce_function");
-        self.build_call(fn_val, &mut [arg], name)
     }
 
     pub fn build_call_coerce_boolean(&mut self, arg: LLVMValueRef, name: &str)
@@ -382,6 +384,19 @@ impl LLVMHandle {
                                  indices.as_mut_ptr(),
                                  indices.len() as u32,
                                  self.new_cstr(name))
+        }
+    }
+
+    pub fn build_icmp(&mut self,
+                      op: llvm::LLVMIntPredicate,
+                      lhs: LLVMValueRef,
+                      rhs: LLVMValueRef,
+                      name: &str)
+        -> LLVMValueRef
+    {
+        unsafe {
+            let name = self.new_cstr(name);
+            LLVMBuildICmp(self.builder, op, lhs, rhs, name)
         }
     }
 

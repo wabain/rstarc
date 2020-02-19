@@ -176,7 +176,7 @@ fn declare_builtin_functions(llh: &mut LLVMHandle) {
     llh.declare_builtin_function("roll_say", &mut [i64t], void);
     llh.declare_builtin_function("roll_alloc", &mut [i64t], ptr_type(i8t));
     llh.declare_builtin_function("roll_mk_number", &mut [f64t], i64t);
-    llh.declare_builtin_function("roll_coerce_function", &mut [i64t], i64t);
+    llh.declare_builtin_function("roll_trap_bad_call", &mut [i64t], void);
     llh.declare_builtin_function("roll_coerce_boolean", &mut [i64t], i8t);
     llh.declare_builtin_function("roll_incr", &mut [i64t, i32t], i64t);
     llh.declare_builtin_function("roll_decr", &mut [i64t, i32t], i64t);
@@ -356,12 +356,43 @@ fn build_dynamic_call(llh: &mut LLVMHandle,
 {
     let i64t = int64_type();
 
+    // Check that value is a function
+    let preheader_block = llh.new_block(caller_hdl, &format!("{}.call.preheader", ir_fn));
+    llh.build_br(preheader_block);
+    llh.enter_block(preheader_block);
+
+    let fn_masked = llh.build_and(
+        fn_val, llh.const_uint(i64t, TAG_MASK), &format!("{}.type", ir_fn)
+    );
+    let fn_tck = llh.build_icmp(
+        LLVMIntEQ,
+        fn_masked,
+        llh.const_uint(i64t, FUNCTION_TAG),
+        &format!("{}.type.check", ir_fn),
+    );
+
+    let bad_call_block = {
+        let bb = llh.new_block(caller_hdl, &format!("{}.call.bad_type", ir_fn));
+        llh.enter_block(bb);
+
+        let trap = llh.builtin_ptr("roll_trap_bad_call");
+
+        llh.build_call(trap, &mut[fn_val], "");
+        llh.build_unreachable();
+
+        bb
+    };
     let header_block = llh.new_block(caller_hdl, &format!("{}.call.header", ir_fn));
-    llh.build_br(header_block);
+
+    llh.enter_block(preheader_block);
+    llh.build_cond_br(fn_tck, header_block, bad_call_block);
+
+    // Extract the function pointer and arity
     llh.enter_block(header_block);
 
-    let fn_coerced = llh.build_call_coerce_function(
+    let fn_coerced = llh.build_and(
         fn_val,
+        llh.const_uint(i64t, !TAG_MASK),
         &format!("{}.coerce", ir_fn),
     );
 
@@ -381,9 +412,13 @@ fn build_dynamic_call(llh: &mut LLVMHandle,
 
     let arity_value = llh.build_load(arity_ptr_value, &format!("{}.arity", ir_fn));
 
-    let abort_block = llh.new_block(caller_hdl, &format!("{}.call.abort", ir_fn));
-    llh.enter_block(abort_block);
-    llh.build_trap();
+    // Switch over the arity and call the function
+    let abort_block = {
+        let bb = llh.new_block(caller_hdl, &format!("{}.call.abort", ir_fn));
+        llh.enter_block(bb);
+        llh.build_trap();
+        bb
+    };
 
     llh.enter_block(header_block);
 

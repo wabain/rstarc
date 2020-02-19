@@ -195,11 +195,9 @@ pub extern fn roll_le(p1: *mut VoidPtr, p2: *mut VoidPtr) -> u64 {
 }
 
 #[no_mangle]
-pub extern fn roll_coerce_function(value: *mut VoidPtr) -> *const VoidPtr {
-    match value_repr::Scalar::new(value).deref_rec() {
-        Value::Function(p) => p,
-        v => fatal!("Cannot call value '{}'", v.user_display()),
-    }
+pub extern fn roll_trap_bad_call(value: *mut VoidPtr) -> ! {
+    fatal!("Cannot call value '{}'",
+           value_repr::Scalar::new(value).deref_rec().user_display())
 }
 
 #[no_mangle]
