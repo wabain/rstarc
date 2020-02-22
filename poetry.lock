@@ -70,11 +70,11 @@ mccabe = ">=0.6,<0.7"
 
 [[package]]
 category = "main"
-description = "A parser for TOML-0.4.0"
-name = "pytoml"
+description = "A better TOML library for python implemented in rust."
+name = "rtoml"
 optional = false
-python-versions = "*"
-version = "0.1.21"
+python-versions = ">=3.7"
+version = "0.3.0"
 
 [[package]]
 category = "dev"
@@ -102,8 +102,8 @@ python-versions = "*"
 version = "1.11.2"
 
 [metadata]
-content-hash = "5ff686204303fcc31f9cfc469851b6d59434acd6b5d7c8b90da0164eb3ac4dcb"
-python-versions = "^3.6"
+content-hash = "c175e9087b6f405c11be12ed9ded41d6e9701cec66060f48447955ae351f28ba"
+python-versions = "^3.7"
 
 [metadata.files]
 astroid = [
@@ -149,9 +149,20 @@ pylint = [
     {file = "pylint-2.4.4-py3-none-any.whl", hash = "sha256:886e6afc935ea2590b462664b161ca9a5e40168ea99e5300935f6591ad467df4"},
     {file = "pylint-2.4.4.tar.gz", hash = "sha256:3db5468ad013380e987410a8d6956226963aed94ecb5f9d3a28acca6d9ac36cd"},
 ]
-pytoml = [
-    {file = "pytoml-0.1.21-py2.py3-none-any.whl", hash = "sha256:57a21e6347049f73bfb62011ff34cd72774c031b9828cb628a752225136dfc33"},
-    {file = "pytoml-0.1.21.tar.gz", hash = "sha256:8eecf7c8d0adcff3b375b09fe403407aa9b645c499e5ab8cac670ac4a35f61e7"},
+rtoml = [
+    {file = "rtoml-0.3.0-cp37-cp37m-macosx_10_6_intel.whl", hash = "sha256:628aad51387b66c0482b9eeaa43a1df8df62b6ba8d034904602544625105737f"},
+    {file = "rtoml-0.3.0-cp37-cp37m-manylinux1_i686.whl", hash = "sha256:5a5d900a351249f87f9c2a73483533be38f4b7d127f75a2be8212e1a486f201d"},
+    {file = "rtoml-0.3.0-cp37-cp37m-manylinux1_x86_64.whl", hash = "sha256:26eafc21759f26c7f8479fa93f81e934ddf731ff5754f52d2a37199096c677bf"},
+    {file = "rtoml-0.3.0-cp37-cp37m-manylinux2010_i686.whl", hash = "sha256:32f76620a10b6f326733724ca30288d7ff5bc47d32378c46d57789acc6f74064"},
+    {file = "rtoml-0.3.0-cp37-cp37m-manylinux2010_x86_64.whl", hash = "sha256:0835ae55440b4f882e5ef1396aeb0e30170f5f15fc4009e7b91ea7e245d8ef94"},
+    {file = "rtoml-0.3.0-cp37-cp37m-win_amd64.whl", hash = "sha256:b679ea5be6319e1039cdf71b228f2d76044a57c71a8aaddcca81356808670d80"},
+    {file = "rtoml-0.3.0-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:2c88dbf01daa37114f0339dfb6cd37d1c5b7616bf21f2346a1d1e922a1b608c3"},
+    {file = "rtoml-0.3.0-cp38-cp38-manylinux1_i686.whl", hash = "sha256:0be3dfa86ab91aa8b2624a10a1233b73fb27bae5111059448063b35149665203"},
+    {file = "rtoml-0.3.0-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:e400745823f328357ffee13338946584f632751a858cf24c531b9819f537ed8a"},
+    {file = "rtoml-0.3.0-cp38-cp38-manylinux2010_i686.whl", hash = "sha256:46f57fdb87685cc1ea53fe113765a189a8ee07d0727d81138ffe49e5e4bca975"},
+    {file = "rtoml-0.3.0-cp38-cp38-manylinux2010_x86_64.whl", hash = "sha256:8d3fbdee8a8231a2dcaaa892d541d4a30e48f201f91f5809a930b44b58380b3e"},
+    {file = "rtoml-0.3.0-cp38-cp38-win_amd64.whl", hash = "sha256:9dce54af9c24b41cee793ef3d3f21770ae7bc4e3cbb12df006586bda46529473"},
+    {file = "rtoml-0.3.0.tar.gz", hash = "sha256:86410745d94496154054e8bdb7d7f7b472c5df6a2bff02ddae7fb12ac0773a3e"},
 ]
 six = [
     {file = "six-1.14.0-py2.py3-none-any.whl", hash = "sha256:8f3cd2e254d8f793e7f3d6d9df77b92252b52637291d0f0da013c76ea2724b6c"},

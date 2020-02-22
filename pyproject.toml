@@ -5,8 +5,8 @@ description = ""
 authors = ["William Bain <bain.william.a@gmail.com>"]
 
 [tool.poetry.dependencies]
-python = "^3.6"
-pytoml = "^0.1.21"
+python = "^3.7"
+rtoml = "^0.3.0"
 
 [tool.poetry.dev-dependencies]
 pylint = "*"

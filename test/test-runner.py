@@ -4,13 +4,14 @@ import re
 import os
 import sys
 import time
+import asyncio
 import logging
 import subprocess
 import argparse
 import difflib
-from multiprocessing.pool import Pool
+from contextlib import closing
 
-import pytoml as toml
+import rtoml as toml
 
 BASENAME = os.path.splitext(os.path.basename(__file__))[0]
 
@@ -121,23 +122,13 @@ def cwd_relative(path):
 
 
 def verify_output(files, *, binary, refresh, tests_for_new_files):
-    results = []
-
-    with Pool() as pool:
-        pending_results = []
-
-        for src in files:
-            res = pool.apply_async(verify_source_file, (src,), dict(
-                binary=binary,
-                refresh=refresh,
-                tests_for_new_files=tests_for_new_files,
-            ))
-
-            pending_results.append(res)
-
-        for pending in pending_results:
-            result = pending.get()
-            results.append(result)
+    with closing(asyncio.get_event_loop()) as loop:
+        results = loop.run_until_complete(
+            run_tests_parallel(files,
+                               binary=binary,
+                               refresh=refresh,
+                               tests_for_new_files=tests_for_new_files)
+        )
 
     failures = []
     success_count = 0
@@ -163,7 +154,51 @@ def verify_output(files, *, binary, refresh, tests_for_new_files):
     return not failures
 
 
-def verify_source_file(src, binary, refresh, tests_for_new_files):
+async def run_tests_parallel(files, *, binary, refresh, tests_for_new_files):
+    tasks = [
+        asyncio.ensure_future(
+            verify_source_file(src,
+                               binary=binary,
+                               refresh=refresh,
+                               tests_for_new_files=tests_for_new_files)
+        )
+        for src in files
+    ]
+
+    results = []
+
+    for task in asyncio.as_completed(tasks):
+        try:
+            result = await task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            for task in tasks:
+                if task.done():
+                    continue
+
+                task.cancel()
+
+            # TODO: should log additional exceptions from other tasks?
+            for task in tasks:
+                if task.done():
+                    continue
+
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    logger.exception('Error on task cleanup')
+
+            raise
+
+        results.append(result)
+
+    return results
+
+
+async def verify_source_file(src, *, binary, refresh, tests_for_new_files):
     logger.info('Verifying %s', src)
 
     config_filename = src + '.expected.toml'
@@ -191,7 +226,7 @@ def verify_source_file(src, binary, refresh, tests_for_new_files):
     for test in TestRegistry.expand_tests(enabled_tests):
         cmd = TestRegistry.command_for_test(test, binary=binary, src=src)
 
-        output, failures = run_test(test_name=test, src=src, cmd=cmd, config=config)
+        output, failures = await run_test(test_name=test, src=src, cmd=cmd, config=config)
         test_results.register_result(test=test, output=output, failures=failures)
 
     if needs_refresh(refresh, test_results):
@@ -340,20 +375,29 @@ class TestResults:
         return aggregate
 
 
-def run_test(test_name, src, cmd, config):
+async def run_test(test_name, src, cmd, config):
     logger.debug('Testing %s with command %s', test_name, cmd)
 
     start = time.time()
-    proc = subprocess.Popen(cmd,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            universal_newlines=True)
 
-    proc.wait()
-    out, err = proc.communicate()
+    proc = await asyncio.create_subprocess_exec(*cmd,
+                                                stdout=subprocess.PIPE,
+                                                stderr=subprocess.PIPE)
+
+    try:
+        await proc.wait()
+        out, err = await proc.communicate()
+
+    except:
+        proc.kill()
+        raise
+
     end = time.time()
 
     logger.debug('Elapsed for %s %s: %.2fs', src, test_name, end - start)
+
+    out = out.decode('utf-8')
+    err = err.decode('utf-8')
 
     output = {
         'returncode': str(proc.returncode),
@@ -472,7 +516,7 @@ def write_toml(source_object, fname):
 def expand_toml_string(key: str, string: str) -> str:
     """hack: rewrite string literals into multiline form
 
-    The pytoml library outputs single-line literals, but we want multiline
+    The rtoml library outputs single-line literals, but we want multiline
     string literals for readability.
     """
     chars = iter(string)
@@ -491,7 +535,7 @@ def expand_toml_string(key: str, string: str) -> str:
 
         escaped = next(chars, None)
         if escaped is None:
-            raise RuntimeError(f'unexpected EOF when modifying toml key ${key}')
+            raise RuntimeError(f'unexpected EOF when modifying TOML key {key}')
 
         if escaped == 'n':
             multiline.append('\n')

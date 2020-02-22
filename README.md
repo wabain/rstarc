@@ -10,7 +10,7 @@ The version of the specification it targets is linked in the `spec/` directory. 
 
 ## Build dependencies
 
-* Python 3.6+
+* Python 3.7+
 
 * Poetry 1.0+
 
