@@ -31,13 +31,15 @@ use std::borrow::Cow;
 ///
 /// Scalar values:
 ///
-///     Null        0b0.......00000
-///     False       0b0.......00010
-///     True        0b0.......01010
-///     Mysterious  0b0.......10010
-///     Heap ptr    [61 bits]...000
-///     Const str   [61 bits]...011
-///     Function    [61 bits]...110
+/// ```text
+/// Null        0b0.......00000
+/// False       0b0.......00010
+/// True        0b0.......01010
+/// Mysterious  0b0.......10010
+/// Heap ptr    [61 bits]...000
+/// Const str   [61 bits]...011
+/// Function    [61 bits]...110
+/// ```
 ///
 /// One motivation for this choice of tags was to avoid having false = 0x1,
 /// while still allowing booleans to be coerced to their conventional values
@@ -46,8 +48,10 @@ use std::borrow::Cow;
 /// All scalar values can occur on the heap. In addition, there are additional
 /// tags:
 ///
-///     Number      0x00000004 [64-bit float]
-///     String      [32 bit len] 0x0005 [string content]
+/// ```text
+/// Number      0x00000004 [64-bit float]
+/// String      [32 bit len] 0x0005 [string content]
+///  ```
 pub mod value_constants {
     pub const NULL_BITS: u64 = 0x0;
     pub const FALSE_BITS: u64 = 0x2;

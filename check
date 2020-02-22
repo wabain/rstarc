@@ -2,23 +2,224 @@
 
 set -euo pipefail
 
-if ! hash pipenv &> /dev/null; then
-    &>2 echo "The pipenv utility must be installed to run the tests"
-    &>2 echo "See https://docs.pipenv.org/install/"
-    exit 1
-fi
+STDERR_IS_TTY=`[ -t 2 ] && echo 1 || echo 0`
+VERIFY_ENTRIES=( cargo-test test-programs lint-commit )
+VERIFY_DEFAULT=( cargo-test test-programs )
+VERIFY="${VERIFY_DEFAULT[@]}"
 
-if [[ "$(basename "$0")" == "$0" ]]; then
-    cd "$(dirname "$(which "$0")")"
-else
-    cd "$(dirname "$0")"
-fi
+main() {
+    # Prerequisites
+    #
+    # Assume cargo, etc installed
+    if ! hash pipenv &> /dev/null; then
+        &>2 echo "The pipenv utility must be installed to run the tests"
+        &>2 echo "See https://docs.pipenv.org/install/"
+        exit 1
+    fi
 
-if pipenv --venv &> /dev/null; then
-    # Already installed
-    opt=
-else
-    opt=--three
-fi
+    export GIT_PAGER=cat
 
-exec pipenv $opt run test/test-runner.py "$@"
+    local passthrough=()
+    local do_help=0
+
+    # Setup: always run from the root directory
+    if [[ "$(basename "$0")" == "$0" ]]; then
+        cd "$(dirname "$(which "$0")")"
+    else
+        cd "$(dirname "$0")"
+    fi
+
+    # Parse arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+        -h|--help)
+            do_help=1
+            break
+            ;;
+
+        --verify)
+            shift
+            if [ $# -eq 0 ]; then
+                >&2 echo "fatal: missing argument for verify"
+                print_usage
+                return 1
+            fi
+            set_verify "$1"
+            shift
+            ;;
+
+        --verify=*)
+            set_verify "${1#--verify=}"
+            shift
+            ;;
+
+        *)
+            passthrough+=( "$1" )
+            shift
+            ;;
+        esac
+    done
+
+    if [ $do_help -eq 1 ]; then
+        print_usage
+
+        >&2 echo
+        >&2 echo
+        >&2 echo "Other arguments are passed to the test program runner:"
+        >&2 echo
+
+        >&2 test_program_runner --help
+        return 0
+    fi
+
+    run_checks "${passthrough[@]+"${passthrough[@]}"}"
+}
+
+print_usage() {
+    >&2 echo "usage: $(basename $0) [--verify=checks] [runner-args...]"
+    >&2 echo
+    >&2 echo "optional arguments:"
+    >&2 echo "  --verify checks  a space-separated list of: \"${VERIFY_ENTRIES[@]}\""
+    >&2 echo "                   (default: \"${VERIFY_DEFAULT[@]}\")"
+}
+
+set_verify() {
+    VERIFY=()
+
+    for elem in $1; do
+        if ! is_verify_check "$elem"; then
+            >&2 echo "fatal: unknown check: $elem"
+            print_usage
+            exit 1
+        fi
+
+        VERIFY+=( "$elem" )
+    done
+}
+
+should_verify() {
+    [[ " ${VERIFY[@]-} " =~ " $1 " ]]
+}
+
+is_verify_check() {
+    [[ " ${VERIFY_ENTRIES[@]} " =~ " $1 " ]]
+}
+
+run_checks() {
+    local rc=( 0 )
+
+    if should_verify lint-commit; then
+        git show --no-patch
+    fi
+
+    if should_verify cargo-test; then
+        headline 'Execute `cargo test --all`'
+
+        set +e
+        cargo test --all
+        rc+=( $? )
+        set -e
+    fi
+
+    if should_verify test-programs; then
+        headline "Execute test programs"
+
+        set +e
+        test_program_runner "$@"
+        rc+=( $? )
+        set -e
+    fi
+
+    if should_verify lint-commit; then
+        headline "Lint last commit"
+
+        set +e
+        lint_commit
+        rc+=( $? )
+        set -e
+    fi
+
+    local res=0
+
+    for rc_value in "${rc[@]}"; do
+        if [ $res -lt $rc_value ]; then
+            res=$rc_value
+        fi
+    done
+
+    return $res
+}
+
+headline() {
+    >&2 echo
+    >&2 echo
+    if [ "$STDERR_IS_TTY" -eq 1 ]; then
+        >&2 printf '\033[1;4;97m'"$1"'\033[0m'"\n"
+    else
+        >&2 printf "$1\n"
+    fi
+    >&2 echo
+}
+
+# Cannot assume set -e
+test_program_runner() {
+    if pipenv --venv &> /dev/null; then
+        # Already installed
+        opt=
+    else
+        opt=--three
+    fi
+
+    pipenv $opt run test/test-runner.py "$@"
+    return $?
+}
+
+# Cannot assume set -e
+lint_commit() {
+    local fixup_pattern_base='(WIP|TODO|FIXME|XXX|\*\*\*)'
+    local fixup_pattern_adds='^\+.*'"$fixup_pattern_base"
+
+    local found_problems=0
+
+    if git_commit_message | grep -iE -q "$fixup_pattern_base"; then
+        >&2 echo "Potential fixup comments in commit message:"
+        git_commit_message | >&2 grep -iE "$fixup_pattern_base"
+        >&2 echo
+
+        found_problems=1
+    fi
+
+    local IFS=$'\n'
+    for f in $(git_commit_list_files); do
+        if git_commit_diff_file "$f" | grep -iE -q "$fixup_pattern_adds"; then
+            >&2 echo "Potential fixup comments in $f:"
+            git_commit_diff_file "$f" | >&2 grep -iE "$fixup_pattern_adds"
+            >&2 echo
+
+            found_problems=1
+        fi
+    done
+
+    if [ $found_problems -eq 0 ]; then
+        >&2 echo PASSED
+    fi
+
+    return $found_problems
+}
+
+# Cannot assume set -e
+git_commit_message() {
+    git show --format=%B --no-patch
+}
+
+# Cannot assume set -e
+git_commit_list_files() {
+    git diff-tree -r --no-commit-id --name-only HEAD
+}
+
+# Cannot assume set -e
+git_commit_diff_file() {
+    git show --format= --patch -- "$1"
+}
+
+main "$@"
