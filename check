@@ -11,9 +11,9 @@ main() {
     # Prerequisites
     #
     # Assume cargo, etc installed
-    if ! hash pipenv &> /dev/null; then
-        &>2 echo "The pipenv utility must be installed to run the tests"
-        &>2 echo "See https://docs.pipenv.org/install/"
+    if ! hash poetry &> /dev/null; then
+        &>2 echo "The poetry utility must be installed to run the tests"
+        &>2 echo "See https://python-poetry.org/docs/#installation"
         exit 1
     fi
 
@@ -163,14 +163,21 @@ headline() {
 
 # Cannot assume set -e
 test_program_runner() {
-    if pipenv --venv &> /dev/null; then
-        # Already installed
-        opt=
-    else
-        opt=--three
+    local rc
+    local poetry_up_to_date='No dependencies to install or update'
+
+    if [ -z "$(poetry env list)" ]; then
+        poetry install
+        rc=$?
+
+        if [ $rc -ne 0 ]; then
+            return $rc
+        fi
+    elif [ -z "$(poetry install --dry-run | grep "$poetry_up_to_date")" ]; then
+        poetry install
     fi
 
-    pipenv $opt run test/test-runner.py "$@"
+    poetry run test/test-runner.py "$@"
     return $?
 }
 

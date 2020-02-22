@@ -12,7 +12,7 @@ The version of the specification it targets is linked in the `spec/` directory. 
 
 * Python 3.6+
 
-* Pipenv
+* Poetry 1.0+
 
 * Rust 1.30.0+
 

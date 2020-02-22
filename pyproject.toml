@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "rstarc-test-runner"
+version = "0.0.0"
+description = ""
+authors = ["William Bain <bain.william.a@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.6"
+pytoml = "^0.1.21"
+
+[tool.poetry.dev-dependencies]
+pylint = "*"
+
+[build-system]
+requires = ["poetry>=1.0"]
+build-backend = "poetry.masonry.api"
